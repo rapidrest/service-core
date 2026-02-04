@@ -1,8 +1,12 @@
 {
     "extends": "./tsconfig.json",
     "compilerOptions": {
-        "emitDecoratorMetadata": false,
-        "skipLibCheck": false
+        "allowImportingTsExtensions": false,
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "useDefineForClassFields": false,
+        "noEmit": true
     },
     "include": ["src", "test"],
 }

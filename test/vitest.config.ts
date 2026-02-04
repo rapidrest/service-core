@@ -8,9 +8,6 @@ export default defineConfig({
         })
     ],
     test: {
-        environmentOptions: {
-            tsconfig: "./tsconfig.test.json"
-        },
         reporters: [
             "verbose",
             ["junit", { outputFile: "junit.xml" }]
