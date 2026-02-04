@@ -16,10 +16,9 @@ import {
 } from "typeorm";
 import { ApiError, ClassLoader, Logger, StringUtils } from "@rapidrest/core";
 import "reflect-metadata";
-import { isEmpty } from "lodash";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
-import _ from "lodash";
+import _, { isEmpty } from "lodash";
 
 const logger = Logger();
 

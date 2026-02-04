@@ -2,17 +2,15 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import cookieParser from "cookie-parser";
-import cors from "cors";
-import express from "express";
 import expressResponseTime from "response-time";
 import * as http from "http";
 import passport from "passport";
 import * as path from "path";
 import * as prom from "prom-client";
 import "reflect-metadata";
-import { Application, Response, Request, NextFunction } from "express";
+import express, { Application, Response, Request, NextFunction } from "express";
 import { ConnectionManager } from "./database/ConnectionManager.js";
-import { CorsOptions } from "cors";
+import cors, { CorsOptions } from "cors";
 import { StatusRoute } from "./routes/StatusRoute.js";
 import { JWTStrategy, JWTStrategyOptions } from "./passportjs/JWTStrategy.js";
 import { ApiError, ClassLoader, Logger } from "@rapidrest/core";
