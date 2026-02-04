@@ -1,0 +1,11 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "emitDecoratorMetadata": false,
+        "skipLibCheck": false,
+        "paths": {
+            "@vitest-check": ["src/Types.js"]
+        }
+    },
+    "include": ["src", "test"],
+}
