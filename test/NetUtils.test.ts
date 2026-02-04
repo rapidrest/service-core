@@ -3,7 +3,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { describe, it, expect } from "vitest";
 import { NetUtils } from "../src/NetUtils.js";
-import '@vitest-check';
 
 const YahooIPs: string[] = [
     "74.6.231.21",
