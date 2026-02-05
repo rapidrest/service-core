@@ -278,7 +278,7 @@ export class Server {
                     this.basePath,
                     true,
                     true,
-                    this.config.get("scripts:ignore")
+                    this.config.get("class_loader:ignore"),
                 );
                 try {
                     await classLoader.load();
