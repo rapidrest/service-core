@@ -1,4 +1,4 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, JWTUser, ObjectDecorators, UserUtils } from "@rapidrest/core";
@@ -36,7 +36,7 @@ export class RedisTransport extends Transport {
 
 /**
  * The `AdminRoute` provides a default `/admin` endpoint that gives trusted users the following abilities:
- * 
+ *
  * * Clear cache via `GET /admin/clear-cache`
  * * Live tail the service logs via `GET /admin/logs`
  * * Retrieve service dependencies via `GET /admin/dependencies`

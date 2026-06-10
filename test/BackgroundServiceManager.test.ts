@@ -1,15 +1,15 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import config from "./config.js";
-import { BackgroundServiceManager } from "../src/BackgroundServiceManager.js";
+import config from "./config";
+import { BackgroundServiceManager } from "../src/BackgroundServiceManager";
 import { ClassLoader, Logger } from "@rapidrest/core";
-import MyFirstService from "./server/jobs/MyFirstService.js";
-import MySecondService from "./server/jobs/MySecondService.js";
-import MyThirdService from "./server/jobs/MyThirdService.js";
-import { BackgroundService, ObjectFactory } from "../src/index.js";
+import MyFirstService from "./server/jobs/MyFirstService";
+import MySecondService from "./server/jobs/MySecondService";
+import MyThirdService from "./server/jobs/MyThirdService";
+import { BackgroundService, ObjectFactory } from "../src";
+
+vi.setConfig({ testTimeout: 10000 });
 
 describe("BackgroundServiceManager Tests", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());

@@ -2,10 +2,9 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
-import { describe, it, expect } from "vitest";
 
-import { ModelUtils } from "../src/index.js";
-import { Identifier } from "../src/decorators/ModelDecorators.js";
+import { ModelUtils } from "../src";
+import { Identifier } from "../src/decorators/ModelDecorators";
 import {
     Not,
     ILike,
@@ -20,7 +19,7 @@ import {
     PrimaryColumn,
     Column,
 } from "typeorm";
-import { v4 as uuidV4 } from "uuid";
+import * as uuid from "uuid";
 
 @Entity()
 class SingleIdentifierClass {
@@ -56,6 +55,7 @@ class ProductIdentifierClass {
 }
 
 describe("ModelUtils Tests", () => {
+
     describe("MongoDB Tests", () => {
         it("Can build id search query with single identifier.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(SingleIdentifierClass, "MyID");
@@ -112,7 +112,7 @@ describe("ModelUtils Tests", () => {
                 $or: [{ id: new RegExp(/^MyID$/, "i"), productUid: undefined }, { id2: new RegExp(/^MyID$/, "i"), productUid: undefined }],
             });
 
-            const productUid: string = uuidV4();
+            const productUid: string = uuid.v4();
             const query2: any = ModelUtils.buildIdSearchQueryMongo(ProductIdentifierClass, "MyID", undefined, productUid);
             expect(query2).toEqual({
                 $or: [{ id: new RegExp(/^MyID$/, "i"), productUid }, { id2: new RegExp(/^MyID$/, "i"), productUid }],
@@ -125,7 +125,7 @@ describe("ModelUtils Tests", () => {
                 $or: [{ id: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] } }, { id2: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] } }],
             });
 
-            const productUid: string = uuidV4();
+            const productUid: string = uuid.v4();
             const query2: any = ModelUtils.buildIdSearchQueryMongo(ProductIdentifierClass, ["MyID", "MyID2"], undefined, productUid);
             expect(query2).toEqual({
                 $or: [{ id: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] }, productUid }, { id2: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] }, productUid }],

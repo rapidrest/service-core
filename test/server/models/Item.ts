@@ -1,10 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { BaseEntity } from "../../../src/models/BaseEntity.js";
+import { BaseEntity } from "../../../src/models/BaseEntity";
 import { Entity, Column, Index } from "typeorm";
-import { Identifier, DataStore } from "../../../src/decorators/ModelDecorators.js";
-import { Description } from "../../../src/decorators/DocDecorators.js";
+import { Identifier, DataStore } from "../../../src/decorators/ModelDecorators";
+import { Description } from "../../../src/decorators/DocDecorators";
 
 @DataStore("sqlite")
 @Entity()

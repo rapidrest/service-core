@@ -1,18 +1,16 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import cookieParser from "cookie-parser";
-import cors from "cors";
-import express from "express";
+import cors, { CorsOptions } from "cors";
+import express, { Application, Response, Request, NextFunction } from "express";
 import expressResponseTime from "response-time";
 import * as http from "http";
 import passport from "passport";
 import * as path from "path";
 import * as prom from "prom-client";
 import "reflect-metadata";
-import { Application, Response, Request, NextFunction } from "express";
 import { ConnectionManager } from "./database/ConnectionManager.js";
-import { CorsOptions } from "cors";
 import { StatusRoute } from "./routes/StatusRoute.js";
 import { JWTStrategy, JWTStrategyOptions } from "./passportjs/JWTStrategy.js";
 import { ApiError, ClassLoader, Logger } from "@rapidrest/core";
@@ -29,6 +27,7 @@ import { BackgroundService } from "./BackgroundService.js";
 import { AdminRoute } from "./routes/index.js";
 import { OpenApiSpec } from "./OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "./ApiErrors.js";
+import { RedisStore } from "connect-redis";
 import { ACLUtils } from "./security/ACLUtils.js";
 import { NotificationUtils } from "./NotificationUtils.js";
 import { DataSource } from "typeorm";
@@ -37,7 +36,6 @@ import { ACLRouteSQL } from "./security/ACLRouteSQL.js";
 import { EventListenerManager } from "./EventListenerManager.js";
 import { AccessControlListMongo } from "./security/AccessControlListMongo.js";
 import { AccessControlListSQL } from "./security/AccessControlListSQL.js";
-import { RedisStore } from "./express/RedisStore.js";
 
 interface Entity {
     storeName?: any;
@@ -68,7 +66,7 @@ interface Model {
  * The following is an example of a simple route class.
  *
  * ```javascript
- * import { DefaultBehaviors, RouteDecorators } from "@rapidrest/service_core";
+ * import { DefaultBehaviors, RouteDecorators } from "@acceleratxr/service_core";
  * import { Get, Route } = RouteDecorators;
  *
  * @Route("/hello")
@@ -89,7 +87,7 @@ interface Model {
  * The following is an example of a route class that is bound to a data model providing basic CRUDS operations.
  *
  * ```javascript
- * import { DefaultBehaviors, ModelDecorators, ModelRoute, RouteDecorators } from "@rapidrest/service_core";
+ * import { DefaultBehaviors, ModelDecorators, ModelRoute, RouteDecorators } from "@acceleratxr/service_core";
  * import { After, Before, Delete, Get, Post, Put, Route, Validate } = RouteDecorators;
  * import { Model } = ModelDecorators;
  * import { marshall } = DefaultBehaviors;
@@ -334,7 +332,7 @@ export class Server {
                     server: this.server,
                 });
                 this.app = addWebSocket(this.app, this.wss);
-                this.app.use(express.static(path.join(__dirname, "public")));
+                this.app.use(express.static(path.join(this.basePath, "public")));
                 this.app.use(
                     express.json({
                         verify: (req: any, res: any, buf: any) => {
@@ -379,9 +377,11 @@ export class Server {
                             saveUninitialized: false,
                             secret: sessionConfig.secret,
                             store: cacheClient
-                                ? new RedisStore(cacheClient)
+                                ? new RedisStore({
+                                      client: cacheClient,
+                                  })
                                 : undefined,
-                        })
+                        }),
                     );
                     this.app.use(passport.session());
                 }
@@ -415,7 +415,7 @@ export class Server {
 
                 // Set all custom headers
                 const headers: any = this.config.get("headers") || {
-                    "x-powered-by": "RapidREST",
+                    "x-powered-by": "composer.js",
                 };
                 this.app.use((req: Request, res: Response, next: NextFunction) => {
                     for (const key in headers) {

@@ -1,10 +1,11 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { Route, Get, User, Auth, WebSocket, Socket, Query } from "../../../src/decorators/RouteDecorators.js";
-import { ApiError, ObjectDecorators } from "@rapidrest/core";
-import { Description, Returns, Summary } from "../../../src/decorators/DocDecorators.js";
-import { ApiErrors, ApiErrorMessages } from "../../../src/ApiErrors.js";
+import { Route, Get, User, Auth, WebSocket, Socket, Query } from "../../../src/decorators/RouteDecorators";
+import { ApiError, Logger, ObjectDecorators } from "@rapidrest/core";
+import * as ws from "ws";
+import { Description, Returns, Summary } from "../../../src/decorators/DocDecorators";
+import { ApiErrors, ApiErrorMessages } from "../../../src/ApiErrors";
 const { Init } = ObjectDecorators;
 
 @Route("/")

@@ -1,10 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { Entity, Column, Index } from "typeorm";
-import { Identifier, DataStore, TrackChanges } from "../../../src/decorators/ModelDecorators.js";
-import { RecoverableBaseMongoEntity } from "../../../src/models/index.js";
-import { Description } from "../../../src/decorators/DocDecorators.js";
+import { Identifier, DataStore, TrackChanges } from "../../../src/decorators/ModelDecorators";
+import { RecoverableBaseMongoEntity } from "../../../src/models";
+import { Description } from "../../../src/decorators/DocDecorators";
 
 @DataStore("mongodb")
 @Entity()

@@ -1,12 +1,12 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { Logger } from "@rapidrest/core";
-import UserModel from "../models/ProtectedUser.js";
+import UserModel from "../models/ProtectedUser";
 import { Response as XResponse } from "express";
-import { DocDecorators, RouteDecorators } from "../../../src/decorators/index.js";
-import { ModelRoute } from "../../../src/routes/ModelRoute.js";
-import { RepoUtils } from "../../../src/models/index.js";
+import { DocDecorators, RouteDecorators } from "../../../src/decorators";
+import { ModelRoute } from "../../../src/routes/ModelRoute";
+import { RepoUtils } from "../../../src/models";
 const { Description, Summary } = DocDecorators;
 const { Route, Get, Post, Validate, Delete, Head, Put, Param, User, Query, Response, Before, Model } = RouteDecorators;
 

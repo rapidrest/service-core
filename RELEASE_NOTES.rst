@@ -5,7 +5,7 @@ Release Notes
 v7.0.0
 ======
 
-- Upgrading to latest `rapidrest-js/core`
+- Upgrading to latest `rapidrest/core`
 - Fix underlying destroy functionality
 
 v6.0.1

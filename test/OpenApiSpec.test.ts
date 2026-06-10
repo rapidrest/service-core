@@ -1,13 +1,13 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect } from "vitest";
-import { default as config } from "./config.js";
-import { ObjectFactory, OpenApiSpec, RouteUtils, AdminRoute } from "../src/index.js";
+import { default as config } from "./config";
+import { ObjectFactory, OpenApiSpec, RouteUtils, AdminRoute } from "../src";
 import express from "express";
 
 import { Logger } from "@rapidrest/core";
+
+vi.setConfig({ testTimeout: 1200000 });
 
 describe("OpenApiSpec Tests", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());

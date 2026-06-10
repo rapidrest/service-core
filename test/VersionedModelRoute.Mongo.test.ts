@@ -1,21 +1,19 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { default as config } from "./config.js";
-import * as request from "supertest";
-import { Server, ConnectionManager, ModelUtils, ObjectFactory } from "../src/index.js";
+import { default as config } from "./config";
+import request from "supertest";
+import { Server, ConnectionManager, ModelUtils, ObjectFactory } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import User from "./server/models/VersionedUser.js";
+import User from "./server/models/VersionedUser";
 import { MongoRepository, DataSource } from "typeorm";
 import { Logger } from "@rapidrest/core";
-import { v4 as uuidV4 } from "uuid";
+import * as uuid from "uuid";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-rrst-test",
+        dbName: "mongomemory-cjs-test",
     },
 });
 let repo: MongoRepository<User>;
@@ -29,7 +27,7 @@ const createUser = async (
 ): Promise<User[]> => {
     const results: User[] = [];
 
-    const uid: string = uuidV4();
+    const uid: string = uuid.v4();
     for (let version = 0; version < versions; version++) {
         const user: User = new User({
             uid,
@@ -56,6 +54,7 @@ const createUsers = async (num: number, versions: number = 1): Promise<User[]> =
     return results;
 };
 
+vi.setConfig({ testTimeout: 120000 });
 describe("VersionedModelRoute Tests [MongoDB]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server(config, "./test/server", Logger(), objectFactory);

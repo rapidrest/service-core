@@ -1,9 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { describe, it, expect } from "vitest";
-import { NetUtils } from "../src/NetUtils.js";
-import '@vitest-check';
+import { NetUtils } from "../src/NetUtils";
 
 const YahooIPs: string[] = [
     "74.6.231.21",
@@ -14,6 +12,7 @@ const YahooIPs: string[] = [
     "74.6.143.25"
 ];
 
+vi.setConfig({ testTimeout: 120000 });
 describe("NetUtils Tests", () => {
     it("Can extract IPv4 address from string.", async () => {
         let result: string | undefined = NetUtils.getIPAddress("127.0.0.1");

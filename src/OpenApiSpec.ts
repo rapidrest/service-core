@@ -4,7 +4,7 @@
 import { oas31 as oa } from "openapi3-ts";
 import { DocumentsData } from "./decorators/DocDecorators.js";
 import merge from "deepmerge";
-import _ from "lodash";
+import * as _ from "lodash";
 import { ObjectDecorators, StringUtils } from "@rapidrest/core";
 const { Config, Init } = ObjectDecorators;
 
@@ -314,7 +314,7 @@ export class OpenApiSpec {
         method: string,
         metadata: any,
         docs: DocumentsData,
-        routeClass: any
+        routeClass: any,
     ): OpenApiSpec {
         const { after, authRequired, before } = metadata;
         let { authStrategies } = metadata;
@@ -641,8 +641,8 @@ export class OpenApiSpec {
                             description,
                             example,
                             format,
-                            identifier
-                        )
+                            identifier,
+                        ),
                     );
                 }
             }
@@ -688,7 +688,7 @@ export class OpenApiSpec {
         description?: string,
         example?: any,
         format?: string,
-        identifier?: boolean
+        identifier?: boolean,
     ): oa.SchemaObject | oa.ReferenceObject {
         let result: oa.SchemaObject | oa.ReferenceObject = {
             default: defaultValue,

@@ -21,8 +21,8 @@ source_suffix = ['.rst', '.md']
 # -- Project information -----------------------------------------------------
 
 project = 'Core Library'
-copyright = 'rapidrest, Inc. All rights reserved.'
-author = 'rapidrest, Inc.'
+copyright = 'RapidREST All rights reserved.'
+author = 'RapidREST'
 
 # -- General configuration ---------------------------------------------------
 

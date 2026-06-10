@@ -1,10 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity.js";
+import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity";
 import { Index, Entity, Column } from "typeorm";
-import { Identifier, DataStore } from "../../../src/decorators/ModelDecorators.js";
-import { Description, TypeInfo } from "../../../src/decorators/DocDecorators.js";
+import { Identifier, DataStore } from "../../../src/decorators/ModelDecorators";
+import { Description, TypeInfo } from "../../../src/decorators/DocDecorators";
 import { ObjectDecorators, ValidationUtils } from "@rapidrest/core";
 const { Nullable, Validator } = ObjectDecorators;
 

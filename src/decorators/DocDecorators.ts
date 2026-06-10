@@ -100,7 +100,7 @@ export function Tags(value: string[]) {
 
 /**
  * Stores runtime metadata about the typing information of a function's return value.
- * 
+ *
  * @param types The optional return type(s) of the function. Can represent a single type (e.g. `MyClass`) or a union
  * of types (e.g. `string | number | null`). When describing a generic type such as a collection this
  * should be encoded as an array with the templated type as additional elements (e.g. `Array<MyClass>`
@@ -119,7 +119,7 @@ export function Returns(types?: any | any[]) {
 
 /**
  * Stores runtime metadata about the typing information of a class property.
- * 
+ *
  * @param types The optional primary type(s) of the property. Can represent a single type (e.g. `MyClass`) or a union
  * of types (e.g. `string | number | null`). When describing a generic type such as a collection this
  * should be encoded as an array with the templated type as additional elements (e.g. `Array<MyClass>`

@@ -1,5 +1,5 @@
-///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+﻿///////////////////////////////////////////////////////////////////////////////
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ////////////////////////////////////////////////////////////////////////////////
 import * as crypto from "crypto";
 import { Repository, MongoRepository, EntityMetadata, DataSource } from "typeorm";
@@ -127,7 +127,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         if (!this.repo) {
             if (!this.modelClass.datastore) {
                 throw new Error(
-                    `Cannot initialize RepoUtils. Did you forget to add @DataStore() to ${this.modelClass.name}?`
+                    `Cannot initialize RepoUtils. Did you forget to add @DataStore() to ${this.modelClass.name}?`,
                 );
             }
 
@@ -138,7 +138,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             const ds: any = this.connectionManager.connections.get(this.modelClass.datastore);
             if (!ds) {
                 throw new Error(
-                    `Cannot initialize RepoUtils. No connection found for datastore '${this.modelClass.datastore}'`
+                    `Cannot initialize RepoUtils. No connection found for datastore '${this.modelClass.datastore}'`,
                 );
             }
 
@@ -176,14 +176,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                             try {
                                 // Configure the sharded collection with the MongoDB server.
                                 const dbName: string = this.config.get(
-                                    `datastores:${this.modelClass.datastore}:database`
+                                    `datastores:${this.modelClass.datastore}:database`,
                                 );
                                 this.logger.info(
                                     `Configuring sharding for: collection=${dbName}.${
                                         metadata.tableName
                                     }, key=${JSON.stringify(shardConfig.key)}, unique=${
                                         shardConfig.unique
-                                    }, options=${JSON.stringify(shardConfig.options)})`
+                                    }, options=${JSON.stringify(shardConfig.options)})`,
                                 );
                                 const result: any = await admin.command({
                                     shardCollection: `${dbName}.${metadata.tableName}`,
@@ -194,7 +194,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                                 this.logger.debug(`Result: ${JSON.stringify(result)}`);
                             } catch (e: any) {
                                 this.logger.warn(
-                                    `There was a problem trying to configure MongoDB sharding for collection '${metadata.tableName}'. Error=${e.message}`
+                                    `There was a problem trying to configure MongoDB sharding for collection '${metadata.tableName}'. Error=${e.message}`,
                                 );
                             }
                         }
@@ -264,7 +264,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // Instantiate the object if not already done
         const clazz: any = this.getClassType(obj);
-        const newObj: T = obj instanceof clazz ? obj as T : this.instantiateObject(obj, clazz);
+        const newObj: T = obj instanceof clazz ? (obj as T) : this.instantiateObject(obj, clazz);
 
         // Make sure an existing object doesn't already exist with the same identifiers
         const ids: any[] = [];
@@ -277,13 +277,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 ids.push(val);
             }
         }
-        const query: any = ModelUtils.buildIdSearchQuery(
-            this.repo,
-            clazz,
-            ids,
-            undefined,
-            (newObj as any).productUid
-        );
+        const query: any = ModelUtils.buildIdSearchQuery(this.repo, clazz, ids, undefined, (newObj as any).productUid);
         const count: number = await this.repo.count(query);
         if (!this.modelClass.trackChanges && count > 0) {
             throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
@@ -366,7 +360,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             this.modelClass,
             uid,
             options.version ? Number(options.version) : undefined,
-            options.productUid
+            options.productUid,
         );
 
         // If the object(s) are being permenantly removed from the database do so and then clear the accompanying
@@ -482,7 +476,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 void this.cacheClient.setex(
                     `${this.baseCacheKey}.${searchQueryHash}`,
                     this.modelClass.cacheTTL,
-                    JSON.stringify(uids)
+                    JSON.stringify(uids),
                 );
             }
         }
@@ -540,7 +534,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             void this.cacheClient.setex(
                 `${this.baseCacheKey}.${this.hashQuery(query)}`,
                 this.modelClass.cacheTTL,
-                JSON.stringify(existing)
+                JSON.stringify(existing),
             );
         }
 
@@ -579,7 +573,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     /**
      * Returns the class type (constructor) for the given object. This uses the `_fqn` or `_type` property of `obj` to
      * identify the class. If neither property is defined `modelClass` is assumed.
-     * 
+     *
      * @param obj The object whose class type to look up.
      * @returns The class type (constructor) associated with the given object.
      */
@@ -623,7 +617,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             this.modelClass,
             id,
             typeof version === "string" ? parseInt(version, 10) : version,
-            productUid
+            productUid,
         );
     }
 
@@ -729,7 +723,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         let query: any = this.searchIdQuery(
             existing.uid,
             options?.version || (obj as any).version,
-            options?.productUid || (obj as any).productUid
+            options?.productUid || (obj as any).productUid,
         );
         let result: T | null = null;
 
@@ -742,7 +736,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                             _id: undefined, // Ensure we save a new document
                             dateModified: new Date(),
                             version: (obj as any).version + 1,
-                        } as any)
+                        } as any),
                     );
                 } else {
                     await this.repo.updateOne(
@@ -753,7 +747,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                                 dateModified: new Date(),
                                 version: (obj as any).version + 1,
                             },
-                        }
+                        },
                     );
                 }
             } else if (obj.uid) {
@@ -762,7 +756,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         await this.repo.save({
                             ...obj,
                             version: (obj as any).version + 1,
-                        } as any)
+                        } as any),
                     );
                 } else {
                     await this.repo.updateOne(
@@ -771,7 +765,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                             $set: {
                                 ...obj,
                             },
-                        }
+                        },
                     );
                 }
             } else {
@@ -838,12 +832,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             void this.cacheClient.setex(
                 `${this.baseCacheKey}.${this.hashQuery(query)}`,
                 this.modelClass.cacheTTL,
-                JSON.stringify(result)
+                JSON.stringify(result),
             );
             void this.cacheClient.setex(
                 `${this.baseCacheKey}.${this.hashQuery(this.searchIdQuery(result.uid))}`,
                 this.modelClass.cacheTTL,
-                JSON.stringify(result)
+                JSON.stringify(result),
             );
         }
 
@@ -881,9 +875,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         // Attempt to grab the repository for this reference type
                         const conn: any = this.connectionManager?.connections.get(clazz.datastore);
                         const repo: Repository<any> | undefined =
-                            conn instanceof DataSource
-                                ? conn.getRepository(clazz)
-                                : undefined;
+                            conn instanceof DataSource ? conn.getRepository(clazz) : undefined;
                         if (repo) {
                             // Check to see if there are any objects with this UID in the datastore. If the value is an array
                             // let's make sure that every uid is valid.
@@ -894,7 +886,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                                 throw new ApiError(
                                     ApiErrorMessages.INVALID_REQUEST,
                                     400,
-                                    `Property ${member} is invalid. No resource found with the given identifier.`
+                                    `Property ${member} is invalid. No resource found with the given identifier.`,
                                 );
                             }
                         }

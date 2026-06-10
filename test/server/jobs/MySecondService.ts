@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { BackgroundService } from "../../../src/BackgroundService.js";
+import { BackgroundService } from "../../../src/BackgroundService";
 
 export default class MySecondService extends BackgroundService {
     public counter: number;

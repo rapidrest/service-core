@@ -1,6 +1,7 @@
+﻿///////////////////////////////////////////////////////////////////////////////
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
-///////////////////////////////////////////////////////////////////////////////
+import { Repository, DataSource } from "typeorm";
 import { ModelUtils } from "../models/ModelUtils.js";
 import { RepoOperationOptions, RepoUtils } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
@@ -10,12 +11,13 @@ import { Request as XRequest, Response as XResponse } from "express";
 import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BulkError } from "../BulkError.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
-import { ApiError, Event, EventUtils, ObjectDecorators } from "@rapidrest/core";
+import { ApiError, Event, EventUtils, ObjectDecorators, ObjectUtils } from "@rapidrest/core";
 import { AccessControlList, ACLAction } from "../security/AccessControlList.js";
 import { ACLUtils } from "../security/ACLUtils.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { NetUtils } from "../NetUtils.js";
 import { ObjectFactory } from "../ObjectFactory.js";
+import { ConnectionManager } from "../database/index.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -197,12 +199,12 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
 
         const searchQuery: any = ModelUtils.buildSearchQuery(
-            this.modelClass,    
+            this.modelClass,
             this.repoUtils.repo,
             options.params,
             options.query,
             true,
-            options.user
+            options.user,
         );
         const result: number = await this.repoUtils.count(searchQuery, {
             limit: options.query?.limit,

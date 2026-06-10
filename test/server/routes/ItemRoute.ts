@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import {
     Query,
@@ -15,11 +15,11 @@ import {
     Put,
     Model,
 } from "../../../src/decorators/RouteDecorators";
-import { ModelRoute } from "../../../src/routes/ModelRoute.js";
-import Item from "../models/Item.js";
+import { ModelRoute } from "../../../src/routes/ModelRoute";
+import Item from "../models/Item";
 import { Response as XResponse } from "express";
-import { Description, Returns, TypeInfo, Summary } from "../../../src/decorators/DocDecorators.js";
-import { RepoUtils } from "../../../src/index.js";
+import { Description, Returns, TypeInfo, Summary } from "../../../src/decorators/DocDecorators";
+import { RepoUtils } from "../../../src";
 
 @Model(Item)
 @Route("/items")

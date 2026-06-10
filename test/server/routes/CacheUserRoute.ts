@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import {
     Route,
@@ -15,12 +15,12 @@ import {
     Response,
     User,
 } from "../../../src/decorators/RouteDecorators";
-import { ModelRoute } from "../../../src/routes/ModelRoute.js";
+import { ModelRoute } from "../../../src/routes/ModelRoute";
 import { Logger } from "@rapidrest/core";
-import UserModel from "../models/CacheUser.js";
+import UserModel from "../models/CacheUser";
 import { Response as XResponse } from "express";
-import { Description, Returns, Summary, TypeInfo } from "../../../src/decorators/DocDecorators.js";
-import { OneOrMany, OneOrNull, RepoUtils } from "../../../src/index.js";
+import { Description, Returns, Summary, TypeInfo } from "../../../src/decorators/DocDecorators";
+import { OneOrMany, OneOrNull, RepoUtils } from "../../../src";
 
 const logger = Logger();
 

@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import {
     After,
@@ -18,14 +18,14 @@ import {
     Response,
     User,
 } from "../../../src/decorators/RouteDecorators";
-import { ModelRoute } from "../../../src/routes/ModelRoute.js";
+import { ModelRoute } from "../../../src/routes/ModelRoute";
 import { Logger, ObjectDecorators } from "@rapidrest/core";
-import UserModel from "../models/User.js";
+import UserModel from "../models/User";
 import { MongoRepository as Repo } from "typeorm";
 import { Request as XRequest, Response as XResponse } from "express";
-import { Description, Returns, TypeInfo, Summary } from "../../../src/decorators/DocDecorators.js";
-import { RepoUtils } from "../../../src/index.js";
-import Player from "../models/Player.js";
+import { Description, Returns, TypeInfo, Summary } from "../../../src/decorators/DocDecorators";
+import { RepoUtils } from "../../../src";
+import Player from "../models/Player";
 const { Init } = ObjectDecorators;
 
 const logger = Logger();

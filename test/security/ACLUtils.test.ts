@@ -1,19 +1,20 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { default as config } from "../config.js";
+import { default as config } from "../config";
 import { MongoRepository, DataSource } from "typeorm";
-import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo.js";
+import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { AccessControlList, ACLRecord, ACLAction } from "../../src/security/AccessControlList.js";
-import { ACLUtils } from "../../src/security/ACLUtils.js";
+import { AccessControlList, ACLRecord, ACLAction } from "../../src/security/AccessControlList";
+import { ACLUtils } from "../../src/security/ACLUtils";
 import { Logger } from "@rapidrest/core";
-import { ObjectFactory } from "../../src/ObjectFactory.js";
-import { ModelUtils } from "../../src/models/ModelUtils.js";
-import { ConnectionManager } from "../../src/database/ConnectionManager.js";
+import { ObjectFactory } from "../../src/ObjectFactory";
+import { ModelUtils } from "../../src/models/ModelUtils";
+import { ConnectionManager } from "../../src/database/ConnectionManager";
 import Redis from "ioredis-mock";
+import * as uuid from "uuid";
+
+vi.setConfig({ testTimeout: 300000 });
 
 describe("ACLUtils Tests", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
@@ -22,7 +23,7 @@ describe("ACLUtils Tests", () => {
         const mongod: MongoMemoryServer = new MongoMemoryServer({
             instance: {
                 port: 9999,
-                dbName: "mongomemory-rrst-test",
+                dbName: "mongomemory-cjs-test",
             },
         });
         const redis: any = new Redis();
@@ -343,7 +344,7 @@ describe("ACLUtils Tests", () => {
             expect(acl).toBeDefined();
             if (acl) {
                 const record: ACLRecord | null | undefined = aclUtils?.getRecord(acl, {
-                    uid: uuidV4(),
+                    uid: uuid.v4(),
                     name: "admin",
                     roles: ["admin"],
                 });
@@ -360,7 +361,7 @@ describe("ACLUtils Tests", () => {
             expect(acl).toBeDefined();
             if (acl) {
                 const record: ACLRecord | null | undefined = aclUtils?.getRecord(acl, {
-                    uid: uuidV4(),
+                    uid: uuid.v4(),
                     name: "non-admin",
                     roles: [],
                 });
@@ -377,7 +378,7 @@ describe("ACLUtils Tests", () => {
             expect(acl).toBeDefined();
             if (acl) {
                 const record: ACLRecord | null | undefined = aclUtils?.getRecord(acl, {
-                    uid: uuidV4(),
+                    uid: uuid.v4(),
                     name: "invalid",
                     roles: [],
                 });
@@ -491,28 +492,28 @@ describe("ACLUtils Tests", () => {
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
-                const testMod: any = { uid: uuidV4(), roles: ["moderator"] };
+                const testMod: any = { uid: uuid.v4(), roles: ["moderator"] };
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.FULL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.DELETE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.READ)).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.SPECIAL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.UPDATE)).toBe(true);
-                const testOther: any = { uid: uuidV4(), roles: ["other"] };
+                const testOther: any = { uid: uuid.v4(), roles: ["other"] };
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.FULL)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.CREATE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.DELETE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.READ)).toBe(true);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.SPECIAL)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.UPDATE)).toBe(false);
-                const testSuper: any = { uid: uuidV4(), roles: ["super"] };
+                const testSuper: any = { uid: uuid.v4(), roles: ["super"] };
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.FULL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.DELETE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.READ)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.SPECIAL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.UPDATE)).toBe(true);
-                const testOrgSuper: any = { uid: uuidV4(), roles: ["bf98b869-cabe-452a-bf8d-674c48f2b5bd.super"] };
+                const testOrgSuper: any = { uid: uuid.v4(), roles: ["bf98b869-cabe-452a-bf8d-674c48f2b5bd.super"] };
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.FULL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.DELETE)).toBe(true);
@@ -520,7 +521,7 @@ describe("ACLUtils Tests", () => {
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.SPECIAL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.UPDATE)).toBe(true);
                 const testOtherOrgSuper: any = {
-                    uid: uuidV4(),
+                    uid: uuid.v4(),
                     roles: ["e75f12e2-7058-4bb2-a826-6f435c61dc1c.super"],
                 };
                 expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.CREATE)).toBe(false);
@@ -541,28 +542,28 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(true);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
-            const testOther: any = { uid: uuidV4(), roles: ["other"] };
+            const testOther: any = { uid: uuid.v4(), roles: ["other"] };
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.FULL)).toBe(false);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.CREATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.DELETE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.READ)).toBe(true);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.SPECIAL)).toBe(false);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.UPDATE)).toBe(false);
-            const testSuper: any = { uid: uuidV4(), roles: ["super"] };
+            const testSuper: any = { uid: uuid.v4(), roles: ["super"] };
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.FULL)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.CREATE)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.DELETE)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.READ)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.SPECIAL)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.UPDATE)).toBe(true);
-            const testOrgSuper: any = { uid: uuidV4(), roles: ["bf98b869-cabe-452a-bf8d-674c48f2b5bd.super"] };
+            const testOrgSuper: any = { uid: uuid.v4(), roles: ["bf98b869-cabe-452a-bf8d-674c48f2b5bd.super"] };
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.FULL)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.CREATE)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.DELETE)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.READ)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.SPECIAL)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.UPDATE)).toBe(true);
-            const testOtherOrgSuper: any = { uid: uuidV4(), roles: ["e75f12e2-7058-4bb2-a826-6f435c61dc1c.super"] };
+            const testOtherOrgSuper: any = { uid: uuid.v4(), roles: ["e75f12e2-7058-4bb2-a826-6f435c61dc1c.super"] };
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.CREATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.DELETE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.READ)).toBe(true);
@@ -572,8 +573,8 @@ describe("ACLUtils Tests", () => {
         });
 
         it("Can grant permission when no ACL available.", async () => {
-            const acl: string = uuidV4();
-            const testUser: any = { uid: uuidV4() };
+            const acl: string = uuid.v4();
+            const testUser: any = { uid: uuid.v4() };
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(true);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(true);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(true);
@@ -588,10 +589,10 @@ describe("ACLUtils Tests", () => {
                 method: "GET",
             };
             const user: any = {
-                uid: uuidV4(),
+                uid: uuid.v4(),
             };
             const superUser: any = {
-                uid: uuidV4(),
+                uid: uuid.v4(),
                 roles: ["super"],
             };
 
@@ -613,7 +614,7 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.checkRequestPerms("/test/path", superUser, req)).toBe(true);
 
             const admin: any = {
-                uid: uuidV4(),
+                uid: uuid.v4(),
                 roles: ["admin"],
             };
             req.method = "GET";
@@ -677,7 +678,7 @@ describe("ACLUtils Tests", () => {
 
         it("Can save ACL", async () => {
             const acl: AccessControlList = {
-                uid: uuidV4(),
+                uid: uuid.v4(),
                 records: [
                     {
                         userOrRoleId: "admin",
@@ -708,7 +709,7 @@ describe("ACLUtils Tests", () => {
             expect(acl).toBeDefined();
             if (acl) {
                 acl.records.push({
-                    userOrRoleId: uuidV4(),
+                    userOrRoleId: uuid.v4(),
                     create: false,
                     delete: false,
                     full: false,
@@ -735,7 +736,7 @@ describe("ACLUtils Tests", () => {
             expect(acl).toBeDefined();
             if (acl) {
                 acl.records.push({
-                    userOrRoleId: uuidV4(),
+                    userOrRoleId: uuid.v4(),
                     create: false,
                     delete: false,
                     full: false,

@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import {
     Repository,
@@ -16,10 +16,9 @@ import {
 } from "typeorm";
 import { ApiError, ClassLoader, Logger, StringUtils } from "@rapidrest/core";
 import "reflect-metadata";
-import { isEmpty } from "lodash";
+import _, { isEmpty } from "lodash";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
-import _ from "lodash";
 
 const logger = Logger();
 

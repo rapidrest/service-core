@@ -1,17 +1,17 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
 // This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server)
-vi.mock('ioredis', () => require('ioredis-mock'));
+vi.mock("ioredis", async () => {
+    const RedisMock = await import("ioredis-mock");
+    return { Redis: RedisMock.default || RedisMock };
+});
 
-import { default as config } from "./config.js";
-import { Server } from "../src/index.js";
+import { default as config } from "./config";
+import { Server } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as sqlite3 from "sqlite3";
-import { v4 as uuidV4 } from "uuid";
+import * as uuid from "uuid";
 import requestws from "superwstest";
 
 import { JWTUtils } from "@rapidrest/core";
@@ -19,42 +19,43 @@ import { JWTUtils } from "@rapidrest/core";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-rrst-test",
+        dbName: "mongomemory-cjs-test",
     },
 });
 const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
+vi.setConfig({ testTimeout: 30000 });
 
 describe("AdminRoute Tests", () => {
     const basePath = "/admin";
     const server: Server = new Server(config, "./test/server");
     const serviceName: string = config.get("service_name");
     const admin: any = {
-        uid: uuidV4(),
+        uid: uuid.v4(),
         personas: [
             {
-                uid: uuidV4(),
-                name: "Persona1"
+                uid: uuid.v4(),
+                name: "Persona1",
             },
             {
-                uid: uuidV4(),
-                name: "Persona2"
-            }
+                uid: uuid.v4(),
+                name: "Persona2",
+            },
         ],
-        roles: config.get("trusted_roles")
+        roles: config.get("trusted_roles"),
     };
     const adminToken = JWTUtils.createToken(config.get("auth"), admin);
     const user: any = {
-        uid: uuidV4(),
+        uid: uuid.v4(),
         personas: [
             {
-                uid: uuidV4(),
-                name: "Persona1"
+                uid: uuid.v4(),
+                name: "Persona1",
             },
             {
-                uid: uuidV4(),
-                name: "Persona2"
-            }
-        ]
+                uid: uuid.v4(),
+                name: "Persona2",
+            },
+        ],
     };
     const authToken = JWTUtils.createToken(config.get("auth"), user);
 

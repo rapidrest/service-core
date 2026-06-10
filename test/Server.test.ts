@@ -1,29 +1,28 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
 const corsOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"];
 process.env[`cors__origins`] = JSON.stringify(corsOrigins);
 
 import * as fs from "fs";
-import { default as config } from "./config.js";
-import { Server, ObjectFactory, ApiErrors } from "../src/index.js";
+import { default as config } from "./config";
+import { Server, ObjectFactory, ApiErrors } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import * as request from "supertest";
+import request from "supertest";
 import * as sqlite3 from "sqlite3";
-import { v4 as uuidV4 } from "uuid";
+import * as uuid from "uuid";
 
 import { JWTUtils, Logger, sleep } from "@rapidrest/core";
-import { StatusExtraData } from "../src/models/StatusExtraData.js";
+import { StatusExtraData } from "../src/models/StatusExtraData";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-rrst-test",
+        dbName: "mongomemory-cjs-test",
     },
 });
 const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
+vi.setConfig({ testTimeout: 1200000 });
 const regenOpenapiFile = process.env["XBE_REGEN"] || false;
 describe("Server Tests", () => {
     const logger = new Logger();
@@ -219,7 +218,7 @@ describe("Server Tests", () => {
     });
 
     it("Can authorize user.", async () => {
-        const user: any = { uid: uuidV4() };
+        const user: any = { uid: uuid.v4() };
         const token = JWTUtils.createToken(config.get("auth"), user);
         const result = await request(server.getApplication())
             .get("/token")
@@ -229,7 +228,7 @@ describe("Server Tests", () => {
     });
 
     it("Can authorize user with query param.", async () => {
-        const user: any = { uid: uuidV4() };
+        const user: any = { uid: uuid.v4() };
         const token = JWTUtils.createToken(config.get("auth"), user);
         const result = await request(server.getApplication()).get("/token?jwt_token=" + token);
         expect(result.status).toBe(200);

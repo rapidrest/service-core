@@ -1,10 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { Default, Description } from "../decorators/DocDecorators.js";
 import { Identifier } from "../decorators/ModelDecorators.js";
 import { Index, PrimaryColumn } from "typeorm";
-import { v4 as uuidV4 } from "uuid";
+import * as uuid from "uuid";
 
 /**
  * Provides a simple base class for all entity's that will be persisted with TypeORM. Unlike `BaseEntity` this class
@@ -21,7 +21,7 @@ export abstract class SimpleEntity {
     @Identifier
     @Index()
     @PrimaryColumn()
-    public uid: string = uuidV4();
+    public uid: string = uuid.v4();
 
     constructor(other?: Partial<SimpleEntity>) {
         if (other) {

@@ -5,7 +5,9 @@ import { Strategy } from "passport-strategy";
 import { JWTUtils, JWTUtilsConfig, JWTUser, JWTPayload, ApiError } from "@rapidrest/core";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import dayjs from "dayjs";
-import duration from "dayjs/plugin/duration.js";
+import { createRequire } from "module";
+const _require = createRequire(process.cwd() + "/package.json");
+const duration = _require("dayjs/plugin/duration");
 dayjs.extend(duration);
 
 /**

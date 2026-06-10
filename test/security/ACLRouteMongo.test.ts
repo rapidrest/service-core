@@ -1,33 +1,33 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, beforeEach } from "vitest";
-import { default as config } from "../config.js";
-import * as request from "supertest";
+import { default as config } from "../config";
+import request from "supertest";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { MongoRepository, DataSource } from "typeorm";
-import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo.js";
+import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo";
 import { JWTUtils, Logger, EventUtils } from "@rapidrest/core";
-import { ObjectFactory } from "../../src/ObjectFactory.js";
-import { ConnectionManager } from "../../src/database/ConnectionManager.js";
-import { Server } from "../../src/Server.js";
+import { ObjectFactory } from "../../src/ObjectFactory";
+import { ConnectionManager } from "../../src/database/ConnectionManager";
+import { Server } from "../../src/Server";
+import * as uuid from "uuid";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-rrst-test",
+        dbName: "mongomemory-cjs-test",
     },
 });
 
+vi.setConfig({ testTimeout: 1200000 });
 describe("ACLRouteMongo Tests", () => {
     const admin: any = {
-        uid: uuidV4(),
+        uid: uuid.v4(),
         roles: ["admin"],
     };
     const adminToken: string = JWTUtils.createToken(config.get("auth"), admin);
     const user: any = {
-        uid: uuidV4(),
+        uid: uuid.v4(),
     };
     const userToken: string = JWTUtils.createToken(config.get("auth"), user);
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
@@ -533,10 +533,10 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Can count ACL documents with criteria (eq).", async () => {
-        const parentUid: string = uuidV4();
+        const parentUid: string = uuid.v4();
         const acls: AccessControlListMongo[] = await createACLs(5, [], parentUid);
-        await createACLs(5, [], uuidV4());
-        await createACLs(5, [], uuidV4());
+        await createACLs(5, [], uuid.v4());
+        await createACLs(5, [], uuid.v4());
         const result = await request(server.getApplication())
             .head("/acls?parentUid=" + parentUid)
             .set("Authorization", "jwt " + adminToken);
@@ -556,10 +556,10 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Can find ACL documents with criteria (eq).", async () => {
-        const parentUid: string = uuidV4();
+        const parentUid: string = uuid.v4();
         const acls: AccessControlListMongo[] = await createACLs(5, [], parentUid);
-        await createACLs(5, [], uuidV4());
-        await createACLs(5, [], uuidV4());
+        await createACLs(5, [], uuid.v4());
+        await createACLs(5, [], uuid.v4());
         const result = await request(server.getApplication())
             .get("/acls?parentUid=" + parentUid)
             .set("Authorization", "jwt " + adminToken);

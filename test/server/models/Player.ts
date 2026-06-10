@@ -1,11 +1,11 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { Column } from "typeorm";
-import { ChildEntity, Reference } from "../../../src/decorators/ModelDecorators.js";
-import { Description } from "../../../src/decorators/DocDecorators.js";
-import Item from "./Item.js";
-import User from "./User.js";
+import { ChildEntity, Reference } from "../../../src/decorators/ModelDecorators";
+import { Description } from "../../../src/decorators/DocDecorators";
+import Item from "./Item";
+import User from "./User";
 import { ObjectDecorators } from "@rapidrest/core";
 const { Nullable } = ObjectDecorators;
 

@@ -1,10 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity.js";
+import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity";
 import { Entity, Column } from "typeorm";
-import { Cache, DataStore } from "../../../src/decorators/ModelDecorators.js";
-import { Description } from "../../../src/decorators/DocDecorators.js";
+import { Cache, DataStore } from "../../../src/decorators/ModelDecorators";
+import { Description } from "../../../src/decorators/DocDecorators";
 
 @DataStore("mongodb")
 @Entity()

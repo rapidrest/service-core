@@ -13,8 +13,8 @@ docs/_build
 node_modules/
 temp/
 tmp*
-rrst-test
-rrst-test
+axr-test
+cjs-test
 mongomemory-*-test
 .pnp.*
 .yarn/*

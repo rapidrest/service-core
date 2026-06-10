@@ -1,9 +1,9 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { Logger } from "@rapidrest/core";
-import { RouteDecorators } from "../../../src/decorators/index.js";
-import { Description, Summary } from "../../../src/decorators/DocDecorators.js";
+import { RouteDecorators } from "../../../src/decorators";
+import { Description, Summary } from "../../../src/decorators/DocDecorators";
 const { Auth, Get, Protect, RequiresRole, Route, User } = RouteDecorators;
 
 const logger = Logger();

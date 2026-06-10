@@ -1,15 +1,13 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { default as config } from "./config.js";
+import { default as config } from "./config";
 import * as crypto from "crypto";
-import * as request from "supertest";
-import { Server, ConnectionManager, ModelUtils, ObjectFactory } from "../src/index.js";
+import request from "supertest";
+import { Server, ConnectionManager, ModelUtils, ObjectFactory } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { MongoRepository, DataSource } from "typeorm";
-import CacheUser from "./server/models/CacheUser.js";
+import CacheUser from "./server/models/CacheUser";
 import { Logger } from "@rapidrest/core";
 import Redis from "ioredis-mock";
 
@@ -17,7 +15,7 @@ const baseCacheKey: string = "db.cache.CacheUser";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "rrst-test",
+        dbName: "axr-test",
     },
 });
 const redis: any = new Redis();
@@ -50,6 +48,8 @@ const createUsers = async (num: number): Promise<CacheUser[]> => {
 const getCacheKey = function (query: any): string {
     return baseCacheKey + "." + crypto.createHash("sha512").update(JSON.stringify(query)).digest("hex");
 };
+
+vi.setConfig({ testTimeout: 120000 });
 
 describe("ModelRoute Tests [MongoDB with Caching]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());

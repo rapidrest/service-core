@@ -12,19 +12,14 @@
             "type": "node"
         },
         {
-            "name": "Debug Vitest (ts-node/esm)",
             "type": "node",
+            "name": "vscode-jest-tests",
             "request": "launch",
-            "runtimeArgs": [
-                "--loader",
-                "ts-node/esm"
-            ],
-            "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
-            "args": ["--run", "--inspect-brk", "--no-file-parallelism"],
-            "autoAttachChildProcesses": true,
-            "smartStep": true,
-            "skipFiles": ["<node_internals>/**"],
-            "cwd": "${workspaceFolder}"
+            "program": "${workspaceFolder}/node_modules/jest/bin/jest",
+            "args": ["--runInBand", "--detectOpenHandles"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen"
         }
     ]
 }

@@ -1,0 +1,30 @@
+diff --git a/dist/lib/ClassLoader.js b/dist/lib/ClassLoader.js
+index 4064f03ebf16be6176055f8b4ac4a884d38d15d0..df2448d3d0b0762af7b4eb36b6bed8a5af482c1e 100644
+--- a/dist/lib/ClassLoader.js
++++ b/dist/lib/ClassLoader.js
+@@ -3,6 +3,7 @@
+ ///////////////////////////////////////////////////////////////////////////////
+ import fs from "fs";
+ import path from "path";
++import { pathToFileURL } from "url";
+ /**
+  * The *ClassLoader* provides a container for dynamically loading classes at runtime using C#/Java style namespaces.
+  * Namespaces are determined from the folder structure relative to the root.
+@@ -126,7 +127,7 @@ export class ClassLoader {
+                 await this.load(subdir);
+             }
+             else if (this.includeJavaScript && extension.match(/^\.(js|cjs|mjs)$/)) {
+-                const mod = await import(fullpath);
++                const mod = await import(pathToFileURL(fullpath).href);
+                 if (mod) {
+                     for (let name in mod) {
+                         let clazz = mod[name];
+@@ -140,7 +141,7 @@ export class ClassLoader {
+                 }
+             }
+             else if (this.includeTypeScript && extension.match(/^\.(ts|cts|mts|tsx)$/)) {
+-                const mod = await import(fullpath);
++                const mod = await import(pathToFileURL(fullpath).href);
+                 if (mod) {
+                     for (let name in mod) {
+                         let clazz = mod[name];

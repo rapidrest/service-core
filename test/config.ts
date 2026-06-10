@@ -1,14 +1,11 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import nconf from "nconf";
-const conf = nconf
-    .argv()
-    .env({
-        separator: "__",
-        lowerCase: true,
-        parseValues: true,
-    });
+const conf = require("nconf").argv().env({
+    separator: "__",
+    lowerCase: true,
+    parseValues: true,
+});
 
 conf.use("memory");
 
@@ -35,7 +32,7 @@ conf.defaults({
         sqlite: {
             type: "sqlite",
             host: "localhost",
-            database: "rrst-test",
+            database: "cjs-test",
             synchronize: true,
         },
     },

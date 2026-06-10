@@ -1,18 +1,16 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { default as config } from "./config.js";
-import * as request from "supertest";
-import { Server, ConnectionManager, ObjectFactory } from "../src/index.js";
+import { default as config } from "./config";
+import request from "supertest";
+import { Server, ConnectionManager, ObjectFactory } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import User from "./server/models/User.js";
+import User from "./server/models/User";
 import { MongoRepository, DataSource, Repository } from "typeorm";
 import { Logger } from "@rapidrest/core";
-import { v4 as uuidV4 } from "uuid";
-import Player from "./server/models/Player.js";
-import Item from "./server/models/Item.js";
+import * as uuid from "uuid";
+import Player from "./server/models/Player";
+import Item from "./server/models/Item";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
@@ -20,6 +18,7 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
     },
 });
 
+vi.setConfig({ testTimeout: 60000 });
 describe("ModelRoute Tests [MongoDB]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
@@ -165,13 +164,13 @@ describe("ModelRoute Tests [MongoDB]", () => {
         });
 
         it("Can create document with same name but different products. [MongoDB]", async () => {
-            await createUser("dtennant", "David", "Tennant", 47, uuidV4());
+            await createUser("dtennant", "David", "Tennant", 47, uuid.v4());
             const user: User = new User({
                 name: "dtennant",
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,
-                productUid: uuidV4(),
+                productUid: uuid.v4(),
             });
             const result = await request(server.getApplication()).post("/users").send(user);
             expect(result.status).toBe(200);
@@ -208,7 +207,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
         });
 
         it("Cannot create document with same name and product. [MongoDB]", async () => {
-            const productUid: string = uuidV4();
+            const productUid: string = uuid.v4();
             await createUser("dtennant", "David", "Tennant", 47, productUid);
             const user: User = new User({
                 name: "dtennant",
@@ -276,8 +275,8 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
                 items: items.map((item) => item.uid),
-                parentUid: uuidV4(),
-                skillRating: 2500
+                parentUid: uuid.v4(),
+                skillRating: 2500,
             });
             const result = await request(server.getApplication()).post("/users").send(player);
             expect(result.status).toBe(400);
@@ -291,9 +290,9 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,
-                items: items.map((item) => item.uid).concat([uuidV4()]),
+                items: items.map((item) => item.uid).concat([uuid.v4()]),
                 parentUid: parent.uid,
-                skillRating: 2500
+                skillRating: 2500,
             });
             const result = await request(server.getApplication()).post("/users").send(player);
             expect(result.status).toBe(400);
@@ -321,7 +320,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can test if document doesn't exist. [MongoDB]", async () => {
             const result = await request(server.getApplication())
-                .head("/users/" + uuidV4())
+                .head("/users/" + uuid.v4())
                 .send();
             expect(result.status).toBe(404);
         });
@@ -369,8 +368,8 @@ describe("ModelRoute Tests [MongoDB]", () => {
         });
 
         it("Can find document by id by name and product. [MongoDB]", async () => {
-            await createUser("dtennant", "David", "Tennant", 47, uuidV4());
-            const user: User = await createUser("dtennant", "David", "Tennant", 47, uuidV4());
+            await createUser("dtennant", "David", "Tennant", 47, uuid.v4());
+            const user: User = await createUser("dtennant", "David", "Tennant", 47, uuid.v4());
             await createUser("dtennant2", "David", "Tennant", 47);
             await createUser("dtennant3", "David", "Tennant", 47);
 

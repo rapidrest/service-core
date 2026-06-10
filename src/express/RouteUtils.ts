@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, JWTPayload, JWTUser, JWTUtils, ObjectDecorators, UserUtils } from "@rapidrest/core";
 import { Request, Response, NextFunction, RequestHandler } from "express";
@@ -8,9 +8,9 @@ import { RequestWS } from "./WebSocket.js";
 import { OpenApiSpec } from "../OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { AccessControlList, ACLUtils } from "../security/index.js";
-const { Config, Inject, Logger } = ObjectDecorators;
 import passport from "passport";
 import _ from "lodash";
+const { Config, Inject, Logger } = ObjectDecorators;
 
 /**
  * Provides a set of utilities for converting Route classes to ExpressJS middleware.
@@ -362,31 +362,14 @@ export class RouteUtils {
 
                         // If auth strategies are provided add the necessary passport middleware
                         if (authStrategies && authStrategies.length > 0) {
-                            // Passport no longer supports the allowFailure flag so we must write our own wrapper
-                            // to provide this functionality.
-                            if (authRequired) {
-                                app[verb](
-                                    path,
-                                    passport.authenticate(authStrategies, {
-                                        session: false,
-                                    }, undefined),
-                                    ...middleware
-                                );
-                            } else {
-                                app[verb](
-                                    path,
-                                    (req, res, next) => {
-                                        passport.authenticate(authStrategies, {
-                                            session: false,
-                                        }, (err, user) => {
-                                            if (err) { return next(err); }
-                                            req.user = user || undefined;
-                                            next();
-                                        })(req, res, next);
-                                    },
-                                    ...middleware
-                                );
-                            }
+                            app[verb](
+                                path,
+                                passport.authenticate(authStrategies, {
+                                    session: false,
+                                    allowFailure: !authRequired,
+                                } as passport.AuthenticateOptions),
+                                ...middleware,
+                            );
                         } else {
                             app[verb](path, ...middleware);
                         }

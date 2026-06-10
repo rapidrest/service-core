@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { ObjectIdColumn } from "typeorm";
 import { BaseEntity } from "./BaseEntity.js";
@@ -18,7 +18,7 @@ export abstract class BaseMongoEntity extends BaseEntity {
      */
     @ObjectIdColumn()
     @Nullable
-    public _id?: string | ObjectId | Uint8Array;
+    public _id?: any;
 
     constructor(other?: Partial<BaseMongoEntity>) {
         super(other);

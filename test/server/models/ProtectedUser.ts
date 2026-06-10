@@ -1,9 +1,9 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { Entity, Column, Index } from "typeorm";
-import { ModelDecorators } from "../../../src/decorators/index.js";
-import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity.js";
+import { ModelDecorators } from "../../../src/decorators";
+import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity";
 const { DataStore, Identifier, Protect } = ModelDecorators;
 
 @DataStore("mongodb")

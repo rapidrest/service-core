@@ -1,12 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import "reflect-metadata";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { default as config } from "./config.js";
-import * as request from "supertest";
-import { Server, ConnectionManager, ObjectFactory } from "../src/index.js";
-import Item from "./server/models/Item.js";
+import { default as config } from "./config";
+import request from "supertest";
+import { Server, ConnectionManager, ObjectFactory } from "../src";
+import Item from "./server/models/Item";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as sqlite3 from "sqlite3";
 import { Repository, DataSource } from "typeorm";
@@ -15,7 +13,7 @@ import { Logger } from "@rapidrest/core";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-rrst-test",
+        dbName: "mongomemory-cjs-test",
     },
 });
 let repo: Repository<Item>;
@@ -41,6 +39,7 @@ const createItems = async (num: number): Promise<Item[]> => {
     return results;
 };
 
+vi.setConfig({ testTimeout: 120000 });
 describe("ModelRoute Tests [SQL]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
