@@ -15,7 +15,7 @@ const baseCacheKey: string = "db.cache.CacheUser";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "axr-test",
+        dbName: "rrst-test",
     },
 });
 const redis: any = new Redis();

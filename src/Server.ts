@@ -87,7 +87,7 @@ interface Model {
  * The following is an example of a route class that is bound to a data model providing basic CRUDS operations.
  *
  * ```javascript
- * import { DefaultBehaviors, ModelDecorators, ModelRoute, RouteDecorators } from "@acceleratxr/service_core";
+ * import { DefaultBehaviors, ModelDecorators, ModelRoute, RouteDecorators } from "@rapidrest/service_core";
  * import { After, Before, Delete, Get, Post, Put, Route, Validate } = RouteDecorators;
  * import { Model } = ModelDecorators;
  * import { marshall } = DefaultBehaviors;
@@ -278,7 +278,7 @@ export class Server {
                     this.basePath,
                     true,
                     true,
-                    this.config.get("scripts:ignore")
+                    this.config.get("class_loader:ignore"),
                 );
                 try {
                     await classLoader.load();
@@ -415,7 +415,7 @@ export class Server {
 
                 // Set all custom headers
                 const headers: any = this.config.get("headers") || {
-                    "x-powered-by": "composer.js",
+                    "x-powered-by": "RapidREST",
                 };
                 this.app.use((req: Request, res: Response, next: NextFunction) => {
                     for (const key in headers) {

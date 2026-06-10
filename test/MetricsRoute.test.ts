@@ -18,7 +18,7 @@ import { JWTUtils } from "@rapidrest/core";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-cjs-test",
+        dbName: "mongomemory-rrst-test",
     },
 });
 

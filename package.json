@@ -2,9 +2,14 @@
     "name": "@rapidrest/service-core",
     "version": "1.0.0",
     "description": "Provides all core functionality for RapidREST based backend services.",
-    "repository": "https://github.com/rapidrest/service-core",
-    "license": "MIT",
+    "repository": "https://github.com/rapidrest/service-core.git",
     "author": "RapidREST <rapidrests@gmail.com>",
+    "license": "MIT",
+    "contributors": [
+        "Jean-Philippe Steinmetz",
+        "Arthur Thompson",
+        "Thomas Buscaglia"
+    ],
     "scripts": {
         "build": "yarn lint && rimraf dist && tsc",
         "deploy-docs": "ts-node tools/gh-pages-publish",
@@ -46,7 +51,7 @@
         "ws": "8.x"
     },
     "devDependencies": {
-        "@rapidrest/core": "patch:@rapidrest/core@npm%3A1.1.4#~/.yarn/patches/@rapidrest-core-npm-1.1.4-d798e25ec6.patch",
+        "@rapidrest/core": "^1.1.4",
         "@swc/core": "^1.10.0",
         "@types/cookie-parser": "^1.4.8",
         "@types/cors": "^2.8.17",

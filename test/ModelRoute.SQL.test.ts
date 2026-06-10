@@ -13,7 +13,7 @@ import { Logger } from "@rapidrest/core";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-cjs-test",
+        dbName: "mongomemory-rrst-test",
     },
 });
 let repo: Repository<Item>;

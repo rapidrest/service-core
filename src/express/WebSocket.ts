@@ -3,8 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { ServerResponse } from "http";
 import { Application, Request } from "express";
-import type { WebSocket } from "ws";
-import { WebSocketServer } from "ws";
+import type { WebSocket, WebSocketServer } from "ws";
 
 /**
  * HTTP request type for handling WebSockets.

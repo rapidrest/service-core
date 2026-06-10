@@ -18,7 +18,7 @@ import { StatusExtraData } from "../src/models/StatusExtraData";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-cjs-test",
+        dbName: "mongomemory-rrst-test",
     },
 });
 const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");

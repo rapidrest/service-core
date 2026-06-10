@@ -98,7 +98,7 @@ const createUsers = async (num: number, obj: any = {}, ownerUid?: string): Promi
 };
 
 vi.setConfig({ testTimeout: 120000 });
-describe("AXRModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
+describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
 

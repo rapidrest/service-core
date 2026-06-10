@@ -362,14 +362,31 @@ export class RouteUtils {
 
                         // If auth strategies are provided add the necessary passport middleware
                         if (authStrategies && authStrategies.length > 0) {
+                            // Passport no longer supports the allowFailure flag so we must write our own wrapper
+                            // to provide this functionality.
+                            if (authRequired) {
+                                app[verb](
+                                    path,
+                                    passport.authenticate(authStrategies, {
+                                        session: false,
+                                    }, undefined),
+                                    ...middleware
+                                );
+                            } else {
                             app[verb](
                                 path,
+                                    (req, res, next) => {
                                 passport.authenticate(authStrategies, {
                                     session: false,
-                                    allowFailure: !authRequired,
-                                } as passport.AuthenticateOptions),
-                                ...middleware,
+                                        }, (err, user) => {
+                                            if (err) { return next(err); }
+                                            req.user = user || undefined;
+                                            next();
+                                        })(req, res, next);
+                                    },
+                                    ...middleware
                             );
+                            }
                         } else {
                             app[verb](path, ...middleware);
                         }
