@@ -35,7 +35,7 @@ export function ChildEntity() {
             propertyName: "_type",
             mode: "regular",
             options: {},
-        } as ColumnMetadataArgs);
+        });
 
         // Add the property so that it becomes an instance member
         return class extends constructor {

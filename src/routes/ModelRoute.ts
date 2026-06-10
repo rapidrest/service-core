@@ -336,7 +336,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         if (!existing) {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
         }
-        await this.repoUtils.delete(existing.uid, options as any);
+        await this.repoUtils.delete(existing.uid, options);
 
         if (options.recordEvent) {
             const count: number = await this.repoUtils.repo.count({ uid: existing.uid } as any);
@@ -569,7 +569,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
         }
 
-        const result: T = await this.repoUtils.update(obj, existing, options as any);
+        const result: T = await this.repoUtils.update(obj, existing, options);
 
         if (options.recordEvent) {
             const evt: any = {
