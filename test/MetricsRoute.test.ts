@@ -1,4 +1,4 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 // This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server)
@@ -11,7 +11,7 @@ import { default as config } from "./config";
 import { Server } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as uuid from "uuid";
-import request from "supertest";
+import { request } from "./request.js";
 
 import { JWTUtils } from "@rapidrest/core";
 
@@ -56,10 +56,10 @@ describe("MetricsRoute Tests", () => {
     it("Can Get Metrics", async () => {
         let result;
         for (let i = 0; i < 20; i++) {
-            await request(server.getApplication()).get("/users").set("Authorization", `jwt ${authToken}`);
+            await request(server).get("/users").set("Authorization", `jwt ${authToken}`);
             await new Promise(r => setTimeout(r, Math.floor(Math.random() * 500)));
         }
-        result = await request(server.getApplication()).get(basePath).set("Authorization", `jwt ${authToken}`);
+        result = await request(server).get(basePath).set("Authorization", `jwt ${authToken}`);
         expect(result).toBeDefined();
         expect(result.status).toBeGreaterThanOrEqual(200);
         expect(result.status).toBeLessThan(300);
@@ -71,8 +71,8 @@ describe("MetricsRoute Tests", () => {
     });
 
     it("Can Get a Single Metric", async () => {
-        let result = await request(server.getApplication()).get("/users").set("Authorization", `jwt ${authToken}`);
-        result = await request(server.getApplication()).get(`${basePath}/request_status`).set("Authorization", `jwt ${authToken}`);
+        let result = await request(server).get("/users").set("Authorization", `jwt ${authToken}`);
+        result = await request(server).get(`${basePath}/request_status`).set("Authorization", `jwt ${authToken}`);
         expect(result).toBeDefined();
         expect(result.status).toBeGreaterThanOrEqual(200);
         expect(result.status).toBeLessThan(300);

@@ -18,7 +18,7 @@ import {
 import { ModelRoute } from "../../../src/routes/ModelRoute";
 import { Logger } from "@rapidrest/core";
 import UserModel from "../models/CacheUser";
-import { Response as XResponse } from "express";
+import type { HttpResponse as XResponse } from "../../../src/http/index.js";
 import { Description, Returns, Summary, TypeInfo } from "../../../src/decorators/DocDecorators";
 import { OneOrMany, OneOrNull, RepoUtils } from "../../../src";
 

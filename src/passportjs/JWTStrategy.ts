@@ -1,9 +1,9 @@
-﻿////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { Strategy } from "passport-strategy";
-import { JWTUtils, JWTUtilsConfig, JWTUser, JWTPayload, ApiError } from "@rapidrest/core";
-import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
+import { JWTUtils, JWTUtilsConfig, JWTUser, JWTPayload } from "@rapidrest/core";
+import { ApiErrorMessages } from "../ApiErrors.js";
+import type { HttpRequest } from "../http/types.js";
 import dayjs from "dayjs";
 import { createRequire } from "module";
 const _require = createRequire(process.cwd() + "/package.json");
@@ -32,28 +32,49 @@ export class JWTStrategyOptions {
     public queryKey: string = "jwt_token";
 }
 
+/** Result returned by `JWTStrategy.authenticate()`. */
+export interface JWTAuthResult {
+    /** The authenticated user profile, or `undefined` if authentication failed. */
+    user?: JWTUser;
+    /** The full decoded JWT payload. */
+    authPayload?: JWTPayload;
+    /** The raw JWT token string that was verified. */
+    authToken?: string;
+    /** Error message if authentication failed. */
+    error?: string;
+    /** Set to `true` when no token was found and `allowFailure` is enabled. */
+    passed?: boolean;
+}
+
 /**
- * Passport strategy for handling JSON Web Token authentication. This strategy performs JWT verification and will
- * search for a token by one of the following methods (in order of precedence).
- * * Cookie
+ * JWT authentication strategy. Performs JWT verification and searches for a token by one of the
+ * following methods (in order of precedence):
  * * Query Parameter
- * * Header
+ * * Authorization Header
+ * * Cookie
+ *
+ * This class no longer extends `passport-strategy`; it is used directly by route middleware
+ * and returns a plain result object instead of calling Passport callbacks.
  *
  * @author Jean-Philippe Steinmetz
  */
-export class JWTStrategy extends Strategy {
+export class JWTStrategy {
     private options: JWTStrategyOptions;
 
     constructor(options: JWTStrategyOptions) {
-        super();
         this.options = options;
         this.options.headerKey = options.headerKey.toLowerCase();
     }
 
-    public authenticate(req: any, options?: any): void {
-        options = options || {};
+    /**
+     * Attempts to authenticate the incoming request by extracting and verifying a JWT token.
+     * Returns a `JWTAuthResult` describing the outcome.
+     */
+    public authenticate(req: HttpRequest): JWTAuthResult {
         let error: string = "";
         let user: JWTUser | undefined = undefined;
+        let authPayload: JWTPayload | undefined = undefined;
+        let authToken: string | undefined = undefined;
 
         // Tokens should be found in this order: Query Parameter => Authorization => Cookie
         // Check the query parameter
@@ -68,9 +89,9 @@ export class JWTStrategy extends Strategy {
                     user = payload.profile as JWTUser;
                 }
                 // Store the payload in the request in case someone needs it
-                req.authPayload = payload;
+                authPayload = payload;
                 // Store the full token in the request in case someone needs it
-                req.authToken = token;
+                authToken = token;
             } catch (err: any) {
                 error = err;
             }
@@ -102,13 +123,13 @@ export class JWTStrategy extends Strategy {
                     if (payload && payload.profile) {
                         error = "";
                         user = payload.profile as JWTUser;
+                        authPayload = payload;
+                        authToken = token;
                         // No need to continue checking remaining headers. We have our success.
                         break;
                     }
-                    // Store the payload in the request in case someone needs it
-                    req.authPayload = payload;
-                    // Store the full token in the request in case someone needs it
-                    req.authToken = token;
+                    authPayload = payload;
+                    authToken = token;
                 } catch (err: any) {
                     error = err;
                 }
@@ -119,10 +140,10 @@ export class JWTStrategy extends Strategy {
         let token: string = "";
         if (!user && this.options.cookieSecure && this.options.cookieName && req.signedCookies) {
             // TODO Decrypt the signed cookie
-            token = req.signedCookies[this.options.cookieName] as string;
+            token = req.signedCookies[this.options.cookieName];
         }
         if (!user && !this.options.cookieSecure && this.options.cookieName && req.cookies) {
-            token = req.cookies[this.options.cookieName] as string;
+            token = req.cookies[this.options.cookieName];
         }
 
         // If the token has been found, verify it.
@@ -134,29 +155,21 @@ export class JWTStrategy extends Strategy {
                     error = "";
                     user = payload.profile as JWTUser;
                 }
-                // Store the payload in the request in case someone needs it
-                req.authPayload = payload;
-                // Store the full token in the request in case someone needs it
-                req.authToken = token;
+                authPayload = payload;
+                authToken = token;
             } catch (err: any) {
                 error = err;
             }
         }
 
-        // Record any final error that occurred.
-        if (error.length > 0) {
-            this.error(new ApiError(ApiErrors.AUTH_FAILED, 401, error));
+        if (user) {
+            return { user, authPayload, authToken };
         }
 
-        // Did we succeed at decoding a JWT payload?
-        if (user) {
-            this.success(user);
+        if (this.options.allowFailure) {
+            return { passed: true, error: error || undefined };
         }
-        // If failure is allowed perform a pass to let prior strategies determine final success
-        else if (options.allowFailure) {
-            this.pass();
-        } else {
-            this.fail(undefined, 401);
-        }
+
+        return { error: error || ApiErrorMessages.AUTH_FAILED };
     }
 }

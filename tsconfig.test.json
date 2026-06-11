@@ -5,7 +5,8 @@
         "moduleResolution": "Bundler",
         "strict": false,
         "esModuleInterop": true,
-        "types": ["vitest/globals"]
+        "types": ["vitest/globals"],
+        "rootDir": "."
     },
     "include": ["src", "test"]
 }

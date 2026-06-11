@@ -6,7 +6,7 @@ import { RepoOperationOptions, RepoUtils } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
 import { Redis } from "ioredis";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
-import { Request as XRequest, Response as XResponse } from "express";
+import type { HttpRequest as XRequest, HttpResponse as XResponse } from "../http/index.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BulkError } from "../BulkError.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";

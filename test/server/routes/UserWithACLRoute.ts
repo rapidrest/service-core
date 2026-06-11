@@ -3,7 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { Logger } from "@rapidrest/core";
 import UserModel from "../models/ProtectedUser";
-import { Response as XResponse } from "express";
+import type { HttpResponse as XResponse } from "../../../src/http/index.js";
 import { DocDecorators, RouteDecorators } from "../../../src/decorators";
 import { ModelRoute } from "../../../src/routes/ModelRoute";
 import { RepoUtils } from "../../../src/models";

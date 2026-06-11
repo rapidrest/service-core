@@ -1,4 +1,4 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 // This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server)
@@ -12,7 +12,7 @@ import { Server } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
-import requestws from "superwstest";
+import { requestws } from "./requestws.js";
 
 import { JWTUtils } from "@rapidrest/core";
 
@@ -82,22 +82,19 @@ describe("AdminRoute Tests", () => {
     });
 
     it.skip("Can connect to inspector with auth header.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/inspect", { headers: { Authorization: `jwt ${adminToken}` } })
+        await requestws(server).ws(basePath + "/inspect", { headers: { Authorization: `jwt ${adminToken}` } })
             .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: serviceName + "-logs" })
             .close()
             .expectClosed();
     });
 
     it.skip("Cannot connect to inspector with auth header using untrusted user.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/inspect", { headers: { Authorization: `jwt ${authToken}` } })
+        await requestws(server).ws(basePath + "/inspect", { headers: { Authorization: `jwt ${authToken}` } })
             .expectClosed(1002, "api-102");
     });
 
     it.skip("Can connect to inspector with LOGIN message.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/inspect")
+        await requestws(server).ws(basePath + "/inspect")
             .sendJson({ id: 0, type: "LOGIN", data: adminToken })
             .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
             .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: serviceName + "-logs" })
@@ -106,30 +103,26 @@ describe("AdminRoute Tests", () => {
     });
 
     it.skip("Cannot connect to inspector with LOGIN message using untrusted user.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/inspect")
+        await requestws(server).ws(basePath + "/inspect")
             .sendJson({ id: 0, type: "LOGIN", data: adminToken })
             .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
             .expectClosed(1002, "api-102");
     });
 
     it("Can connect to logs with auth header.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/logs", { headers: { Authorization: `jwt ${adminToken}` } })
+        await requestws(server).ws(basePath + "/logs", { headers: { Authorization: `jwt ${adminToken}` } })
             .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: serviceName + "-logs" })
             .close()
             .expectClosed();
     });
 
     it("Cannot connect to logs with auth header using untrusted user.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/logs", { headers: { Authorization: `jwt ${authToken}` } })
+        await requestws(server).ws(basePath + "/logs", { headers: { Authorization: `jwt ${authToken}` } })
             .expectClosed(1002, "api-102");
     });
 
     it("Can connect to logs with LOGIN message.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/logs")
+        await requestws(server).ws(basePath + "/logs")
             .sendJson({ id: 0, type: "LOGIN", data: adminToken })
             .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
             .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: serviceName + "-logs" })
@@ -138,8 +131,7 @@ describe("AdminRoute Tests", () => {
     });
 
     it("Cannot connect to logs with LOGIN message using untrusted user.", async () => {
-        const httpServer: any = server.getServer();
-        await requestws(httpServer).ws(basePath + "/logs")
+        await requestws(server).ws(basePath + "/logs")
             .sendJson({ id: 0, type: "LOGIN", data: authToken })
             .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
             .expectClosed(1002, "api-102");

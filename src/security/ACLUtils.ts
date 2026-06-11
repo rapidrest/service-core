@@ -5,7 +5,7 @@ import { JWTUser, ObjectDecorators, UserUtils, sleep } from "@rapidrest/core";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
 import { AccessControlListMongo } from "./AccessControlListMongo.js";
 import type { Repository } from "typeorm";
-import { Request } from "express";
+import type { HttpRequest as Request } from "../http/index.js";
 import { AccessControlList, ACLAction, ACLRecord } from "./AccessControlList.js";
 import { Redis } from "ioredis";
 import { ConnectionManager } from "../database/ConnectionManager.js";

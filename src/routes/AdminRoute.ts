@@ -6,7 +6,8 @@ import { Redis, ScanStream } from "ioredis";
 import Transport from "winston-transport";
 import { Auth, ContentType, Get, Route, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
-import ws, { createWebSocketStream } from "ws";
+import ws, { createWebSocketStream as createWsStream } from "ws";
+import { createWebSocketStream, type UWSWebSocketShim } from "../http/WebSocket.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 const { Config, Init, Logger } = ObjectDecorators;
@@ -141,7 +142,7 @@ export class AdminRoute {
     @Description("Establishes a connection to the remote NodeJS debug inspector.")
     @Auth(["jwt"])
     @WebSocket("/inspect")
-    private async inspect(@Socket socket: ws, @User user: JWTUser): Promise<void> {
+    private async inspect(@Socket socket: UWSWebSocketShim, @User user: JWTUser): Promise<void> {
         if (!UserUtils.hasRoles(user, this.trustedRoles)) {
             socket.close(1002, ApiErrors.AUTH_PERMISSION_FAILURE);
             return;
@@ -150,7 +151,7 @@ export class AdminRoute {
         // Create a websocket connection to the debug inspector and forward all traffic between the two
         const sDuplex = createWebSocketStream(socket);
         const iws: ws = new ws("ws://localhost:9229");
-        const iDuplex = createWebSocketStream(iws);
+        const iDuplex = createWsStream(iws);
         sDuplex.pipe(iDuplex);
         iDuplex.pipe(sDuplex);
 
@@ -175,7 +176,7 @@ export class AdminRoute {
     @Description("Establishes a connection to the live log socket.")
     @Auth(["jwt"])
     @WebSocket("/logs")
-    private async logs(@Socket socket: ws, @User user: JWTUser): Promise<void> {
+    private async logs(@Socket socket: UWSWebSocketShim, @User user: JWTUser): Promise<void> {
         if (!UserUtils.hasRoles(user, this.trustedRoles)) {
             socket.close(1002, ApiErrors.AUTH_PERMISSION_FAILURE);
             return;

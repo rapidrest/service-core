@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { promises as dns, LookupAddress } from "dns";
-import { Request as XRequest } from "express";
+import type { HttpRequest as XRequest } from "./http/index.js";
 
 /**
  * Provides common utilities and functions for working with networking related problems.

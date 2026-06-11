@@ -17,7 +17,7 @@ import {
 } from "../../../src/decorators/RouteDecorators";
 import { ModelRoute } from "../../../src/routes/ModelRoute";
 import Item from "../models/Item";
-import { Response as XResponse } from "express";
+import type { HttpResponse as XResponse } from "../../../src/http/index.js";
 import { Description, Returns, TypeInfo, Summary } from "../../../src/decorators/DocDecorators";
 import { RepoUtils } from "../../../src";
 

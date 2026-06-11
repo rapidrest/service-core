@@ -1,8 +1,8 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
-import request from "supertest";
+import { request } from "./request.js";
 import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import User from "./server/models/VersionedUser";
@@ -93,7 +93,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
             });
-            const result = await request(server.getApplication()).post(baseUrl).send(user);
+            const result = await request(server).post(baseUrl).send(user);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(user.uid);
             expect(result.body.version).toEqual(user.version);
@@ -122,7 +122,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
                 age: 900,
             });
 
-            const result = await request(server.getApplication()).post(baseUrl).send(userV2);
+            const result = await request(server).post(baseUrl).send(userV2);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(userV2.uid);
             expect(result.body.version).toEqual(user.version + 1);
@@ -152,7 +152,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can delete document. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47))[0];
-            const result = await request(server.getApplication()).delete(`${baseUrl}/${user.uid}`);
+            const result = await request(server).delete(`${baseUrl}/${user.uid}`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count({ uid: user.uid, deleted: true });
@@ -161,7 +161,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can purge document. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47))[0];
-            const result = await request(server.getApplication()).delete(`${baseUrl}/${user.uid}?purge=true`);
+            const result = await request(server).delete(`${baseUrl}/${user.uid}?purge=true`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count({ uid: user.uid });
@@ -170,7 +170,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can delete document with multiple versions. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 4))[0];
-            const result = await request(server.getApplication()).delete(`${baseUrl}/${user.uid}`);
+            const result = await request(server).delete(`${baseUrl}/${user.uid}`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count({ uid: user.uid, deleted: true });
@@ -179,7 +179,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can purge document with multiple versions. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 4))[0];
-            const result = await request(server.getApplication()).delete(`${baseUrl}/${user.uid}?purge=true`);
+            const result = await request(server).delete(`${baseUrl}/${user.uid}?purge=true`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count({ uid: user.uid });
@@ -188,7 +188,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can delete document with specific version. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 4))[0];
-            const result = await request(server.getApplication()).delete(`${baseUrl}/${user.uid}?version=2`);
+            const result = await request(server).delete(`${baseUrl}/${user.uid}?version=2`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count({ uid: user.uid, deleted: true });
@@ -197,7 +197,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can purge document with specific version. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 4))[0];
-            const result = await request(server.getApplication()).delete(`${baseUrl}/${user.uid}?version=2&purge=true`);
+            const result = await request(server).delete(`${baseUrl}/${user.uid}?version=2&purge=true`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count({ uid: user.uid });
@@ -206,7 +206,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can find document by id. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 3))[2];
-            const result = await request(server.getApplication()).get(`${baseUrl}/${user.uid}`).send();
+            const result = await request(server).get(`${baseUrl}/${user.uid}`).send();
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(user.uid);
             expect(result.body.version).toEqual(user.version);
@@ -217,7 +217,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can find document by id and version. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 5))[2];
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get(`${baseUrl}/${user.uid}?version=${user.version}`)
                 .send();
             expect(result).toHaveProperty("body");
@@ -233,7 +233,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             user.firstName = "Matt";
             user.lastName = "Smith";
             user.age = 36;
-            const result = await request(server.getApplication()).put(`${baseUrl}/${user.uid}`).send(user);
+            const result = await request(server).put(`${baseUrl}/${user.uid}`).send(user);
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveProperty("uid");
             expect(result.body.uid).toBe(user.uid);
@@ -261,14 +261,14 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
     describe("Multiple Document Tests [MongoDB]", () => {
         it("Can count documents. [MongoDB]", async () => {
             const users: User[] = await createUsers(20);
-            const result = await request(server.getApplication()).head(`${baseUrl}`);
+            const result = await request(server).head(`${baseUrl}`);
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });
 
         it("Can count documents with multiple versions. [MongoDB]", async () => {
             const users: User[] = await createUsers(20, 3);
-            const result = await request(server.getApplication()).head(`${baseUrl}`);
+            const result = await request(server).head(`${baseUrl}`);
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((20).toString());
         });
@@ -277,21 +277,21 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13, 2);
             await createUser("David", "Tennant", 47, 3);
             await createUser("Matt", "Smith", 36, 4);
-            const result = await request(server.getApplication()).head(`${baseUrl}?lastName=Doctor`);
+            const result = await request(server).head(`${baseUrl}?lastName=Doctor`);
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((13).toString());
         });
 
         it("Can find all documents. [MongoDB]", async () => {
             const users: User[] = await createUsers(25);
-            const result = await request(server.getApplication()).get(baseUrl);
+            const result = await request(server).get(baseUrl);
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
         });
 
         it("Can find all documents with multiple versions. [MongoDB]", async () => {
             const users: User[] = await createUsers(25, 3);
-            const result = await request(server.getApplication()).get(baseUrl);
+            const result = await request(server).get(baseUrl);
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(25);
         });
@@ -300,7 +300,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13, 2);
             await createUser("David", "Tennant", 47, 3);
             await createUser("Matt", "Smith", 36, 6);
-            const result = await request(server.getApplication()).get(`${baseUrl}?lastName=Doctor`);
+            const result = await request(server).get(`${baseUrl}?lastName=Doctor`);
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(13);
             for (const user of result.body) {
@@ -311,7 +311,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can truncate datastore [MongoDB].", async () => {
             const users: User[] = await createUsers(25);
-            const result = await request(server.getApplication()).delete(baseUrl);
+            const result = await request(server).delete(baseUrl);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();

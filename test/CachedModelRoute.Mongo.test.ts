@@ -1,9 +1,9 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
 import * as crypto from "crypto";
-import request from "supertest";
+import { request } from "./request.js";
 import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import CacheUser from "./server/models/CacheUser";
@@ -91,7 +91,7 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
                 lastName: "Tennant",
                 age: 47,
             });
-            const result = await request(server.getApplication()).post("/cachedusers").send(user);
+            const result = await request(server).post("/cachedusers").send(user);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(user.uid);
             expect(result.body.version).toEqual(user.version);
@@ -125,7 +125,7 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
         });
         it("Can delete cached document.", async () => {
             const user: CacheUser = await createUser("David", "Tennant", 47);
-            const result = await request(server.getApplication()).delete("/cachedusers/" + user.uid);
+            const result = await request(server).delete("/cachedusers/" + user.uid);
             expect(result.status).toBe(204);
 
             const existing: CacheUser | null = await repo.findOne({ uid: user.uid } as any);
@@ -139,7 +139,7 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
 
         it("Can find cached document by id.", async () => {
             const user: CacheUser = await createUser("David", "Tennant", 47);
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get("/cachedusers/" + user.uid)
                 .send();
             expect(result).toHaveProperty("body");
@@ -169,7 +169,7 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
         // The following test catches potential lookup errors from previously cached records
         it("Can find cached document by id (again).", async () => {
             const user: CacheUser = await createUser("David", "Tennant", 47);
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get("/cachedusers/" + user.uid)
                 .send();
             expect(result).toHaveProperty("body");
@@ -201,7 +201,7 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
             user.firstName = "Matt";
             user.lastName = "Smith";
             user.age = 36;
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .put("/cachedusers/" + user.uid)
                 .send(user);
             expect(result).toHaveProperty("body");
@@ -242,7 +242,7 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
         it("Can find all cached documents.", async () => {
             const users: CacheUser[] = await createUsers(25);
 
-            const result = await request(server.getApplication()).get("/cachedusers");
+            const result = await request(server).get("/cachedusers");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
             for (let i = 0; i < result.body.length; i++) {
@@ -255,7 +255,7 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
                 expect(result.body[i].version).toBe(users[i].version);
             }
 
-            const result2 = await request(server.getApplication()).get("/cachedusers");
+            const result2 = await request(server).get("/cachedusers");
             expect(result2).toHaveProperty("body");
             expect(result2.body).toHaveLength(users.length);
             expect(result.body).toEqual(result2.body);
@@ -265,11 +265,11 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
             const users: CacheUser[] = await createUsers(13);
             await createUser("David", "Tennant", 47);
             await createUser("Matt", "Smith", 36);
-            const result = await request(server.getApplication()).get("/cachedusers?lastName=Doctor");
+            const result = await request(server).get("/cachedusers?lastName=Doctor");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
 
-            const result2 = await request(server.getApplication()).get("/cachedusers?lastName=Doctor");
+            const result2 = await request(server).get("/cachedusers?lastName=Doctor");
             expect(result2).toHaveProperty("body");
             expect(result2.body).toHaveLength(users.length);
             expect(result.body).toEqual(result2.body);

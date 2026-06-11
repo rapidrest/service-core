@@ -1,8 +1,8 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
-import request from "supertest";
+import { request } from "./request.js";
 import { Server, ConnectionManager, ObjectFactory, MongoConnection, MongoRepository, isSqlDataSource } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import User from "./server/models/User";
@@ -143,7 +143,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
             });
-            const result = await request(server.getApplication()).post("/users").send(user);
+            const result = await request(server).post("/users").send(user);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(user.uid);
             expect(result.body.version).toEqual(user.version);
@@ -171,7 +171,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 age: 47,
                 productUid: uuid.v4(),
             });
-            const result = await request(server.getApplication()).post("/users").send(user);
+            const result = await request(server).post("/users").send(user);
             expect(result.status).toBe(200);
 
             const stored: User | null = await repo.findOne({ uid: user.uid } as any);
@@ -196,7 +196,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
             });
-            const result = await request(server.getApplication()).post("/users").send(user);
+            const result = await request(server).post("/users").send(user);
             expect(result.status).toBe(400);
 
             const stored: User | null = await repo.findOne({ uid: user.uid } as any);
@@ -215,7 +215,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 age: 47,
                 productUid,
             });
-            const result = await request(server.getApplication()).post("/users").send(user);
+            const result = await request(server).post("/users").send(user);
             expect(result.status).toBe(400);
 
             const stored: User | null = await repo.findOne({ uid: user.uid } as any);
@@ -236,7 +236,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 parentUid: parent.uid,
                 skillRating: 2500
             });
-            const result = await request(server.getApplication()).post("/users").send(player);
+            const result = await request(server).post("/users").send(player);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(player.uid);
             expect(result.body.version).toEqual(player.version);
@@ -277,7 +277,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 parentUid: uuid.v4(),
                 skillRating: 2500,
             });
-            const result = await request(server.getApplication()).post("/users").send(player);
+            const result = await request(server).post("/users").send(player);
             expect(result.status).toBe(400);
         });
 
@@ -293,13 +293,13 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 parentUid: parent.uid,
                 skillRating: 2500,
             });
-            const result = await request(server.getApplication()).post("/users").send(player);
+            const result = await request(server).post("/users").send(player);
             expect(result.status).toBe(400);
         });
 
         it("Can delete document. [MongoDB]", async () => {
             const user: User = await createUser("dtennant", "David", "Tennant", 47);
-            const result = await request(server.getApplication()).delete("/users/" + user.uid);
+            const result = await request(server).delete("/users/" + user.uid);
             expect(result.status).toBe(204);
 
             const existing: User | null = await repo.findOne({ uid: user.uid } as any);
@@ -308,7 +308,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can test if document exists. [MongoDB]", async () => {
             const user: User = await createUser("dtennant", "David", "Tennant", 47);
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .head("/users/" + user.uid)
                 .send();
             expect(result.status).toBeGreaterThanOrEqual(200);
@@ -318,7 +318,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
         });
 
         it("Can test if document doesn't exist. [MongoDB]", async () => {
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .head("/users/" + uuid.v4())
                 .send();
             expect(result.status).toBe(404);
@@ -326,7 +326,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can find document by id. [MongoDB]", async () => {
             const user: User = await createUser("dtennant", "David", "Tennant", 47);
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get("/users/" + user.uid.toUpperCase())
                 .send();
             expect(result).toHaveProperty("body");
@@ -339,7 +339,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can find child document by id. [MongoDB]", async () => {
             const player: Player = await createPlayer("dtennant", "David", "Tennant", 47, 2500);
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get("/users/" + player.uid.toUpperCase())
                 .send();
             expect(result).toHaveProperty("body");
@@ -355,7 +355,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const user: User = await createUser("dtennant", "David", "Tennant", 47);
             await createUser("dtennant2", "David", "Tennant", 47);
             await createUser("dtennant3", "David", "Tennant", 47);
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get("/users/" + user.name)
                 .send();
             expect(result).toHaveProperty("body");
@@ -375,7 +375,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const count: number = await repo.count({ name: "dtennant" });
             expect(count).toBe(2);
 
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get(`/users/${user.name}?productUid=${user.productUid}`)
                 .send();
             expect(result).toHaveProperty("body");
@@ -395,7 +395,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 uid: user.uid,
                 version: user.version,
             };
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .put("/users/" + user.uid.toUpperCase())
                 .send(diff);
             expect(result).toHaveProperty("body");
@@ -428,7 +428,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 uid: player.uid,
                 version: player.version,
             };
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .put("/users/" + player.uid.toUpperCase())
                 .send(diff);
             expect(result).toHaveProperty("body");
@@ -465,7 +465,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 lastName: "Who",
                 age: 900,
             };
-            let result = await request(server.getApplication())
+            let result = await request(server)
                 .put("/users/" + user.uid.toUpperCase() + "/age")
                 .send(diff.age);
             expect(result).toHaveProperty("body");
@@ -477,7 +477,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(result.body.lastName).toBe(user.lastName);
             expect(result.body.age).toBe(diff.age);
 
-            result = await request(server.getApplication())
+            result = await request(server)
                 .put("/users/" + user.uid.toUpperCase() + "/firstName")
                 .send(`"${diff.firstName}"`);
             expect(result).toHaveProperty("body");
@@ -489,7 +489,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(result.body.lastName).toBe(user.lastName);
             expect(result.body.age).toBe(user.age);
 
-            result = await request(server.getApplication())
+            result = await request(server)
                 .put("/users/" + user.uid.toUpperCase() + "/lastName")
                 .send(`"${diff.lastName}"`);
             expect(result).toHaveProperty("body");
@@ -528,7 +528,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 users.push(user);
                 uids.push(user.uid);
             }
-            const result = await request(server.getApplication()).post("/users").send(users);
+            const result = await request(server).post("/users").send(users);
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
 
@@ -562,7 +562,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 users.push(user);
                 uids.push(user.uid);
             }
-            const result = await request(server.getApplication()).post("/users").send(users);
+            const result = await request(server).post("/users").send(users);
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
 
@@ -599,7 +599,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 users.push(user);
                 uids.push(user.uid);
             }
-            const result = await request(server.getApplication()).post("/users").send(users);
+            const result = await request(server).post("/users").send(users);
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
             expect(result.body[0]).toBeNull();
@@ -623,7 +623,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can count documents. [MongoDB]", async () => {
             const users: User[] = await createUsers(20);
-            const result = await request(server.getApplication()).head("/users");
+            const result = await request(server).head("/users");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });
@@ -631,7 +631,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
         it("Can count base and child documents. [MongoDB]", async () => {
             const users: User[] = await createUsers(20);
             const players: Player[] = await createPlayers(30);
-            const result = await request(server.getApplication()).head("/users");
+            const result = await request(server).head("/users");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((users.length + players.length).toString());
         });
@@ -640,7 +640,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?lastName=Doctor");
+            const result = await request(server).head("/users?lastName=Doctor");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toEqual(users.length.toString());
         });
@@ -649,7 +649,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?lastName=like(Doc.*)");
+            const result = await request(server).head("/users?lastName=like(Doc.*)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });
@@ -658,7 +658,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?lastName=ne(Doctor)");
+            const result = await request(server).head("/users?lastName=ne(Doctor)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((2).toString());
         });
@@ -667,7 +667,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?lastName=like(Doc)");
+            const result = await request(server).head("/users?lastName=like(Doc)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });
@@ -676,7 +676,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?lastName=in(Tennant,Smith)");
+            const result = await request(server).head("/users?lastName=in(Tennant,Smith)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((2).toString());
         });
@@ -685,7 +685,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?lastName=nin(Tennant,Smith)");
+            const result = await request(server).head("/users?lastName=nin(Tennant,Smith)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });
@@ -694,7 +694,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?age=gt(100)");
+            const result = await request(server).head("/users?age=gt(100)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((users.length - 1).toString());
         });
@@ -703,7 +703,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?age=gte(100)");
+            const result = await request(server).head("/users?age=gte(100)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });
@@ -712,7 +712,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?age=lt(100)");
+            const result = await request(server).head("/users?age=lt(100)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((2).toString());
         });
@@ -721,7 +721,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?age=lte(100)");
+            const result = await request(server).head("/users?age=lte(100)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((3).toString());
         });
@@ -730,14 +730,14 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).head("/users?age=range(100,500)");
+            const result = await request(server).head("/users?age=range(100,500)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((5).toString());
         });
 
         it("Can find all documents. [MongoDB]", async () => {
             const users: User[] = await createUsers(25);
-            const result = await request(server.getApplication()).get("/users");
+            const result = await request(server).get("/users");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
             for (let i = 0; i < users.length; i++) {
@@ -759,7 +759,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 .concat(await createPlayers(7))
                 .concat(await createUsers(12))
                 .concat(await createPlayers(18));
-            const result = await request(server.getApplication()).get("/users");
+            const result = await request(server).get("/users");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(all.length);
             for (let i = 0; i < all.length; i++) {
@@ -781,28 +781,28 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can find all documents with pagination. [MongoDB]", async () => {
             const users: User[] = await createUsers(25);
-            let result = await request(server.getApplication()).get("/users?limit=5&page=0");
+            let result = await request(server).get("/users?limit=5&page=0");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(5);
             for (let i = 0; i < result.body.length; i++) {
                 expect(result.body[i].uid).toEqual(users[i].uid);
             }
 
-            result = await request(server.getApplication()).get("/users?limit=5&page=1");
+            result = await request(server).get("/users?limit=5&page=1");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(5);
             for (let i = 0; i < result.body.length; i++) {
                 expect(result.body[i].uid).toEqual(users[i + 5].uid);
             }
 
-            result = await request(server.getApplication()).get("/users?limit=5&page=2");
+            result = await request(server).get("/users?limit=5&page=2");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(5);
             for (let i = 0; i < result.body.length; i++) {
                 expect(result.body[i].uid).toEqual(users[i + 10].uid);
             }
 
-            result = await request(server.getApplication()).get("/users?limit=10&page=1");
+            result = await request(server).get("/users?limit=10&page=1");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(10);
             for (let i = 0; i < result.body.length; i++) {
@@ -814,7 +814,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server.getApplication()).get("/users?lastName=Doctor");
+            const result = await request(server).get("/users?lastName=Doctor");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
             for (const user of result.body) {
@@ -825,7 +825,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
         it("Can truncate datastore [MongoDB].", async () => {
             const users: User[] = await createUsers(20, "Doctor");
             await createUsers(5, "Skywalker");
-            const result = await request(server.getApplication()).delete("/users");
+            const result = await request(server).delete("/users");
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();
@@ -835,7 +835,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
         it("Can truncate datastore with criteria (eq) [MongoDB].", async () => {
             const users: User[] = await createUsers(20, "Doctor");
             await createUsers(5, "Skywalker");
-            const result = await request(server.getApplication()).delete("/users?lastName=Doctor");
+            const result = await request(server).delete("/users?lastName=Doctor");
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();
@@ -855,7 +855,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 uids.push(user.uid);
             }
 
-            const result = await request(server.getApplication()).put("/users").send(updates);
+            const result = await request(server).put("/users").send(updates);
             expect(result.status).toBe(200);
 
             const existing: User[] = await repo.find({ uid: { $in: uids } } as any);
@@ -895,7 +895,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 uids.push(user.uid);
             }
 
-            const result = await request(server.getApplication()).put("/users").send(updates);
+            const result = await request(server).put("/users").send(updates);
             expect(result.status).toBe(200);
 
             const existing: Array<User | Player> = await repo.aggregate([{ $match: { uid: { $in: uids } } }]).toArray();
@@ -948,7 +948,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             // Lets make sure the first one goes through
             updates[0].version = users[0].version;
 
-            const result = await request(server.getApplication()).put("/users").send(updates);
+            const result = await request(server).put("/users").send(updates);
             expect(result.status).toBe(409);
             expect(result.body).toHaveLength(users.length);
 

@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { Request as XRequest, Response as XResponse } from "express";
+import type { HttpRequest as XRequest, HttpResponse as XResponse } from "../http/index.js";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
 import type { Repository as Repo } from "typeorm";
 import { ACLAction } from "./AccessControlList.js";

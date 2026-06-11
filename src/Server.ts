@@ -1,12 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import cookieParser from "cookie-parser";
-import cors, { CorsOptions } from "cors";
-import express, { Application, Response, Request, NextFunction } from "express";
-import expressResponseTime from "response-time";
-import * as http from "http";
-import passport from "passport";
+import uWS from "uWebSockets.js";
 import * as path from "path";
 import * as prom from "prom-client";
 import "reflect-metadata";
@@ -19,15 +14,11 @@ import { MetricsRoute } from "./routes/MetricsRoute.js";
 import { ObjectFactory } from "./ObjectFactory.js";
 import { BackgroundServiceManager } from "./BackgroundServiceManager.js";
 import { RouteUtils } from "./express/RouteUtils.js";
-import { WebSocketServer } from "ws";
-import { addWebSocket } from "./express/WebSocket.js";
-import session from "express-session";
 import { BulkError } from "./BulkError.js";
 import { BackgroundService } from "./BackgroundService.js";
 import { AdminRoute } from "./routes/index.js";
 import { OpenApiSpec } from "./OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "./ApiErrors.js";
-import { RedisStore } from "connect-redis";
 import { ACLUtils } from "./security/ACLUtils.js";
 import { NotificationUtils } from "./NotificationUtils.js";
 import { isSqlDataSource } from "./database/ConnectionKinds.js";
@@ -37,6 +28,8 @@ import { ACLRouteSQL } from "./security/ACLRouteSQL.js";
 import { EventListenerManager } from "./EventListenerManager.js";
 import { AccessControlListMongo } from "./security/AccessControlListMongo.js";
 import { AccessControlListSQL } from "./security/AccessControlListSQL.js";
+import { HttpRouter } from "./http/Router.js";
+import type { HttpRequest, HttpResponse, NextFunction } from "./http/types.js";
 
 interface Entity {
     storeName?: any;
@@ -47,22 +40,27 @@ interface Model {
 }
 
 /**
- * Provides an HTTP server utilizing ExpressJS and PassportJS. The server automatically registers all routes, and
+ * Provides an HTTP server utilizing uWebSockets.js. The server automatically registers all routes, and
  * establishes database connections for all configured data stores. Additionally provides automatic authentication
- * handling using JSON Web Token (JWT) via PassportJS. When provided an OpenAPI specificatiion object the server will
- * also automatically serve this specification via the `GET /openapi.json` route.
+ * handling using JSON Web Token (JWT) directly — no Passport dependency required. When provided an OpenAPI
+ * specification object the server will also automatically serve this specification via the `GET /openapi.json` route.
  *
  * Routes are defined by creating any class definition using the various decorators found in `RouteDecorators` and
  * saving these files in the `routes` subfolder. Upon server start, the `routes` folder is scanned for any class
- * that has been decorated with `@Route` and is automatically loaded and registered with Express. Similarly, if the
+ * that has been decorated with `@Route` and is automatically loaded and registered. Similarly, if the
  * class is decorated with the `@Model` decorator the resulting route object will have the associated data model
  * definition object injected into the constructor.
  *
- * By default all registered endpoints that do not explicit have an `@Auth` decorator have the `JWT` authentication
- * strategy applied. This allows users to be implicitly authenticated without requiring additional configuration.
- * Once authenticated, the provided `request` argument will have the `user` property available containing information
- * about the authenticated user. If the `user` property is `undefined` then no user has been authenticated or the
- * authentication attempt failed.
+ * SSL termination is supported by providing an `ssl` configuration block with `key`, `cert`, and optionally
+ * `ca` and `passphrase` file paths. When `ssl` is present the server uses `uWS.SSLApp()`.
+ *
+ * IPv6 is supported by setting `listen_host` to `"::"` in configuration (default `"0.0.0.0"`).
+ *
+ * By default all registered endpoints that do not explicitly have an `@Auth` decorator have the `JWT`
+ * authentication strategy applied. This allows users to be implicitly authenticated without requiring additional
+ * configuration. Once authenticated, the provided `request` argument will have the `user` property available
+ * containing information about the authenticated user. If the `user` property is `undefined` then no user has
+ * been authenticated or the authentication attempt failed.
  *
  * The following is an example of a simple route class.
  *
@@ -150,8 +148,8 @@ interface Model {
 export class Server {
     /** The OpenAPI specification object to use to construct the server with. */
     protected apiSpec?: OpenApiSpec;
-    /** The underlying ExpressJS application that provides HTTP processing services. */
-    protected app: Application;
+    /** The underlying HTTP router (uWS-backed) that provides HTTP processing services. */
+    protected app!: HttpRouter;
     /** The base file system path that will be searched for models and routes. */
     protected readonly basePath: string;
     /** The global object containing configuration information to use. */
@@ -167,11 +165,7 @@ export class Server {
     /** The port that the server is listening on. */
     public readonly port: number;
     protected routeUtils?: RouteUtils;
-    /** The underlying HTTP server instance. */
-    protected server?: http.Server;
     protected serviceManager?: BackgroundServiceManager;
-    /** The underlying WebSocket server instance. */
-    protected wss?: WebSocketServer;
 
     ///////////////////////////////////////////////////////////////////////////
     // METRICS VARIABLES
@@ -214,7 +208,6 @@ export class Server {
      * @param objectFactory The object factory to use for automatic dependency injection (IOC).
      */
     constructor(config: any, basePath: string = ".", logger: any = Logger(), objectFactory?: ObjectFactory) {
-        this.app = express();
         this.config = config;
         this.basePath = basePath;
         this.logger = logger;
@@ -223,24 +216,17 @@ export class Server {
     }
 
     /**
-     * Returns the express app.
+     * Returns the HTTP router instance.
      */
-    public getApplication(): Application {
+    public getApplication(): HttpRouter {
         return this.app;
-    }
-
-    /**
-     * Returns the http server.
-     */
-    public getServer(): http.Server | undefined {
-        return this.server;
     }
 
     /**
      * Returns `true` if the server is running, otherwise `false`.
      */
     public isRunning(): boolean {
-        return this.server ? this.server.listening : false;
+        return this.app ? this.app.isListening : false;
     }
 
     /**
@@ -326,90 +312,66 @@ export class Server {
                     await this.objectFactory.newInstance(NotificationUtils, { name: "default", args: [pushRedis] });
                 }
 
-                // Express configuration
-                this.app = express();
-                this.server = http.createServer(this.app);
-                this.wss = new WebSocketServer({
-                    server: this.server,
-                });
-                this.app = addWebSocket(this.app, this.wss);
-                this.app.use(express.static(path.join(this.basePath, "public")));
-                this.app.use(
-                    express.json({
-                        verify: (req: any, res: any, buf: any) => {
-                            req.rawBody = buf;
-                        },
-                    })
-                );
-                this.app.use(express.urlencoded({ extended: false, type: "application/x-www-form-urlencoded" }));
-                this.app.use(cookieParser(this.config.get("cookie_secret")));
-                this.app.use(passport.initialize());
+                // Create the uWS app — SSLApp when ssl config is present, plain App otherwise
+                const sslConfig: any = this.config.get("ssl");
+                const uwsApp: uWS.TemplatedApp = sslConfig
+                    ? uWS.SSLApp({
+                          key_file_name: sslConfig.key,
+                          cert_file_name: sslConfig.cert,
+                          ca_file_name: sslConfig.ca,
+                          passphrase: sslConfig.passphrase,
+                      })
+                    : uWS.App();
+
+                this.app = new HttpRouter(uwsApp);
+
+                // Serve static files from the public directory
+                // (registered last so route handlers take precedence)
+                const publicPath = path.join(this.basePath, "public");
 
                 // cors
-                const corsOptions: CorsOptions = {
-                    origin: this.config.get("cors:origins"),
-                    credentials: true,
-                    methods: "GET,HEAD,OPTIONS,PUT,POST,DELETE",
-                    allowedHeaders: [
-                        "Accept",
-                        "Authorization",
-                        "Content-Type",
-                        "Location",
-                        "Origin",
-                        "Set-Cookie",
-                        "X-Requested-With",
-                    ],
-                    preflightContinue: false,
-                    optionsSuccessStatus: 204,
-                };
-                this.app.use(cors(corsOptions));
-
-                // Sessions
-                const cacheClient: any = this.connectionManager.connections.get("cache");
-                const sessionConfig: any = this.config.get("session");
-                if (cacheClient && sessionConfig) {
-                    this.app.use(
-                        session({
-                            cookie: {
-                                sameSite: "none",
-                                secure: true,
-                            },
-                            resave: false,
-                            saveUninitialized: false,
-                            secret: sessionConfig.secret,
-                            store: cacheClient
-                                ? new RedisStore({
-                                      client: cacheClient,
-                                  })
-                                : undefined,
-                        }),
-                    );
-                    this.app.use(passport.session());
-                }
-
-                // passport (authentication) setup
-                passport.deserializeUser((profile: any, done: any) => {
-                    done(null, profile);
-                });
-                passport.serializeUser((profile: any, done: any) => {
-                    done(null, profile);
+                const corsConfig: any = this.config.get("cors") || {};
+                const corsOrigins: string | string[] | undefined = corsConfig.origins;
+                const corsAllowedHeaders = [
+                    "Accept",
+                    "Authorization",
+                    "Content-Type",
+                    "Location",
+                    "Origin",
+                    "Set-Cookie",
+                    "X-Requested-With",
+                ].join(", ");
+                this.app.use((req: HttpRequest, res: HttpResponse, next: NextFunction) => {
+                    const origin = req.headers["origin"] as string || "";
+                    // Reflect the request origin back when it matches the configured allow-list,
+                    // or allow all origins when no list is configured.
+                    const allowOrigin =
+                        !corsOrigins || corsOrigins === "*" || (Array.isArray(corsOrigins) ? corsOrigins.includes(origin) : corsOrigins === origin)
+                            ? (origin || "*")
+                            : "";
+                    if (allowOrigin) {
+                        res.setHeader("access-control-allow-origin", allowOrigin);
+                        res.setHeader("access-control-allow-credentials", "true");
+                        res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS,PUT,POST,DELETE");
+                        res.setHeader("access-control-allow-headers", corsAllowedHeaders);
+                    }
+                    if (req.method === "OPTIONS") {
+                        res.status(204).send();
+                        return;
+                    }
+                    return next();
                 });
 
-                // Register the default auth strategy classes
+                // Register the default auth strategy class with the object factory so it can be resolved by name
                 this.objectFactory.register(JWTStrategy, "passportjs.JWTStrategy");
-
-                // Instantiate the desired auth strategy
                 if (this.config.get("auth:strategy")) {
                     const jwtOptions: JWTStrategyOptions = new JWTStrategyOptions();
                     jwtOptions.config = this.config.get("auth");
-                    passport.use(
-                        "jwt",
-                        await this.objectFactory.newInstance(this.config.get("auth:strategy"), {
-                            name: "default",
-                            initialize: true,
-                            args: [jwtOptions],
-                        })
-                    );
+                    await this.objectFactory.newInstance(this.config.get("auth:strategy"), {
+                        name: "default",
+                        initialize: true,
+                        args: [jwtOptions],
+                    });
                 } else {
                     this.logger.warn("No JWT authentication strategy has been set.");
                 }
@@ -418,7 +380,7 @@ export class Server {
                 const headers: any = this.config.get("headers") || {
                     "x-powered-by": "RapidREST",
                 };
-                this.app.use((req: Request, res: Response, next: NextFunction) => {
+                this.app.use((_req: HttpRequest, res: HttpResponse, next: NextFunction) => {
                     for (const key in headers) {
                         res.setHeader(key, headers[key]);
                     }
@@ -426,11 +388,17 @@ export class Server {
                 });
 
                 // Track request response time
-                this.app.use(
-                    expressResponseTime((req: Request, res: Response, time) => {
-                        this.metricRequestTime.labels(req.method, req.path, String(res.statusCode)).observe(time);
-                    })
-                );
+                this.app.use((req: HttpRequest, res: HttpResponse, next: NextFunction) => {
+                    const start = Date.now();
+                    const origEnd = res.end.bind(res);
+                    res.end = (...args: any[]) => {
+                        this.metricRequestTime
+                            .labels(req.method, req.path, String(res.statusCode))
+                            .observe(Date.now() - start);
+                        return origEnd(...args);
+                    };
+                    return next();
+                });
 
                 const allRoutes: Array<any> = [];
 
@@ -539,7 +507,8 @@ export class Server {
                 }
 
                 // Error handling. NOTE: Must be defined last.
-                this.app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+                // 4-param signature signals error handler to runChain
+                this.app.use(((err: any, _req: HttpRequest, res: HttpResponse, next: NextFunction) => {
                     if (err) {
                         // Only log 500-level errors. 400-level errors are the client's fault and
                         // we don't need to spam the logs because of that.
@@ -589,7 +558,7 @@ export class Server {
                             const formattedError = {
                                 ...err,
                                 // https://stackoverflow.com/a/25245824
-                                level: err.level ? err.level.replace(/\u001b\[.*?m/g, "") : undefined, // eslint-disable-line no-control-regex
+                                level: err.level ? err.level.replace(/\[.*?m/g, "") : undefined, // eslint-disable-line no-control-regex
                                 message: err.message
                             };
                             res.json(formattedError);
@@ -599,23 +568,28 @@ export class Server {
                     }
 
                     return next();
-                });
+                }) as any);
 
-                this.app.use((req: Request, res: Response) => {
+                this.app.use((req: HttpRequest, res: HttpResponse) => {
                     this.metricRequestPath.labels(req.path).inc();
                     this.metricRequestStatus.labels(req.method, req.path, String(res.statusCode)).inc();
                     this.metricTotalRequests.inc(1);
                     this.metricCompletedRequests.inc(1);
-                    return !res.writableEnded ? res.send() : res;
+                    if (!res.writableEnded) {
+                        res.send();
+                    }
                 });
+
+                // Serve static files — registered after route handlers so routes take precedence
+                this.app.static(publicPath);
 
                 await this.postStart();
 
-                // Initialize the HTTP listen server
-                this.server.listen(this.port, "0.0.0.0", () => {
-                    this.logger.info("Listening on port " + this.port + "...");
-                    resolve();
-                });
+                // IPv6: set listen_host to "::" in config; default binds to all IPv4 interfaces
+                const listenHost: string = this.config.get("listen_host") || "0.0.0.0";
+                await this.app.listen(listenHost, this.port);
+                this.logger.info(`Listening on ${listenHost}:${this.port}...`);
+                resolve();
             } catch (err) {
                 this.logger.error(err);
                 reject(err);
@@ -631,34 +605,23 @@ export class Server {
             this.logger.info("Stopping background services...");
             await this.serviceManager?.stopAll();
 
-            if (this.wss) {
-                this.logger.info("Stopping server...");
-                this.wss.close(async (err: any) => {
-                    if (err) {
-                        reject(err);
-                    } else if (this.server) {
-                        this.wss = undefined;
+            this.logger.info("Stopping server...");
+            try {
+                if (this.app?.isListening) {
+                    this.app.close();
+                }
 
-                        this.server.close(async (err: any) => {
-                            this.logger.info("Closing database connections...");
-                            await this.connectionManager?.disconnect();
+                this.logger.info("Closing database connections...");
+                await this.connectionManager?.disconnect();
 
-                            if (err) {
-                                reject(err);
-                            } else {
-                                this.server = undefined;
-                                resolve();
-                            }
-                        });
-                    }
-                });
-
-                setTimeout(() => {
-                    reject("Failed to shut down server.");
-                }, 30000);
-            } else {
                 resolve();
+            } catch (err) {
+                reject(err);
             }
+
+            setTimeout(() => {
+                reject("Failed to shut down server.");
+            }, 30000);
         });
     }
 

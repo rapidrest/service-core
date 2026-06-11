@@ -1,8 +1,8 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "../config";
-import request from "supertest";
+import { request } from "../request.js";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { MongoConnection, MongoRepository } from "../../src";
 import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo";
@@ -111,7 +111,7 @@ describe("ACLRouteMongo Tests", () => {
                 }),
             ],
         });
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .post("/acls")
             .send(acl)
             .set("Authorization", "jwt " + adminToken);
@@ -180,7 +180,7 @@ describe("ACLRouteMongo Tests", () => {
                 }),
             ],
         });
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .post("/acls")
             .send(acl)
             .set("Authorization", "jwt " + userToken);
@@ -206,7 +206,7 @@ describe("ACLRouteMongo Tests", () => {
                 }),
             ],
         });
-        const result = await request(server.getApplication()).post("/acls").send(acl);
+        const result = await request(server).post("/acls").send(acl);
         expect(result.status).toBe(401);
 
         const stored: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
@@ -215,7 +215,7 @@ describe("ACLRouteMongo Tests", () => {
 
     it("Can delete ACL document.", async () => {
         const acl: AccessControlListMongo = await createACL();
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .delete("/acls/" + acl.uid)
             .set("Authorization", "jwt " + adminToken);
         expect(result.status).toBe(204);
@@ -228,7 +228,7 @@ describe("ACLRouteMongo Tests", () => {
         let count: number = await repo.count({ uid: "default_ProtectedUser" });
         expect(count).toBe(1);
 
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .delete("/acls/default_ProtectedUser")
             .set("Authorization", "jwt " + adminToken);
         expect(result.status).toBe(403);
@@ -257,7 +257,7 @@ describe("ACLRouteMongo Tests", () => {
                 delete: false,
             }),
         ]);
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .delete("/acls/" + acl.uid)
             .set("Authorization", "jwt " + userToken);
         expect(result.status).toBe(403);
@@ -287,7 +287,7 @@ describe("ACLRouteMongo Tests", () => {
                 delete: false,
             }),
         ]);
-        const result = await request(server.getApplication()).delete("/acls/" + acl.uid);
+        const result = await request(server).delete("/acls/" + acl.uid);
         expect(result.status).toBe(401);
 
         const existing: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
@@ -296,7 +296,7 @@ describe("ACLRouteMongo Tests", () => {
 
     it("Can find ACL document by id.", async () => {
         const acl: AccessControlListMongo = await createACL();
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .get("/acls/" + acl.uid)
             .send()
             .set("Authorization", "jwt " + adminToken);
@@ -321,7 +321,7 @@ describe("ACLRouteMongo Tests", () => {
                 delete: false,
             })
         );
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .put("/acls/" + acl.uid)
             .send(acl)
             .set("Authorization", "jwt " + adminToken);
@@ -393,7 +393,7 @@ describe("ACLRouteMongo Tests", () => {
                 delete: false,
             })
         );
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .put("/acls/" + acl.uid)
             .send(acl)
             .set("Authorization", "jwt " + userToken);
@@ -464,7 +464,7 @@ describe("ACLRouteMongo Tests", () => {
                 delete: false,
             })
         );
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .put("/acls/" + acl.uid)
             .send(acl)
             .set("Authorization", "jwt " + userToken);
@@ -501,7 +501,7 @@ describe("ACLRouteMongo Tests", () => {
                 delete: false,
             })
         );
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .put("/acls/" + acl.uid)
             .send(acl);
         expect(result.status).toBe(401);
@@ -513,7 +513,7 @@ describe("ACLRouteMongo Tests", () => {
         if (acl) {
             acl.records = [];
 
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .put("/acls/" + acl.uid)
                 .set("Authorization", "jwt " + adminToken)
                 .send(acl);
@@ -524,7 +524,7 @@ describe("ACLRouteMongo Tests", () => {
     it("Can count ACL documents.", async () => {
         const count: number = await repo.count();
         const acls: AccessControlListMongo[] = await createACLs(5);
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .head("/acls")
             .set("Authorization", "jwt " + adminToken);
         expect(result.headers).toHaveProperty("content-length");
@@ -537,7 +537,7 @@ describe("ACLRouteMongo Tests", () => {
         const acls: AccessControlListMongo[] = await createACLs(5, [], parentUid);
         await createACLs(5, [], uuid.v4());
         await createACLs(5, [], uuid.v4());
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .head("/acls?parentUid=" + parentUid)
             .set("Authorization", "jwt " + adminToken);
         expect(result.headers).toHaveProperty("content-length");
@@ -547,7 +547,7 @@ describe("ACLRouteMongo Tests", () => {
     it("Can find all ACL documents.", async () => {
         const count: number = await repo.count();
         const acls: AccessControlListMongo[] = await createACLs(5);
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .get("/acls")
             .set("Authorization", "jwt " + adminToken);
         expect(result).toHaveProperty("body");
@@ -560,7 +560,7 @@ describe("ACLRouteMongo Tests", () => {
         const acls: AccessControlListMongo[] = await createACLs(5, [], parentUid);
         await createACLs(5, [], uuid.v4());
         await createACLs(5, [], uuid.v4());
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .get("/acls?parentUid=" + parentUid)
             .set("Authorization", "jwt " + adminToken);
         expect(result).toHaveProperty("body");

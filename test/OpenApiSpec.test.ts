@@ -3,7 +3,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
 import { ObjectFactory, OpenApiSpec, RouteUtils, AdminRoute } from "../src";
-import express from "express";
 
 import { Logger } from "@rapidrest/core";
 
@@ -21,7 +20,12 @@ describe("OpenApiSpec Tests", () => {
         const apiSpec: OpenApiSpec | undefined = await objectFactory.newInstance(OpenApiSpec, { name: "default" });
         const admin: AdminRoute = await objectFactory.newInstance(AdminRoute);
         const routeUtils: RouteUtils = await objectFactory.newInstance(RouteUtils);
-        await routeUtils.registerRoute(express(), admin);
+        const stubApp: Record<string, any> = {
+            get: () => undefined, post: () => undefined, put: () => undefined,
+            delete: () => undefined, patch: () => undefined, head: () => undefined,
+            options: () => undefined, ws: () => undefined, use: () => undefined,
+        };
+        await routeUtils.registerRoute(stubApp, admin);
         return apiSpec;
     }
 

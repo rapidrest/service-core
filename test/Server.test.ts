@@ -1,4 +1,4 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 const corsOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"];
@@ -8,7 +8,7 @@ import * as fs from "fs";
 import { default as config } from "./config";
 import { Server, ObjectFactory, ApiErrors } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import request from "supertest";
+import { request } from "./request.js";
 import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
 
@@ -59,9 +59,9 @@ describe("Server Tests", () => {
     it("Can start server.", async () => {
         expect(server.isRunning()).toBe(true);
         // Cors Check
-        let result = await request(server.getApplication()).options("/").set("Origin", corsOrigins[0]);
+        let result = await request(server).options("/").set("Origin", corsOrigins[0]);
         expect(result.headers["access-control-allow-origin"]).toEqual(corsOrigins[0]);
-        result = await request(server.getApplication()).options("/").set("Origin", "http://localhost:3005");
+        result = await request(server).options("/").set("Origin", "http://localhost:3005");
         expect(result.headers["access-control-allow-origin"]).not.toBeDefined();
     });
 
@@ -79,7 +79,7 @@ describe("Server Tests", () => {
 
     it("Can serve status.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/status");
+        const result = await request(server).get("/status");
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(200);
         expect(result).toHaveProperty("body");
@@ -93,7 +93,7 @@ describe("Server Tests", () => {
             test: "Updates"
         };
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/status");
+        const result = await request(server).get("/status");
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(200);
         expect(result).toHaveProperty("body");
@@ -104,14 +104,14 @@ describe("Server Tests", () => {
 
     it("Can serve OpenAPI spec.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/openapi.json");
+        const result = await request(server).get("/openapi.json");
         expect(result).toHaveProperty("status");
         expect(result.type).toBe("application/json");
         expect(result.status).toBe(200);
         expect(result).toHaveProperty("body");
         expect(result.body.openapi).toBe("3.1.0");
 
-        const result2 = await request(server.getApplication()).get("/openapi.yaml");
+        const result2 = await request(server).get("/openapi.yaml");
         expect(result2).toHaveProperty("status");
         expect(result2.status).toBe(200);
         expect(result2).toHaveProperty("text");
@@ -121,7 +121,7 @@ describe("Server Tests", () => {
             fs.writeFileSync(`./test/openapi.yaml`, result2.text);
         }
 
-        const result3 = await request(server.getApplication()).get("/api-docs");
+        const result3 = await request(server).get("/api-docs");
         expect(result3).toHaveProperty("status");
         expect(result3.status).toBe(200);
         expect(result3).toHaveProperty("body");
@@ -129,7 +129,7 @@ describe("Server Tests", () => {
 
     it("Can serve OpenAPI expected JSON.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/openapi.json");
+        const result = await request(server).get("/openapi.json");
         expect(result).toHaveProperty("status");
         expect(result.type).toBe("application/json");
         expect(result.status).toBe(200);
@@ -140,7 +140,7 @@ describe("Server Tests", () => {
         expect(result.body.info.termsOfService).toBe(config.get("termsOfService"));
         expect(result.body.info.license).toBe(config.get("license"));
         expect(result.body.info.version).toBe(config.get("version"));
-        expect(Object.keys(result.body.paths).length).toBe(34)
+        expect(Object.keys(result.body.paths).length).toBe(35)
         fs.writeFileSync("./openapi.json", JSON.stringify(result.body));
         const schemas = Object.keys(result.body.components.schemas);
         const parameters = Object.keys(result.body.components.parameters);
@@ -193,7 +193,7 @@ describe("Server Tests", () => {
 
     it("Can serve metrics.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/metrics");
+        const result = await request(server).get("/metrics");
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(200);
         expect(result).toHaveProperty("text");
@@ -202,7 +202,7 @@ describe("Server Tests", () => {
 
     it("Can serve single metric.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/metrics/num_total_requests");
+        const result = await request(server).get("/metrics/num_total_requests");
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(200);
         expect(result).toHaveProperty("text");
@@ -211,7 +211,7 @@ describe("Server Tests", () => {
 
     it("Can serve hello world.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/hello");
+        const result = await request(server).get("/hello");
         expect(result.status).toBe(200);
         expect(result.body).toBeDefined();
         expect(result.body.msg).toBe("Hello World!");
@@ -220,7 +220,7 @@ describe("Server Tests", () => {
     it("Can authorize user.", async () => {
         const user: any = { uid: uuid.v4() };
         const token = JWTUtils.createToken(config.get("auth"), user);
-        const result = await request(server.getApplication())
+        const result = await request(server)
             .get("/token")
             .set("Authorization", "jwt " + token);
         expect(result.status).toBe(200);
@@ -230,14 +230,14 @@ describe("Server Tests", () => {
     it("Can authorize user with query param.", async () => {
         const user: any = { uid: uuid.v4() };
         const token = JWTUtils.createToken(config.get("auth"), user);
-        const result = await request(server.getApplication()).get("/token?jwt_token=" + token);
+        const result = await request(server).get("/token?jwt_token=" + token);
         expect(result.status).toBe(200);
         expect(result.body).toEqual(user);
     });
 
     it("Can handle error gracefully.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server.getApplication()).get("/error");
+        const result = await request(server).get("/error");
         expect(result.status).toBe(400);
         expect(result.body.status).toBe(400);
         expect(result.body.code).toBe(ApiErrors.INVALID_REQUEST);

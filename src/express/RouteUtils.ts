@@ -2,18 +2,18 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, JWTPayload, JWTUser, JWTUtils, ObjectDecorators, UserUtils } from "@rapidrest/core";
-import { Request, Response, NextFunction, RequestHandler } from "express";
+import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "../http/types.js";
+import type { RequestWS } from "../http/WebSocket.js";
 import { ServerResponse } from "http";
-import { RequestWS } from "./WebSocket.js";
 import { OpenApiSpec } from "../OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { AccessControlList, ACLUtils } from "../security/index.js";
-import passport from "passport";
+import { JWTStrategy, JWTStrategyOptions } from "../passportjs/JWTStrategy.js";
 import _ from "lodash";
 const { Config, Inject, Logger } = ObjectDecorators;
 
 /**
- * Provides a set of utilities for converting Route classes to ExpressJS middleware.
+ * Provides a set of utilities for converting Route classes to HTTP middleware.
  *
  * @author Jean-Philippe Steinmetz <rapidrests@gmail.com>
  */
@@ -33,14 +33,25 @@ export class RouteUtils {
     @Logger
     private logger?: any;
 
+    /** Lazily-constructed JWT strategy used for all auth middleware (no Passport dependency). */
+    private _jwtStrategy?: JWTStrategy;
+    private get jwtStrategy(): JWTStrategy {
+        if (!this._jwtStrategy) {
+            const opts = new JWTStrategyOptions();
+            opts.config = this.authConfig || { secret: "" };
+            this._jwtStrategy = new JWTStrategy(opts);
+        }
+        return this._jwtStrategy;
+    }
+
     /**
-     * Creates an Express middleware function that verifies the incoming request is from a valid user with at least
+     * Creates a middleware function that verifies the incoming request is from a valid user with at least
      * one of the specified roles.
      */
     public checkRequiredPerms(aclUid: string): RequestHandler {
-        return async (req: Request, res: Response, next: NextFunction) => {
+        return async (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
             let granted: boolean = this.aclUtils
-                ? await this.aclUtils.checkRequestPerms(aclUid, req.user as any, req)
+                ? await this.aclUtils.checkRequestPerms(aclUid, req.user, req)
                 : false;
 
             if (granted) {
@@ -68,7 +79,7 @@ export class RouteUtils {
      * @param required Set to `true` to indicate that auth is required, otherwise `false`.
      */
     public authWebSocket(required: boolean): RequestHandler {
-        return (req: Request, res: Response, next: NextFunction) => {
+        return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
             const sock: any = (req as RequestWS).websocket || req.socket;
             const user: JWTUser | undefined = req.user as JWTUser;
 
@@ -183,13 +194,13 @@ export class RouteUtils {
     }
 
     /**
-     * Creates an Express middleware function that verifies the incoming request is from a valid user with at least
+     * Creates a middleware function that verifies the incoming request is from a valid user with at least
      * one of the specified roles.
      *
      * @param requiredRoles The list of roles that the authenticated user must have.
      */
     public checkRequiredRoles(requiredRoles: string[]): RequestHandler {
-        return (req: Request, res: Response, next: NextFunction) => {
+        return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
             let foundRole: boolean = UserUtils.hasRoles(req.user, requiredRoles);
 
             if (foundRole) {
@@ -262,8 +273,8 @@ export class RouteUtils {
     /**
      * Registers the provided route object containing a set of decorated endpoints to the server.
      *
-     * @param app The Express application to register the route to.
-     * @param route The route object to register with Express.
+     * @param app The HTTP application/router to register the route to.
+     * @param route The route object to register.
      */
     public async registerRoute(app: any, route: any): Promise<void> {
         let routePaths: string[] = Reflect.getMetadata("rrst:routePaths", route);
@@ -341,7 +352,7 @@ export class RouteUtils {
 
                     // Multiple base paths can be provided to a single route definition.
                     for (let basePath of routePaths) {
-                        let subpath: string = entry[1].startsWith("/") ? entry[1].substr(1) : entry[1];
+                        let subpath: string = entry[1].startsWith("/") ? entry[1].substring(1) : entry[1];
                         let path: string =
                             subpath.length === 0 || basePath.endsWith("/")
                                 ? basePath + subpath
@@ -349,43 +360,55 @@ export class RouteUtils {
 
                         // If the verb is `ws` we need to translate this accordingly
                         if (verb === "ws") {
-                            // Rewrite our verb to be `get` so that Express' internal plumbing works correctly
-                            verb = "get";
-                            // We add .websocket to the end of the path so that other routes using different
-                            // verbs will still function correctly
-                            path += ".websocket";
-                            // Also add the websocket auth handler as the first middleware function
+                            // Optional JWT extraction: set req.user from Authorization header
+                            // so that header-based auth works in authWebSocket
+                            const jwtExtractMw: RequestHandler = (req, _res, next) => {
+                                const result = this.jwtStrategy.authenticate(req);
+                                req.user = result.user;
+                                req.authPayload = result.authPayload;
+                                req.authToken = result.authToken;
+                                next();
+                            };
                             middleware.unshift(this.authWebSocket(authRequired));
+                            middleware.unshift(jwtExtractMw);
                             // Set authRequired to false since we enforce it in the authWebSocket function
                             authRequired = false;
+
+                            // Register with the HttpRouter's ws() method; trailing slash handled internally
+                            app.ws(path, middleware);
+
+                            // Update our OpenAPI spec — WebSocket upgrade is a GET request
+                            this.apiSpec.addRoute(key, path, "get", metadata, docs, route);
+                            this.logger.info("Registered Route: WS " + path);
+                            continue;
                         }
 
-                        // If auth strategies are provided add the necessary passport middleware
+                        // Build the JWT auth middleware for this route
                         if (authStrategies && authStrategies.length > 0) {
-                            // Passport no longer supports the allowFailure flag so we must write our own wrapper
-                            // to provide this functionality.
                             if (authRequired) {
-                                app[verb](
-                                    path,
-                                    passport.authenticate(authStrategies, {
-                                        session: false,
-                                    }, undefined),
-                                    ...middleware
-                                );
+                                // Required auth — reject with 401 if no valid token
+                                const jwtMw: RequestHandler = (req, _res, next) => {
+                                    const result = this.jwtStrategy.authenticate(req);
+                                    if (result.user) {
+                                        req.user = result.user;
+                                        req.authPayload = result.authPayload;
+                                        req.authToken = result.authToken;
+                                        next();
+                                    } else {
+                                        next(new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED));
+                                    }
+                                };
+                                app[verb](path, jwtMw, ...middleware);
                             } else {
-                            app[verb](
-                                path,
-                                    (req, res, next) => {
-                                passport.authenticate(authStrategies, {
-                                    session: false,
-                                        }, (err, user) => {
-                                            if (err) { return next(err); }
-                                            req.user = user || undefined;
-                                            next();
-                                        })(req, res, next);
-                                    },
-                                    ...middleware
-                            );
+                                // Optional auth — always proceeds; user may be undefined
+                                const jwtMw: RequestHandler = (req, _res, next) => {
+                                    const result = this.jwtStrategy.authenticate(req);
+                                    req.user = result.user;
+                                    req.authPayload = result.authPayload;
+                                    req.authToken = result.authToken;
+                                    next();
+                                };
+                                app[verb](path, jwtMw, ...middleware);
                             }
                         } else {
                             app[verb](path, ...middleware);
@@ -402,14 +425,14 @@ export class RouteUtils {
     }
 
     /**
-     * Wraps the provided function with Express handling based on the function's defined decorators.
+     * Wraps the provided function with HTTP handling based on the function's defined decorators.
      *
      * @param obj The bound object whose middleware function will be wrapped.
-     * @param func The decorated function to wrap for registration with Express.
+     * @param func The decorated function to wrap.
      * @param send Set to true to have `func`'s result sent to the client.
      */
     public wrapMiddleware(obj: any, func: Function, send: boolean = false): RequestHandler {
-        return async (req: Request, res: Response, next: NextFunction) => {
+        return async (req: HttpRequest, res: HttpResponse, next: NextFunction) => {
             try {
                 const argMetadata: any = Reflect.getMetadata("rrst:args", Object.getPrototypeOf(obj), func.name);
                 const routeMetadata: any = Reflect.getMetadata("rrst:route", Object.getPrototypeOf(obj), func.name);
@@ -512,8 +535,9 @@ export class RouteUtils {
 
                 // If the result is a response we need to return this immediately. We don't return the original response
                 // object because responses are passed by copy, not refernce and so the result will be different.
+                // Also catches UWSResponse returned directly (e.g. doCount returns res.status(200)).
                 const isResponse: boolean =
-                    result instanceof ServerResponse || (result && result.headers && result.url);
+                    result === res || result instanceof ServerResponse || (result && result.headers && result.url);
                 if (isResponse) {
                     return result.send();
                 } else {

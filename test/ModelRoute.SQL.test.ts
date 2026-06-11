@@ -1,8 +1,8 @@
-///////////////////////////////////////////////////////////////////////////////
+﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
-import request from "supertest";
+import { request } from "./request.js";
 import { Server, ConnectionManager, ObjectFactory } from "../src";
 import Item from "./server/models/Item";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -80,7 +80,7 @@ describe("ModelRoute Tests [SQL]", () => {
                 quantity: 1,
                 cost: 10000,
             });
-            const result = await request(server.getApplication()).post("/items").send(item);
+            const result = await request(server).post("/items").send(item);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(item.uid);
             expect(result.body.version).toEqual(item.version);
@@ -101,7 +101,7 @@ describe("ModelRoute Tests [SQL]", () => {
 
         it("Can delete document. [SQL]", async () => {
             const item: Item = await createItem("BFG", 1, 10000);
-            const result = await request(server.getApplication()).delete("/items/" + item.uid);
+            const result = await request(server).delete("/items/" + item.uid);
             expect(result.status).toBe(204);
 
             const existing: Item | null = await repo.findOne({ where: { uid: item.uid } });
@@ -110,7 +110,7 @@ describe("ModelRoute Tests [SQL]", () => {
 
         it("Can find document by id. [SQL]", async () => {
             const item: Item = await createItem("BFG", 1, 100000);
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .get("/items/" + item.uid)
                 .send();
             expect(result).toHaveProperty("body");
@@ -126,7 +126,7 @@ describe("ModelRoute Tests [SQL]", () => {
             item.name = "B-Bomb";
             item.quantity = 5;
             item.cost = 50;
-            const result = await request(server.getApplication())
+            const result = await request(server)
                 .put("/items/" + item.uid)
                 .send(item);
             expect(result).toHaveProperty("body");
@@ -152,7 +152,7 @@ describe("ModelRoute Tests [SQL]", () => {
     describe("Multiple Document Tests [SQL]", () => {
         it("Can count documents. [SQL]", async () => {
             const items: Item[] = await createItems(20);
-            const result = await request(server.getApplication()).head("/items");
+            const result = await request(server).head("/items");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(items.length.toString());
         });
@@ -162,7 +162,7 @@ describe("ModelRoute Tests [SQL]", () => {
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
             await createItem("Boomerang", 1, 100);
-            const result = await request(server.getApplication()).head("/items?name=B-Bomb");
+            const result = await request(server).head("/items?name=B-Bomb");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe((1).toString());
         });
@@ -172,14 +172,14 @@ describe("ModelRoute Tests [SQL]", () => {
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
             await createItem("Boomerang", 1, 100);
-            const result = await request(server.getApplication()).head("/items?name=like(Item%)");
+            const result = await request(server).head("/items?name=like(Item%)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(items.length.toString());
         });
 
         it("Can find all documents. [SQL]", async () => {
             const items: Item[] = await createItems(25);
-            const result = await request(server.getApplication()).get("/items");
+            const result = await request(server).get("/items");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(items.length);
         });
@@ -189,7 +189,7 @@ describe("ModelRoute Tests [SQL]", () => {
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
             await createItem("Boomerang", 1, 100);
-            const result = await request(server.getApplication()).get("/items?name=BFG");
+            const result = await request(server).get("/items?name=BFG");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(1);
             for (const item of result.body) {
@@ -202,7 +202,7 @@ describe("ModelRoute Tests [SQL]", () => {
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
             await createItem("Boomerang", 1, 100);
-            const result = await request(server.getApplication()).get("/items?name=like(Item%)");
+            const result = await request(server).get("/items?name=like(Item%)");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(items.length);
             for (const item of result.body) {
@@ -215,7 +215,7 @@ describe("ModelRoute Tests [SQL]", () => {
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
             await createItem("Boomerang", 1, 100);
-            const result = await request(server.getApplication()).delete("/items");
+            const result = await request(server).delete("/items");
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();
@@ -227,7 +227,7 @@ describe("ModelRoute Tests [SQL]", () => {
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
             await createItem("Boomerang", 1, 100);
-            const result = await request(server.getApplication()).delete("/items?name=in(BFG,B-Bomb,Boomerang)");
+            const result = await request(server).delete("/items?name=in(BFG,B-Bomb,Boomerang)");
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();
