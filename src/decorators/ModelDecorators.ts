@@ -3,8 +3,24 @@
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 import { AccessControlList } from "../security/AccessControlList.js";
-import { ColumnMetadataArgs } from "typeorm/metadata-args/ColumnMetadataArgs.js";
-import { getMetadataArgsStorage } from "typeorm/globals.js";
+
+/**
+ * Describes a column registration that must be bridged into TypeORM's metadata storage when (and only when) a SQL
+ * connection is established. Entries are queued here by decorators so that this module does not depend on the
+ * optional `typeorm` package.
+ */
+export interface PendingTypeOrmColumn {
+    target: any;
+    propertyName: string;
+    mode: "regular";
+    options: any;
+}
+
+/**
+ * The list of column registrations waiting to be bridged into TypeORM's metadata storage. This list is drained by
+ * the TypeORM support module when a SQL connection is created.
+ */
+export const pendingTypeOrmColumns: PendingTypeOrmColumn[] = [];
 
 /**
  * Indicates that the class is cacheable with the specified TTL.
@@ -28,20 +44,24 @@ export function Cache(ttl: number = 30) {
  */
 export function ChildEntity() {
     return function <T extends { new (...args: any[]): {} }>(constructor: T) {
-        // Let TypeORM know about the `_type` property so it gets stored
-        const storage = getMetadataArgsStorage();
-        storage.columns.push({
+        // Queue the `_type` property registration so that it gets bridged to TypeORM if a SQL connection is
+        // created. MongoDB connections store the `_type` instance property natively and need no registration.
+        pendingTypeOrmColumns.push({
             target: constructor,
             propertyName: "_type",
             mode: "regular",
             options: {},
         });
 
+        Reflect.defineMetadata("rrst:childEntity", true, constructor);
+
         // Add the property so that it becomes an instance member
-        return class extends constructor {
+        const child = class extends constructor {
             /** The class type of the instance. */
             public readonly _type: string = constructor.name;
         };
+        Reflect.defineMetadata("rrst:childEntity", true, child);
+        return child;
     };
 }
 

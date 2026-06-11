@@ -3,10 +3,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
 import request from "supertest";
-import { Server, ConnectionManager, ObjectFactory } from "../src";
+import { Server, ConnectionManager, ObjectFactory, MongoConnection, MongoRepository, isSqlDataSource } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import User from "./server/models/User";
-import { MongoRepository, DataSource, Repository } from "typeorm";
 import { Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
 import Player from "./server/models/Player";
@@ -22,8 +21,8 @@ vi.setConfig({ testTimeout: 60000 });
 describe("ModelRoute Tests [MongoDB]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
-    let repo: MongoRepository<User | Player>;
-    let itemRepo: Repository<Item>;
+    let repo: MongoRepository<any>;
+    let itemRepo: any;
 
     const createUser = async (
         name: string,
@@ -109,11 +108,11 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         const connMgr: ConnectionManager | undefined = objectFactory.getInstance(ConnectionManager);
         let conn: any = connMgr?.connections.get("mongodb");
-        if (conn instanceof DataSource) {
-            repo = conn.getMongoRepository(User);
+        if (conn instanceof MongoConnection) {
+            repo = conn.getRepository(User);
         }
         conn = connMgr?.connections.get("sqlite");
-        if (conn instanceof DataSource) {
+        if (isSqlDataSource(conn)) {
             itemRepo = conn.getRepository(Item);
         }
     });

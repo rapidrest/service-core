@@ -1,0 +1,152 @@
+{
+  "acl": {
+    "database": "acls",
+    "collections": {
+      "access_control_list_mongo": [
+        {
+          "v": 2,
+          "key": {
+            "_id": 1
+          },
+          "name": "_id_"
+        },
+        {
+          "v": 2,
+          "key": {
+            "uid": 1
+          },
+          "name": "uid",
+          "background": false,
+          "unique": true,
+          "sparse": false
+        },
+        {
+          "v": 2,
+          "key": {
+            "parentUid": 1
+          },
+          "name": "parentUid",
+          "background": false,
+          "sparse": false
+        }
+      ]
+    }
+  },
+  "mongodb": {
+    "database": "accounts",
+    "collections": {
+      "cache_user": [
+        {
+          "v": 2,
+          "key": {
+            "_id": 1
+          },
+          "name": "_id_"
+        },
+        {
+          "v": 2,
+          "key": {
+            "uid": 1
+          },
+          "name": "uid",
+          "background": false,
+          "unique": true,
+          "sparse": false
+        }
+      ],
+      "user": [
+        {
+          "v": 2,
+          "key": {
+            "_id": 1
+          },
+          "name": "_id_"
+        },
+        {
+          "v": 2,
+          "key": {
+            "uid": 1
+          },
+          "name": "uid",
+          "background": false,
+          "unique": true,
+          "sparse": false
+        },
+        {
+          "v": 2,
+          "key": {
+            "name": 1
+          },
+          "name": "IDX_065d4d8f3b5adb4a08841eae3c",
+          "background": false,
+          "sparse": false
+        },
+        {
+          "v": 2,
+          "key": {
+            "productUid": 1
+          },
+          "name": "IDX_c74ac4df567b4a2d7e10ae90c8",
+          "background": false,
+          "sparse": false
+        }
+      ],
+      "versioned_user": [
+        {
+          "v": 2,
+          "key": {
+            "_id": 1
+          },
+          "name": "_id_"
+        },
+        {
+          "v": 2,
+          "key": {
+            "uid": 1
+          },
+          "name": "uid",
+          "background": false,
+          "unique": true,
+          "sparse": false
+        },
+        {
+          "v": 2,
+          "key": {
+            "name": 1
+          },
+          "name": "IDX_56360499f23101b34b428e899d",
+          "background": false,
+          "sparse": false
+        }
+      ],
+      "protected_user": [
+        {
+          "v": 2,
+          "key": {
+            "_id": 1
+          },
+          "name": "_id_"
+        },
+        {
+          "v": 2,
+          "key": {
+            "uid": 1
+          },
+          "name": "uid",
+          "background": false,
+          "unique": true,
+          "sparse": false
+        },
+        {
+          "v": 2,
+          "key": {
+            "name": 1
+          },
+          "name": "IDX_64b90ecb97a745d89bc83e71bc",
+          "background": false,
+          "sparse": false
+        }
+      ]
+    }
+  }
+}

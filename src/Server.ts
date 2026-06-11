@@ -30,7 +30,8 @@ import { ApiErrorMessages, ApiErrors } from "./ApiErrors.js";
 import { RedisStore } from "connect-redis";
 import { ACLUtils } from "./security/ACLUtils.js";
 import { NotificationUtils } from "./NotificationUtils.js";
-import { DataSource } from "typeorm";
+import { isSqlDataSource } from "./database/ConnectionKinds.js";
+import { MongoConnection } from "./database/MongoConnection.js";
 import { ACLRouteMongo } from "./security/ACLRouteMongo.js";
 import { ACLRouteSQL } from "./security/ACLRouteSQL.js";
 import { EventListenerManager } from "./EventListenerManager.js";
@@ -451,20 +452,18 @@ export class Server {
 
                 // Register the ACLs route if configured
                 const aclConn: any = this.connectionManager?.connections.get("acl");
-                if (aclConn instanceof DataSource) {
-                    if (aclConn.driver.constructor.name === "MongoDriver") {
-                        const aclRoute: ACLRouteMongo = await this.objectFactory.newInstance(ACLRouteMongo, {
-                            name: "default",
-                        });
-                        await this.routeUtils.registerRoute(this.app, aclRoute);
-                        allRoutes.push(aclRoute);
-                    } else {
-                        const aclRoute: ACLRouteSQL = await this.objectFactory.newInstance(ACLRouteSQL, {
-                            name: "default",
-                        });
-                        await this.routeUtils.registerRoute(this.app, aclRoute);
-                        allRoutes.push(aclRoute);
-                    }
+                if (aclConn instanceof MongoConnection) {
+                    const aclRoute: ACLRouteMongo = await this.objectFactory.newInstance(ACLRouteMongo, {
+                        name: "default",
+                    });
+                    await this.routeUtils.registerRoute(this.app, aclRoute);
+                    allRoutes.push(aclRoute);
+                } else if (isSqlDataSource(aclConn)) {
+                    const aclRoute: ACLRouteSQL = await this.objectFactory.newInstance(ACLRouteSQL, {
+                        name: "default",
+                    });
+                    await this.routeUtils.registerRoute(this.app, aclRoute);
+                    allRoutes.push(aclRoute);
                 }
 
                 // Register the OpenAPI route if a spec has been provided

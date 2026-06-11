@@ -1,7 +1,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { ObjectId, ObjectIdColumn } from "typeorm";
+import { ObjectId } from "mongodb";
+import { Column } from "../decorators/PersistenceDecorators.js";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 
 /**
@@ -16,7 +17,7 @@ export abstract class RecoverableBaseMongoEntity extends RecoverableBaseEntity {
     /**
      * The internal unique identifier used by MongoDB.
      */
-    @ObjectIdColumn()
+    @Column({ isObjectId: true })
     public _id?: any;
 
     constructor(other?: Partial<RecoverableBaseMongoEntity>) {
@@ -25,7 +26,7 @@ export abstract class RecoverableBaseMongoEntity extends RecoverableBaseEntity {
         if (other) {
             this._id = other._id
                 ? typeof other._id === "string" || typeof other._id === "number"
-                    ? new ObjectId(other._id)
+                    ? new ObjectId(String(other._id))
                     : other._id
                 : this._id;
         }

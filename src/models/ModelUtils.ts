@@ -1,19 +1,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import {
-    Repository,
-    ILike,
-    LessThanOrEqual,
-    MoreThanOrEqual,
-    Not,
-    Equal,
-    In,
-    MoreThan,
-    LessThan,
-    Between,
-    MongoRepository,
-} from "typeorm";
+import type { Repository } from "typeorm";
+import { MongoRepository } from "../database/MongoRepository.js";
 import { ApiError, ClassLoader, Logger, StringUtils } from "@rapidrest/core";
 import "reflect-metadata";
 import _, { isEmpty } from "lodash";
@@ -33,6 +22,31 @@ const logger = Logger();
  * @author Jean-Philippe Steinmetz
  */
 export class ModelUtils {
+    /** The `typeorm` module containing the query operators used to build SQL queries. */
+    private static typeOrm: any | undefined;
+
+    /**
+     * Provides the `typeorm` module to use when building SQL queries. This is called automatically when a SQL
+     * datastore connection is established.
+     *
+     * @param module The `typeorm` module.
+     */
+    public static setTypeOrm(module: any): void {
+        ModelUtils.typeOrm = module;
+    }
+
+    /**
+     * Returns the `typeorm` module, throwing an error if it has not been provided.
+     */
+    private static get orm(): any {
+        if (!ModelUtils.typeOrm) {
+            throw new Error(
+                "SQL query construction requires the optional peer dependency 'typeorm' but no SQL datastore has been initialized.",
+            );
+        }
+        return ModelUtils.typeOrm;
+    }
+
     /**
      * Retrieves a list of all of the specified class's properties that have the @Identifier decorator applied.
      *
@@ -105,7 +119,7 @@ export class ModelUtils {
             // If productUid is an id, skip it because it's used as a compound key
             if (prop === "productUid") continue;
 
-            const q: any = { [prop]: Array.isArray(id) ? In(id) : id };
+            const q: any = { [prop]: Array.isArray(id) ? ModelUtils.orm.In(id) : id };
             if (props.includes("productUid")) {
                 q.productUid = productUid;
             }
@@ -177,6 +191,8 @@ export class ModelUtils {
      */
     private static getQueryParamValue(param: any): any {
         if (typeof param === "string") {
+            const { Equal, MoreThan, MoreThanOrEqual, In, ILike, LessThan, LessThanOrEqual, Not, Between } =
+                ModelUtils.orm;
             // The value of each param can optionally have the operation included. If no operator is included Eq is
             // always assumed.
             // e.g. ?param1=eq(value)&param2=not(value)&param3=gt(value)

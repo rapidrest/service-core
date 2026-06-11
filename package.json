@@ -26,6 +26,7 @@
     },
     "dependencies": {
         "axios": "^1.17.0",
+        "bson": "^7.2.0",
         "dayjs": "^1.11.21",
         "deepmerge": "^4.3.1",
         "node-schedule": "^2.1.1",
@@ -41,14 +42,38 @@
         "express-session": "1.x",
         "ioredis": "5.x",
         "lodash": "4.x",
-        "mongodb": "6.x",
+        "mongodb": "^7.0.0",
         "openapi3-ts": "4.x",
         "passport": "0.7.x",
         "passport-strategy": "1.x",
         "prom-client": "15.x",
         "reflect-metadata": "0.2.x",
+        "typeorm": "0.3.x",
         "winston": "3.x",
         "ws": "8.x"
+    },
+    "peerDependenciesMeta": {
+        "connect-redis": {
+            "optional": true
+        },
+        "express-session": {
+            "optional": true
+        },
+        "ioredis": {
+            "optional": true
+        },
+        "mongodb": {
+            "optional": true
+        },
+        "passport": {
+            "optional": true
+        },
+        "passport-strategy": {
+            "optional": true
+        },
+        "typeorm": {
+            "optional": true
+        }
     },
     "devDependencies": {
         "@rapidrest/core": "^1.1.4",

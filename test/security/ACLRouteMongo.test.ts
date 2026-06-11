@@ -4,7 +4,7 @@
 import { default as config } from "../config";
 import request from "supertest";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { MongoRepository, DataSource } from "typeorm";
+import { MongoConnection, MongoRepository } from "../../src";
 import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo";
 import { JWTUtils, Logger, EventUtils } from "@rapidrest/core";
 import { ObjectFactory } from "../../src/ObjectFactory";
@@ -68,8 +68,8 @@ describe("ACLRouteMongo Tests", () => {
 
         const connMgr: ConnectionManager | undefined = objectFactory.getInstance(ConnectionManager);
         const conn: any = connMgr?.connections.get("acl");
-        if (conn instanceof DataSource) {
-            repo = conn.getMongoRepository(AccessControlListMongo.name);
+        if (conn instanceof MongoConnection) {
+            repo = conn.getRepository(AccessControlListMongo);
         }
         const results: any[] = await repo.find();
         console.log(results.length);

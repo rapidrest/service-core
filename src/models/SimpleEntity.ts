@@ -3,7 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { Default, Description } from "../decorators/DocDecorators.js";
 import { Identifier } from "../decorators/ModelDecorators.js";
-import { Index, PrimaryColumn } from "typeorm";
+import { Index, PrimaryColumn } from "../decorators/PersistenceDecorators.js";
 import * as uuid from "uuid";
 
 /**

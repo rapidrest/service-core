@@ -4,12 +4,15 @@
 import { JWTUser, ObjectDecorators, UserUtils, sleep } from "@rapidrest/core";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
 import { AccessControlListMongo } from "./AccessControlListMongo.js";
-import { DataSource, MongoRepository, Repository } from "typeorm";
+import type { Repository } from "typeorm";
 import { Request } from "express";
 import { AccessControlList, ACLAction, ACLRecord } from "./AccessControlList.js";
 import { Redis } from "ioredis";
 import { ConnectionManager } from "../database/ConnectionManager.js";
-const { Config, Init, Inject } = ObjectDecorators;
+import { isSqlDataSource } from "../database/ConnectionKinds.js";
+import { MongoConnection } from "../database/MongoConnection.js";
+import { MongoRepository } from "../database/MongoRepository.js";
+const { Config, Inject } = ObjectDecorators;
 
 const CACHE_BASE_KEY: string = "db.cache.AccessControlList";
 
@@ -17,33 +20,24 @@ const CACHE_BASE_KEY: string = "db.cache.AccessControlList";
  * Common utility functions for working with `AccessControlList` objects and validating user permissions.
  */
 export class ACLUtils {
-    private cacheClient?: Redis;
     private cacheTTL: number = 30;
     @Inject(ConnectionManager)
     private connMgr?: ConnectionManager;
-    private repo?: Repository<AccessControlListSQL | AccessControlListMongo>;
     @Config("trusted_roles", ["admin"])
     private trustedRoles: string[] = ["admin"];
 
-    /**
-     * Initializes the utility with the provided defaults.
-     */
-    @Init
-    private init() {
-        if (!this.connMgr) {
-            throw new Error("connMgr not  set!");
-        }
+    private get cacheClient(): Redis | undefined {
+        return this.connMgr?.connections.get("cache") as Redis | undefined;
+    }
 
-        this.cacheClient = this.connMgr.connections.get("cache") as Redis;
-
-        const conn: any = this.connMgr.connections.get("acl");
-        if (conn instanceof DataSource) {
-            if (conn.driver.constructor.name === "MongoDriver") {
-                this.repo = conn.getMongoRepository(AccessControlListMongo.name);
-            } else {
-                this.repo = conn.getRepository(AccessControlListSQL.name);
-            }
+    private get repo(): MongoRepository<any> | Repository<any> | undefined {
+        const conn: any = this.connMgr?.connections.get("acl");
+        if (conn instanceof MongoConnection) {
+            return conn.getRepository(AccessControlListMongo);
+        } else if (isSqlDataSource(conn)) {
+            return conn.getRepository(AccessControlListSQL.name);
         }
+        return undefined;
     }
 
     /**

@@ -3,10 +3,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
 import request from "supertest";
-import { Server, ConnectionManager, ModelUtils, ObjectFactory } from "../src";
+import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import User from "./server/models/VersionedUser";
-import { MongoRepository, DataSource } from "typeorm";
 import { Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
 
@@ -65,8 +64,8 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         const connMgr: ConnectionManager | undefined = objectFactory.getInstance(ConnectionManager);
         const conn: any = connMgr?.connections.get("mongodb");
-        if (conn instanceof DataSource) {
-            repo = conn.getMongoRepository(User.name);
+        if (conn instanceof MongoConnection) {
+            repo = conn.getRepository(User);
         }
     });
 

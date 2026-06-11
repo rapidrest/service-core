@@ -1,7 +1,6 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { Repository, DataSource } from "typeorm";
 import { ModelUtils } from "../models/ModelUtils.js";
 import { RepoOperationOptions, RepoUtils } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";

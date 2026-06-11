@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "../config";
-import { MongoRepository, DataSource } from "typeorm";
+import { MongoConnection, MongoRepository } from "../../src";
 import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { AccessControlList, ACLRecord, ACLAction } from "../../src/security/AccessControlList";
@@ -183,8 +183,8 @@ describe("ACLUtils Tests", () => {
             await connMgr.connect(datastores, models);
 
             const conn: any = connMgr.connections.get("acl");
-            if (conn instanceof DataSource) {
-                aclRepo = conn.getMongoRepository(AccessControlListMongo);
+            if (conn instanceof MongoConnection) {
+                aclRepo = conn.getRepository(AccessControlListMongo);
             }
 
             aclUtils = await objectFactory.newInstance(ACLUtils, { name: "default" });

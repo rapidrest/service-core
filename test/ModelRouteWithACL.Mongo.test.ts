@@ -5,7 +5,7 @@ import config from "./config";
 import request from "supertest";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import ProtectedUser from "./server/models/ProtectedUser";
-import { MongoRepository, DataSource } from "typeorm";
+import { MongoConnection, MongoRepository } from "../src";
 import { JWTUtils, Logger, EventUtils } from "@rapidrest/core";
 import { AccessControlListMongo } from "../src/security/AccessControlListMongo";
 import { ACLRecord } from "../src/security";
@@ -72,7 +72,7 @@ const createUser = async (obj: any, ownerUid?: string): Promise<ProtectedUser> =
         records,
         parentUid: "ProtectedUser",
     };
-    await aclRepo.save(aclRepo.create(acl));
+    await aclRepo.save(new AccessControlListMongo(acl));
 
     return result;
 };
@@ -115,12 +115,12 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         const connMgr: ConnectionManager | undefined = objectFactory.getInstance(ConnectionManager);
         let conn: any = connMgr?.connections.get("acl");
-        if (conn instanceof DataSource) {
-            aclRepo = conn.getMongoRepository(AccessControlListMongo.name);
+        if (conn instanceof MongoConnection) {
+            aclRepo = conn.getRepository(AccessControlListMongo);
         }
         conn = connMgr?.connections.get("mongodb");
-        if (conn instanceof DataSource) {
-            repo = conn.getMongoRepository(ProtectedUser.name);
+        if (conn instanceof MongoConnection) {
+            repo = conn.getRepository(ProtectedUser);
         }
     });
 

@@ -4,9 +4,8 @@
 import { default as config } from "./config";
 import * as crypto from "crypto";
 import request from "supertest";
-import { Server, ConnectionManager, ModelUtils, ObjectFactory } from "../src";
+import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { MongoRepository, DataSource } from "typeorm";
 import CacheUser from "./server/models/CacheUser";
 import { Logger } from "@rapidrest/core";
 import Redis from "ioredis-mock";
@@ -63,8 +62,8 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
         await mongod.start();
         await server.start();
         const conn: any = connMgr.connections.get("mongodb");
-        if (conn instanceof DataSource) {
-            repo = conn.getMongoRepository(CacheUser.name);
+        if (conn instanceof MongoConnection) {
+            repo = conn.getRepository(CacheUser);
         }
     });
 

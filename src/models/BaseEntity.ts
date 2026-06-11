@@ -3,11 +3,11 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { Default, Description } from "../decorators/DocDecorators.js";
 import { Identifier } from "../decorators/ModelDecorators.js";
-import { Column, Index, PrimaryColumn } from "typeorm";
+import { Column, Index, PrimaryColumn } from "../decorators/PersistenceDecorators.js";
 import * as uuid from "uuid";
 
 /**
- * Provides a common base class for all entity's that will be persisted with TypeORM.
+ * Provides a common base class for all entity's that will be persisted to a datastore.
  *
  * Note that the `@CreateDateColumn`, `@UpdateDateColumn`, and `@VersionColumn` decorators from TypeORM are not supported
  * because they are not implemented in TypeORM's MongoDB support. They are instead implemented directly by this

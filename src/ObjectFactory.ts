@@ -4,8 +4,8 @@
 import "reflect-metadata";
 import { ObjectFactory as CoreObjectFactory } from "@rapidrest/core";
 import { ConnectionManager } from "./database/ConnectionManager.js";
-import { DataSource } from "typeorm";
-import * as Redis from "ioredis";
+import { isSqlDataSource } from "./database/ConnectionKinds.js";
+import { MongoConnection } from "./database/MongoConnection.js";
 
 interface Entity {
     datastore?: any;
@@ -40,9 +40,8 @@ export class ObjectFactory extends CoreObjectFactory {
                     // Look up the connection name from the model class
                     const datastore: string = (injectRepo as Entity).datastore;
                     if (datastore) {
-                        const conn: DataSource | Redis.Redis | undefined =
-                            connectionManager?.connections.get(datastore);
-                        if (conn instanceof DataSource) {
+                        const conn: any = connectionManager?.connections.get(datastore);
+                        if (conn instanceof MongoConnection || isSqlDataSource(conn)) {
                             obj[member] = conn.getRepository(injectRepo);
                         } else {
                             throw new Error("Unable to find database connection with name: " + datastore);
@@ -60,10 +59,11 @@ export class ObjectFactory extends CoreObjectFactory {
                     // Look up the connection name from the model class
                     const datastore: string = (injectMongoRepo as Entity).datastore;
                     if (datastore) {
-                        const conn: DataSource | Redis.Redis | undefined =
-                            connectionManager?.connections.get(datastore);
-                        if (conn instanceof DataSource) {
+                        const conn: any = connectionManager?.connections.get(datastore);
+                        if (conn instanceof MongoConnection) {
                             obj[member] = conn.getMongoRepository(injectMongoRepo);
+                        } else if (conn) {
+                            throw new Error(`Datastore '${datastore}' is not a MongoDB datastore.`);
                         } else {
                             throw new Error("Unable to find database connection with name: " + datastore);
                         }

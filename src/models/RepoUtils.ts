@@ -2,7 +2,11 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ////////////////////////////////////////////////////////////////////////////////
 import * as crypto from "crypto";
-import { Repository, MongoRepository, EntityMetadata, DataSource } from "typeorm";
+import type { Repository } from "typeorm";
+import { MongoRepository } from "../database/MongoRepository.js";
+import { MongoConnection } from "../database/MongoConnection.js";
+import { isSqlDataSource } from "../database/ConnectionKinds.js";
+import { resolveCollectionName } from "../database/NamingUtils.js";
 import { ModelUtils } from "../models/ModelUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
@@ -111,12 +115,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     protected notificationUtils?: NotificationUtils;
 
     /** The model class associated with the controller to perform operations against. */
-    public repo?: Repository<T>;
+    public repo?: Repository<T> | MongoRepository<T>;
 
     @Config("trusted_roles", ["admin"])
     protected trustedRoles: string[] = ["admin"];
 
-    constructor(modelClass: any, repo?: Repository<T>) {
+    constructor(modelClass: any, repo?: Repository<T> | MongoRepository<T>) {
         this.modelClass = modelClass;
         this.repo = repo;
     }
@@ -158,53 +162,29 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Does the model specify a MongoDB shard configuration?
         const shardConfig: any = Reflect.getMetadata("rrst:shardConfig", this.modelClass);
         if (shardConfig && this.repo instanceof MongoRepository) {
-            const dbClient: any = this.repo.manager.mongoQueryRunner.databaseConnection;
-            if (dbClient) {
+            const conn = this.connectionManager?.connections.get(this.modelClass.datastore) as MongoConnection | undefined;
+            const admin = conn?.admin();
+            if (admin) {
+                const collectionName: string = resolveCollectionName(this.modelClass);
+                const dbName: string = this.config.get(`datastores:${this.modelClass.datastore}:database`);
                 try {
-                    const admin: Admin = dbClient.db().admin() as Admin;
-                    if (admin) {
-                        // Find the EntityMetadata associated with this model class.
-                        let metadata: EntityMetadata | undefined = undefined;
-                        for (const md of this.repo.manager.connection.entityMetadatas) {
-                            if (md.target === this.modelClass) {
-                                metadata = md;
-                                break;
-                            }
-                        }
-
-                        if (metadata) {
-                            try {
-                                // Configure the sharded collection with the MongoDB server.
-                                const dbName: string = this.config.get(
-                                    `datastores:${this.modelClass.datastore}:database`,
-                                );
-                                this.logger.info(
-                                    `Configuring sharding for: collection=${dbName}.${
-                                        metadata.tableName
-                                    }, key=${JSON.stringify(shardConfig.key)}, unique=${
-                                        shardConfig.unique
-                                    }, options=${JSON.stringify(shardConfig.options)})`,
-                                );
-                                const result: any = await admin.command({
-                                    shardCollection: `${dbName}.${metadata.tableName}`,
-                                    key: shardConfig.key,
-                                    unique: shardConfig.unique,
-                                    ...shardConfig.options,
-                                });
-                                this.logger.debug(`Result: ${JSON.stringify(result)}`);
-                            } catch (e: any) {
-                                this.logger.warn(
-                                    `There was a problem trying to configure MongoDB sharding for collection '${metadata.tableName}'. Error=${e.message}`,
-                                );
-                            }
-                        }
-                    } else {
-                        this.logger.debug("Failed to get mongodb admin interface.");
-                    }
+                    this.logger.info(
+                        `Configuring sharding for: collection=${dbName}.${collectionName}, key=${JSON.stringify(shardConfig.key)}, unique=${shardConfig.unique}, options=${JSON.stringify(shardConfig.options)})`,
+                    );
+                    const result: any = await admin.command({
+                        shardCollection: `${dbName}.${collectionName}`,
+                        key: shardConfig.key,
+                        unique: shardConfig.unique,
+                        ...shardConfig.options,
+                    });
+                    this.logger.debug(`Result: ${JSON.stringify(result)}`);
                 } catch (e: any) {
-                    // Sharding is not supported or user doesnt' have permission
-                    this.logger.debug(`Sharding not supported or user lacks the clusterAdmin role. Error=${e.message}`);
+                    this.logger.warn(
+                        `There was a problem trying to configure MongoDB sharding for collection '${collectionName}'. Error=${e.message}`,
+                    );
                 }
+            } else {
+                this.logger.debug("Failed to get mongodb admin interface or sharding not supported.");
             }
         }
     }
@@ -874,8 +854,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     if (clazz && clazz.datastore && obj[member]) {
                         // Attempt to grab the repository for this reference type
                         const conn: any = this.connectionManager?.connections.get(clazz.datastore);
-                        const repo: Repository<any> | undefined =
-                            conn instanceof DataSource ? conn.getRepository(clazz) : undefined;
+                        const repo: MongoRepository<any> | Repository<any> | undefined =
+                            (conn instanceof MongoConnection || isSqlDataSource(conn)) ? conn.getRepository(clazz) : undefined;
                         if (repo) {
                             // Check to see if there are any objects with this UID in the datastore. If the value is an array
                             // let's make sure that every uid is valid.

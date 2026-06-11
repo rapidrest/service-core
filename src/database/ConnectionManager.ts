@@ -1,9 +1,12 @@
-﻿////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { ObjectDecorators } from "@rapidrest/core";
 import { Redis } from "ioredis";
-import * as typeorm from "typeorm";
+import type { DataSource } from "typeorm";
+import { isSqlDataSource } from "./ConnectionKinds.js";
+import { MongoConnection } from "./MongoConnection.js";
+import { MongoSchemaSync } from "./MongoSchemaSync.js";
 const { Destroy, Logger } = ObjectDecorators;
 
 /**
@@ -12,7 +15,7 @@ const { Destroy, Logger } = ObjectDecorators;
  * @author Jean-Philippe Steinmetz
  */
 export class ConnectionManager {
-    public connections: Map<string, typeorm.DataSource | Redis> = new Map();
+    public connections: Map<string, DataSource | MongoConnection | Redis> = new Map();
     @Logger
     private logger: any;
 
@@ -32,6 +35,23 @@ export class ConnectionManager {
     }
 
     /**
+     * Dynamically imports the given optional peer dependency, throwing a helpful error if it is not installed.
+     *
+     * @param pkg The name of the package to import.
+     * @param datastoreName The name of the datastore requiring the package.
+     * @param datastoreType The type of the datastore requiring the package.
+     */
+    private async importOptionalDependency(pkg: string, datastoreName: string, datastoreType: string): Promise<any> {
+        try {
+            return await import(pkg);
+        } catch (err: any) {
+            throw new Error(
+                `Datastore '${datastoreName}' is of type '${datastoreType}' which requires the optional peer dependency '${pkg}'. Install it with: yarn add ${pkg}`,
+            );
+        }
+    }
+
+    /**
      * Attempts to initiate all database connections as defined in the config.
      *
      * @param datastores A map of configured datastores to be passed to the underlying engine.
@@ -45,21 +65,14 @@ export class ConnectionManager {
 
             // It's possible that the connection was already configured during a previous run. In that case we will
             // attempt to reconnect instead of creating a new connection.
-            let connection: typeorm.DataSource | Redis | undefined = this.connections.get(name);
-            try {
-                if (!connection) {
-                    connection = typeorm.getConnection(name);
-                }
-            } catch (err) {
-                // We don't care if a connection was not found
+            let connection: DataSource | MongoConnection | Redis | undefined = this.connections.get(name);
+
+            if (connection && isSqlDataSource(connection) && !(connection as DataSource).isInitialized) {
+                this.logger.info(`Reconnecting to database ${name}...`);
+                await (connection as DataSource).initialize();
             }
 
-            if (connection) {
-                if (connection instanceof typeorm.DataSource && !connection.isConnected) {
-                    this.logger.info(`Reconnecting to database ${name}...`);
-                    await connection.connect();
-                }
-            } else {
+            if (!connection) {
                 datastore.name = name;
                 const url: string = this.buildConnectionUri(datastore);
 
@@ -88,13 +101,24 @@ export class ConnectionManager {
                         }
                     }
 
-                    connection = await typeorm.createConnection({
-                        ...datastore,
-                        entities,
-                        url,
-                    });
-                    if (datastore.runMigrations) {
-                        await connection.runMigrations();
+                    if (datastore.type === "mongodb" || datastore.type === "mongodb+srv") {
+                        // Connect using the native MongoDB driver
+                        const { MongoClient } = await this.importOptionalDependency("mongodb", name, datastore.type);
+                        const client = new MongoClient(url, datastore.clientOptions);
+                        await client.connect();
+                        const db = client.db(datastore.database);
+                        connection = new MongoConnection(name, client, db, entities);
+
+                        // Perform structure synchronization when requested
+                        if (datastore.synchronize) {
+                            const schemaSync: MongoSchemaSync = new MongoSchemaSync(db, this.logger);
+                            await schemaSync.synchronize(entities);
+                        }
+                    } else {
+                        // Connect using TypeORM
+                        await this.importOptionalDependency("typeorm", name, datastore.type);
+                        const orm = await import("./TypeOrmSupport.js");
+                        connection = await orm.connect(name, datastore, entities, url);
                     }
                 }
             }
@@ -112,10 +136,16 @@ export class ConnectionManager {
     public async disconnect(): Promise<void> {
         for (const conn of this.connections.values()) {
             if (conn) {
-                if (conn instanceof typeorm.DataSource && conn.isConnected) {
-                    await conn.close();
-                } else if (conn instanceof Redis && conn.status === "ready") {
-                    conn.disconnect();
+                if (conn instanceof MongoConnection) {
+                    if (conn.isConnected) {
+                        await conn.close();
+                    }
+                } else if (conn instanceof Redis) {
+                    if (conn.status === "ready") {
+                        conn.disconnect();
+                    }
+                } else if (isSqlDataSource(conn) && conn.isInitialized) {
+                    await conn.destroy();
                 }
             }
         }

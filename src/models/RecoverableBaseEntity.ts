@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { Column } from "typeorm";
+import { Column } from "../decorators/PersistenceDecorators.js";
 import { BaseEntity } from "./BaseEntity.js";
 
 /**

@@ -3,7 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { Request as XRequest, Response as XResponse } from "express";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
-import { MongoRepository as Repo } from "typeorm";
+import type { Repository as Repo } from "typeorm";
 import { ACLAction } from "./AccessControlList.js";
 import { ApiError, JWTUser, UserUtils } from "@rapidrest/core";
 import { DatabaseDecorators, DocDecorators, RouteDecorators } from "../decorators/index.js";
