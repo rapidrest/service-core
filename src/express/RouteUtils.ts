@@ -3,6 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, JWTPayload, JWTUser, JWTUtils, ObjectDecorators, UserUtils } from "@rapidrest/core";
 import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "../http/types.js";
+import type { WsUpgradeAuth } from "../http/Router.js";
 import type { RequestWS } from "../http/WebSocket.js";
 import { ServerResponse } from "http";
 import { OpenApiSpec } from "../OpenApiSpec.js";
@@ -83,113 +84,109 @@ export class RouteUtils {
             const sock: any = (req as RequestWS).websocket || req.socket;
             const user: JWTUser | undefined = req.user as JWTUser;
 
+            // Pre-upgrade auth already set req.user — no LOGIN handshake needed
             if (user && user.uid) {
                 next();
-            } else {
-                // Set a timer to allow the login message to arrive. If the timer expires before
-                // a login message is received we'll proceed processing in order to prevent
-                // blocking up the handler.
-                let timer: NodeJS.Timeout = setTimeout(() => {
+                return;
+            }
+
+            // Ensures timer, message listener, and close listener each fire at most once.
+            // Prevents the timer from firing after the socket closes (which would try to call
+            // sock.close() on an already-closed handle and throw an unhandled rejection).
+            let settled = false;
+            const settle = (fn: () => void) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                sock.removeListener("message", onMessage);
+                sock.removeListener("close", onClose);
+                fn();
+            };
+
+            const onClose = () => {
+                // Socket closed before auth completed — unblock runChain so the open handler can
+                // finish. The readyState === 3 guard in Router.ts will skip the final ws.close().
+                settle(() => next());
+            };
+
+            const onMessage = (data: any, isBinary: boolean) => {
+                if (isBinary) {
+                    settle(() => {
+                        if (required) {
+                            const error = new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+                            sock.close(1002, error.code);
+                            next(error);
+                        } else {
+                            next();
+                        }
+                    });
+                    return;
+                }
+
+                try {
+                    const message: any = JSON.parse(data);
+
+                    if (message.type === "LOGIN") {
+                        const payload: JWTPayload = JWTUtils.decodeToken(this.authConfig, message.data);
+                        const loginUser: JWTUser | null =
+                            payload && payload.profile ? (payload.profile as JWTUser) : null;
+
+                        if (loginUser && loginUser.uid) {
+                            settle(() => {
+                                sock.send(JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: true }));
+                                req.user = loginUser;
+                                next();
+                            });
+                        } else if (required) {
+                            settle(() => {
+                                const error = new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED);
+                                sock.send(JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: false, data: error.message }));
+                                sock.close(1002, error.message);
+                                next(error);
+                            });
+                        } else {
+                            settle(() => {
+                                sock.send(JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: false, data: "Invalid authentication token." }));
+                                next();
+                            });
+                        }
+                    } else if (required) {
+                        settle(() => {
+                            const error = new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+                            sock.close(1002, error.code);
+                            next(error);
+                        });
+                    } else {
+                        settle(() => next());
+                    }
+                } catch {
+                    settle(() => {
+                        if (required) {
+                            const error = new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+                            sock.close(1002, error.code);
+                            next(error);
+                        } else {
+                            next();
+                        }
+                    });
+                }
+            };
+
+            sock.once("message", onMessage);
+            sock.once("close", onClose);
+
+            const timer: NodeJS.Timeout = setTimeout(() => {
+                settle(() => {
                     if (required) {
-                        const error: ApiError = new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED);
+                        const error = new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED);
                         error.status = 401;
                         sock.close(1002, error.message);
                         next(error);
                     } else {
-                        // Auth isn't required so just move along
-                        next();
-                    }
-                }, this.authSocketTimeout);
-
-                // If no user has auth'd yet then wait for a login message to arrive.
-                sock.once("message", (data: any, isBinary: boolean) => {
-                    clearTimeout(timer);
-                    if (!isBinary) {
-                        try {
-                            // Decode the incoming message
-                            const message: any = JSON.parse(data);
-
-                            // Ensure that this is a login request
-                            if (message.type === "LOGIN") {
-                                // Is the provided auth token valid?
-                                const payload: JWTPayload = JWTUtils.decodeToken(this.authConfig, message.data);
-                                const user: JWTUser | null =
-                                    payload && payload.profile ? (payload.profile as JWTUser) : null;
-                                if (user && user.uid) {
-                                    sock.send(
-                                        JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: true })
-                                    );
-                                    req.user = user;
-                                    next();
-                                } else if (required) {
-                                    const error: ApiError = new ApiError(
-                                        ApiErrors.AUTH_FAILED,
-                                        401,
-                                        ApiErrorMessages.AUTH_FAILED
-                                    );
-                                    sock.send(
-                                        JSON.stringify({
-                                            id: message.id,
-                                            type: "LOGIN_RESPONSE",
-                                            success: false,
-                                            data: error.message,
-                                        })
-                                    );
-                                    sock.close(1002, error.message);
-                                    next(error);
-                                } else {
-                                    // Notify the client that their token was bad, but we'll proceed anyway
-                                    sock.send(
-                                        JSON.stringify({
-                                            id: message.id,
-                                            type: "LOGIN_RESPONSE",
-                                            success: false,
-                                            data: "Invalid authentication token.",
-                                        })
-                                    );
-                                    // Auth isn't required so just move along
-                                    next();
-                                }
-                            } else if (required) {
-                                const error: ApiError = new ApiError(
-                                    ApiErrors.INVALID_REQUEST,
-                                    400,
-                                    ApiErrorMessages.INVALID_REQUEST
-                                );
-                                sock.close(1002, error.code);
-                                next(error);
-                            } else {
-                                // Auth isn't required so just move along
-                                next();
-                            }
-                        } catch (err: any) {
-                            if (required) {
-                                const error: ApiError = new ApiError(
-                                    ApiErrors.INVALID_REQUEST,
-                                    400,
-                                    ApiErrorMessages.INVALID_REQUEST
-                                );
-                                sock.close(1002, error.code);
-                                next(error);
-                            } else {
-                                // Auth isn't required so just move along
-                                next();
-                            }
-                        }
-                    } else if (required) {
-                        const error: ApiError = new ApiError(
-                            ApiErrors.INVALID_REQUEST,
-                            400,
-                            ApiErrorMessages.INVALID_REQUEST
-                        );
-                        sock.close(1002, error.code);
-                        next(error);
-                    } else {
-                        // Auth isn't required so just move along
                         next();
                     }
                 });
-            }
+            }, this.authSocketTimeout);
         };
     }
 
@@ -360,22 +357,30 @@ export class RouteUtils {
 
                         // If the verb is `ws` we need to translate this accordingly
                         if (verb === "ws") {
-                            // Optional JWT extraction: set req.user from Authorization header
-                            // so that header-based auth works in authWebSocket
-                            const jwtExtractMw: RequestHandler = (req, _res, next) => {
+                            // Pre-upgrade auth: runs synchronously in the uWS upgrade callback
+                            // before the WebSocket handshake. Clients that send an Authorization
+                            // header (native apps, etc.) are authenticated here and skip the
+                            // post-upgrade LOGIN message. Browsers that cannot send custom headers
+                            // fall through to the message-based authWebSocket flow.
+                            const upgradeAuth: WsUpgradeAuth = (req) => {
                                 const result = this.jwtStrategy.authenticate(req);
-                                req.user = result.user;
-                                req.authPayload = result.authPayload;
-                                req.authToken = result.authToken;
-                                next();
+                                if (result.user) {
+                                    return { user: result.user, authPayload: result.authPayload, authToken: result.authToken };
+                                }
+                                if (result.tokenFound) {
+                                    // Token was present but invalid — reject before handshake
+                                    return { reject: true };
+                                }
+                                // No token — fall through to post-upgrade message-based auth
+                                return {};
                             };
+
                             middleware.unshift(this.authWebSocket(authRequired));
-                            middleware.unshift(jwtExtractMw);
                             // Set authRequired to false since we enforce it in the authWebSocket function
                             authRequired = false;
 
                             // Register with the HttpRouter's ws() method; trailing slash handled internally
-                            app.ws(path, middleware);
+                            app.ws(path, middleware, undefined, upgradeAuth);
 
                             // Update our OpenAPI spec — WebSocket upgrade is a GET request
                             this.apiSpec.addRoute(key, path, "get", metadata, docs, route);

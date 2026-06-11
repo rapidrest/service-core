@@ -44,6 +44,13 @@ export interface JWTAuthResult {
     error?: string;
     /** Set to `true` when no token was found and `allowFailure` is enabled. */
     passed?: boolean;
+    /**
+     * `true` when at least one credential (header, query param, or cookie) was present in
+     * the request, even if it was ultimately invalid. Distinguishes "no token submitted" from
+     * "bad token submitted" — useful for deciding whether to reject early vs. fall through to
+     * an alternative auth path (e.g. WebSocket message-based LOGIN).
+     */
+    tokenFound?: boolean;
 }
 
 /**
@@ -75,11 +82,13 @@ export class JWTStrategy {
         let user: JWTUser | undefined = undefined;
         let authPayload: JWTPayload | undefined = undefined;
         let authToken: string | undefined = undefined;
+        let tokenFound: boolean = false;
 
         // Tokens should be found in this order: Query Parameter => Authorization => Cookie
         // Check the query parameter
         if (this.options.queryKey && req.query && this.options.queryKey in req.query) {
             let token: string = req.query[this.options.queryKey] as string;
+            tokenFound = true;
 
             try {
                 const payload: JWTPayload = JWTUtils.decodeToken(this.options.config, token);
@@ -100,6 +109,7 @@ export class JWTStrategy {
         // Next check the headers. It's possible there is more than one header value defined. Loop through each of
         // them until we have a verified token.
         if (!user && this.options.headerKey && this.options.headerKey in req.headers) {
+            tokenFound = true;
             const value: string | string[] | undefined = req.headers[this.options.headerKey];
             const headers: string[] = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
 
@@ -148,6 +158,7 @@ export class JWTStrategy {
 
         // If the token has been found, verify it.
         if (!user && token && token.length > 0) {
+            tokenFound = true;
             try {
                 const payload: JWTPayload = JWTUtils.decodeToken(this.options.config, token);
                 // If the verification succeeded clear out any existing error, we have success
@@ -163,13 +174,13 @@ export class JWTStrategy {
         }
 
         if (user) {
-            return { user, authPayload, authToken };
+            return { user, authPayload, authToken, tokenFound };
         }
 
         if (this.options.allowFailure) {
-            return { passed: true, error: error || undefined };
+            return { passed: true, error: error || undefined, tokenFound };
         }
 
-        return { error: error || ApiErrorMessages.AUTH_FAILED };
+        return { error: error || ApiErrorMessages.AUTH_FAILED, tokenFound };
     }
 }

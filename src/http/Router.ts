@@ -123,6 +123,24 @@ export async function runChain(
     }
 }
 
+/** Result returned by a pre-upgrade WebSocket auth function. */
+export type WsUpgradeAuthResult = {
+    user?: any;
+    authPayload?: any;
+    authToken?: string;
+    /** Set to `true` to reject the connection with HTTP 401 before the WebSocket handshake. */
+    reject?: boolean;
+};
+
+/**
+ * Optional pre-upgrade auth function for WebSocket routes. Called synchronously inside the uWS
+ * `upgrade` callback — before the WebSocket handshake completes. Returning `{ reject: true }`
+ * sends an HTTP 401 and skips the upgrade entirely. Returning `{}` falls through to the
+ * post-upgrade message-based LOGIN flow. Returning `{ user, ... }` pre-authenticates the
+ * connection so clients that can send an Authorization header skip the LOGIN step.
+ */
+export type WsUpgradeAuth = (req: HttpRequest) => WsUpgradeAuthResult;
+
 /** Parses `:param` names out of a uWS route pattern (e.g. `/users/:uid/:version` → `["uid","version"]`). */
 function extractParamNames(routePath: string): string[] {
     const names: string[] = [];
@@ -283,9 +301,15 @@ export class HttpRouter {
      * Registers a WebSocket route. Handlers follow the same `(req, res, next)` pattern
      * as HTTP routes; they receive `req.websocket` containing the uWS WebSocket handle.
      *
+     * `upgradeAuth` is an optional pre-upgrade auth function. When provided it runs synchronously
+     * inside the uWS `upgrade` callback before the handshake. If it returns `{ reject: true }`,
+     * an HTTP 401 is sent and the upgrade is aborted. If it returns `{ user, ... }`, those
+     * credentials are attached to the request so downstream middleware sees an authenticated user.
+     * If it returns `{}`, auth falls through to the post-upgrade message-based LOGIN flow.
+     *
      * Both `path` and `path + "/"` are registered to avoid trailing-slash mismatch.
      */
-    public ws(routePath: string, handlers: RequestHandler[], wsOptions?: Partial<uWS.WebSocketBehavior<any>>): this {
+    public ws(routePath: string, handlers: RequestHandler[], wsOptions?: Partial<uWS.WebSocketBehavior<any>>, upgradeAuth?: WsUpgradeAuth): this {
         const behavior: uWS.WebSocketBehavior<any> = {
             ...wsOptions,
 
@@ -297,7 +321,25 @@ export class HttpRouter {
                 const secWebSocketProtocol = uwsReq.getHeader("sec-websocket-protocol");
                 const secWebSocketExtensions = uwsReq.getHeader("sec-websocket-extensions");
 
-                // Upgrade immediately — auth is enforced in the open callback via authWebSocket
+                if (upgradeAuth) {
+                    const authResult = upgradeAuth(req);
+                    if (authResult.reject) {
+                        // Reject before the WebSocket handshake with HTTP 401
+                        uwsRes.cork(() => {
+                            uwsRes.writeStatus("401 Unauthorized");
+                            uwsRes.writeHeader("content-type", "application/json");
+                            uwsRes.end(JSON.stringify({ status: 401, message: "Unauthorized" }));
+                        });
+                        return;
+                    }
+                    // Pre-authenticated — attach credentials so authWebSocket skips LOGIN
+                    if (authResult.user) {
+                        req.user = authResult.user;
+                        req.authPayload = authResult.authPayload;
+                        req.authToken = authResult.authToken;
+                    }
+                }
+
                 uwsRes.upgrade(
                     { req },
                     secWebSocketKey,
