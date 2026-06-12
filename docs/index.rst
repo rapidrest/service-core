@@ -2,7 +2,7 @@
 Services Core Library
 ===============================================================================
 
-Repository: ``git clone https://gitlab.com/AcceleratXR/composerjs/composer-service-core.git``
+Repository: ``git clone https://github.com/rapidrest/service-core.git``
 
 Provides all core functionality for RapidREST based backend services.
 

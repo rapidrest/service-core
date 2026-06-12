@@ -64,7 +64,7 @@ interface Model {
  * The following is an example of a simple route class.
  *
  * ```javascript
- * import { DefaultBehaviors, RouteDecorators } from "@acceleratxr/service_core";
+ * import { DefaultBehaviors, RouteDecorators } from "@rapidrest/service-core";
  * import { Get, Route } = RouteDecorators;
  *
  * @Route("/hello")
@@ -85,7 +85,7 @@ interface Model {
  * The following is an example of a route class that is bound to a data model providing basic CRUDS operations.
  *
  * ```javascript
- * import { DefaultBehaviors, ModelDecorators, ModelRoute, RouteDecorators } from "@rapidrest/service_core";
+ * import { DefaultBehaviors, ModelDecorators, ModelRoute, RouteDecorators } from "@rapidrest/service-core";
  * import { After, Before, Delete, Get, Post, Put, Route, Validate } = RouteDecorators;
  * import { Model } = ModelDecorators;
  * import { marshall } = DefaultBehaviors;
