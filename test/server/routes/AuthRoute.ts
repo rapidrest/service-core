@@ -41,6 +41,8 @@ class AuthRoute {
                 const results = await repoUtils.find({ uid: username, password });
                 if (results.length > 0) {
                     return results[0];
+                } else {
+                    throw new Error("Invalid username or password.");
                 }
             }
             return undefined;
@@ -55,9 +57,9 @@ class AuthRoute {
     @Summary("Request")
     @Auth(["basic"])
     @Get("basic")
-    @Description("Returns the user data for a valid authenticated user.")
+    @Description("Authenticates the user using the BasicStrategy and returns the user data.")
     @Returns([Object])
-    protected async authToken(@User user?: any): Promise<any> {
+    protected async authBasic(@User user?: any): Promise<any> {
         return user;
     }
 }

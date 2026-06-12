@@ -8,9 +8,9 @@ import { default as config } from "./config";
 import { Server, ObjectFactory, MongoRepository, ConnectionManager, MongoConnection } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { request } from "./request.js";
-
-import { Logger } from "@rapidrest/core";
+import { JWTUtils, Logger } from "@rapidrest/core";
 import User from "./server/models/User";
+import * as uuid from "uuid";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
@@ -110,5 +110,41 @@ describe("Server Tests", () => {
             expect(stored.lastName).toEqual(user.lastName);
             expect(stored.age).toEqual(user.age);
         }
+    });
+
+    it("Cannot authenticate with basic strategy with bad password.", async () => {
+        const user: User = await createUser({
+            name: "dtennant",
+            firstName: "David",
+            lastName: "Tennant",
+            age: 47,
+            password: "MyP@ssw0rd1sS3cuR3!",
+        });
+
+        const result = await request(server)
+            .get("/auth/basic")
+            .send(user)
+            .set("Authorization", `basic ${Buffer.from(`${user.uid}:bogus`).toString("base64")}`);
+        expect(result).toHaveProperty("status");
+        expect(result.status).toBe(401);
+    });
+
+    it("Cannot authenticate with basic strategy using JWT token.", async () => {
+        const user: User = await createUser({
+            name: "dtennant",
+            firstName: "David",
+            lastName: "Tennant",
+            age: 47,
+            password: "MyP@ssw0rd1sS3cuR3!",
+        });
+
+        const token = JWTUtils.createToken(config.get("auth"), {
+            uid: uuid.v4(),
+            roles: config.get("trusted_roles"),
+        } as any);
+
+        const result = await request(server).get("/auth/basic").send(user).set("Authorization", `jwt ${token}`);
+        expect(result).toHaveProperty("status");
+        expect(result.status).toBe(401);
     });
 });
