@@ -47,24 +47,18 @@ export class ACLUtils {
      * @returns `true` if the user contains a `uid` or `role` that matches the `userOrRoleId`, otherwise `false`.
      */
     private userMatchesId(user: JWTUser | undefined, userOrRoleId: string): boolean {
-        let matches: RegExpMatchArray | null = null;
-
-        if (user && user.uid) {
-            matches = user.uid.match(`^${userOrRoleId}$`);
-            if (!matches && user.roles) {
-                for (const role of user.roles) {
-                    matches = role.match(`^${userOrRoleId}$`);
-
-                    if (matches !== null && matches.length > 0) {
-                        break;
-                    }
-                }
-            }
-        } else {
-            return "anonymous" === userOrRoleId;
+        if (!user?.uid) {
+            return userOrRoleId === "anonymous";
         }
-
-        return matches !== null && matches.length > 0;
+        // Explicit wildcards — match any authenticated user; no regex engine involved
+        if (userOrRoleId === ".*" || userOrRoleId === "*") return true;
+        if (user.uid === userOrRoleId) return true;
+        if (user.roles) {
+            for (const role of user.roles) {
+                if (role === userOrRoleId) return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -151,7 +145,7 @@ export class ACLUtils {
         // If a uid has been given look up the ACL associated with it and then process
         if (typeof acl === "string") {
             const entry: AccessControlList | null = await this.findACL(acl);
-            return entry ? await this.hasPermission(user, entry, action) : true;
+            return entry ? await this.hasPermission(user, entry, action) : false;
         }
 
         // Look for the first available record for the given user
@@ -188,8 +182,8 @@ export class ACLUtils {
             }
         }
 
-        // `undefined` is an invalid answer, in that case always return `true`
-        return result !== null && result !== undefined ? result : true;
+        // No matching record found — deny by default
+        return result !== null && result !== undefined ? result : false;
     }
 
     /**

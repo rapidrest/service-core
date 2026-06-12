@@ -489,7 +489,7 @@ describe("ACLUtils Tests", () => {
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(true);
-                expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(true);
+                expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(false);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
                 const testMod: any = { uid: uuid.v4(), roles: ["moderator"] };
@@ -539,7 +539,7 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(true);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(true);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(true);
+            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
             const testOther: any = { uid: uuid.v4(), roles: ["other"] };
@@ -572,15 +572,15 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.FULL)).toBe(false);
         });
 
-        it("Can grant permission when no ACL available.", async () => {
+        it("Denies permission when no ACL record exists.", async () => {
             const acl: string = uuid.v4();
             const testUser: any = { uid: uuid.v4() };
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(true);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(true);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(true);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(true);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(true);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(true);
+            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(false);
+            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(false);
+            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(false);
+            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(false);
+            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
+            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
         });
 
         it("Can test request permissions.", async () => {

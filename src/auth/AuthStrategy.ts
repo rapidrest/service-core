@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { JWTPayload, JWTUser } from "@rapidrest/core";
-import { HttpRequest } from "../http/types.js";
+import { HttpRequest, HttpResponse } from "../http/types.js";
 
 /**
  * Result returned by `AuthStrategy.authenticate()`.
@@ -31,7 +31,12 @@ export interface AuthStrategy {
      * throws an error, otherwise returns `undefined`.
      *
      * @param req The request containing data to attempt authentication with.
+     * @param res The response to use when writing back directly to the client.
      * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
      */
-    authenticate(req: HttpRequest, required?: boolean): AuthResult | Promise<AuthResult> | undefined;
+    authenticate(
+        req: HttpRequest,
+        res?: HttpResponse,
+        required?: boolean,
+    ): AuthResult | Promise<AuthResult> | undefined;
 }

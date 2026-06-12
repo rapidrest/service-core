@@ -239,7 +239,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 type: `Create${this.modelClass.name}`,
                 objectUid: result.uid,
                 userUid: options.user ? options.user.uid : undefined,
-                ip: options.req ? NetUtils.getIPAddress(options.req) : undefined,
+                ip: options.req ? NetUtils.getIPAddress(options.req, this.config?.get("trusted_proxies")) : undefined,
             };
             void EventUtils.record(new Event(this.config, options.user ? options.user.uid : "anonymous", evt));
         }
@@ -343,7 +343,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 type: `Delete${this.modelClass.name}`,
                 objectUid: existing.uid,
                 userUid: options.user ? options.user.uid : "anonymous",
-                ip: options.req ? NetUtils.getIPAddress(options.req) : undefined,
+                ip: options.req ? NetUtils.getIPAddress(options.req, this.config?.get("trusted_proxies")) : undefined,
                 purged: count === 0,
             };
             void EventUtils.record(new Event(this.config, options.user ? options.user.uid : "anonymous", evt));
@@ -502,7 +502,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             const evt: any = {
                 type: `Truncate${this.modelClass.name}`,
                 userUid: options.user ? options.user.uid : "anonymous",
-                ip: options.req ? NetUtils.getIPAddress(options.req) : undefined,
+                ip: options.req ? NetUtils.getIPAddress(options.req, this.config?.get("trusted_proxies")) : undefined,
             };
             void EventUtils.record(new Event(this.config, options.user ? options.user.uid : "anonymous", evt));
         }
@@ -575,7 +575,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 type: `Update${this.modelClass.name}`,
                 objectUid: obj.uid,
                 userUid: options.user ? options.user.uid : "anonymous",
-                ip: options.req ? NetUtils.getIPAddress(options.req) : undefined,
+                ip: options.req ? NetUtils.getIPAddress(options.req, this.config?.get("trusted_proxies")) : undefined,
             };
             void EventUtils.record(new Event(this.config, options.user ? options.user.uid : "anonymous", evt));
         }

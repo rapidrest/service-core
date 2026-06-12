@@ -34,7 +34,7 @@ class AuthRoute {
         }
 
         const options: BasicStrategyOptions = new BasicStrategyOptions();
-        options.validate = async (username: string, password: string): Promise<JWTUser> | undefined => {
+        options.verify = async (username: string, password: string): Promise<JWTUser> | undefined => {
             const repoUtils: RepoUtils<UserModel> | undefined =
                 this.objectFactory?.getInstance<RepoUtils<UserModel>>("RepoUtils:User");
             if (repoUtils) {

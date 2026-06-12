@@ -3,7 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { JWTUtils, JWTUtilsConfig, JWTUser, JWTPayload, ObjectDecorators } from "@rapidrest/core";
 import { ApiErrorMessages } from "../ApiErrors.js";
-import type { HttpRequest } from "../http/types.js";
+import type { HttpRequest, HttpResponse } from "../http/types.js";
 import dayjs from "dayjs";
 import { createRequire } from "module";
 import { AuthResult } from "./AuthStrategy.js";
@@ -28,8 +28,14 @@ export class JWTStrategyOptions {
     public cookieName: string = "jwt";
     /** The name of the secured cookie to retreive the token from when using cookie based authentication. */
     public cookieSecure: boolean = false;
-    /** The name of the requesty query parameter to retreive the token from when using query based authentication. Default value is `auth_token`. */
+    /** The name of the request query parameter to retrieve the token from when using query based authentication. Default value is `auth_token`. */
     public queryKey: string = "auth_token";
+    /**
+     * Set to `true` to allow tokens to be supplied via the `queryKey` URL parameter.
+     * Disabled by default — query parameters appear in server logs, browser history, and
+     * Referer headers, which permanently exposes tokens outside the application.
+     */
+    public allowQueryParam: boolean = false;
 }
 
 /** Result returned by `JWTStrategy.authenticate()`. */
@@ -72,7 +78,7 @@ export class JWTStrategy {
      * Attempts to authenticate the incoming request by extracting and verifying a JWT token.
      * Returns a `JWTAuthResult` describing the outcome.
      */
-    public authenticate(req: HttpRequest, required?: boolean): JWTAuthResult | undefined {
+    public authenticate(req: HttpRequest, res: HttpResponse, required?: boolean): JWTAuthResult | undefined {
         let error: string = "";
         let user: JWTUser | undefined = undefined;
         let authPayload: JWTPayload | undefined = undefined;
@@ -80,8 +86,8 @@ export class JWTStrategy {
         let tokenFound: boolean = false;
 
         // Tokens should be found in this order: Query Parameter => Authorization => Cookie
-        // Check the query parameter
-        if (this.options.queryKey && req.query && this.options.queryKey in req.query) {
+        // Check the query parameter (only when explicitly opted in — tokens in URLs appear in logs)
+        if ((this.options.allowQueryParam || this.config?.allowQueryParam) && this.options.queryKey && req.query && this.options.queryKey in req.query) {
             let token: string = req.query[this.options.queryKey] as string;
             tokenFound = true;
 

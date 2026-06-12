@@ -45,6 +45,7 @@ conf.defaults({
     auth: {
         // The default authentication strategy to use
         strategy: "auth.JWTStrategy",
+        allowQueryParam: true,
         // The password to be used when signing or verifying authentication tokens
         secret: "MyPasswordIsSecure",
         options: {
@@ -58,6 +59,9 @@ conf.defaults({
         secret: "SessionsHaveSecrets",
     },
     cluster_url: "http://localhost",
+    metrics: {
+        authRequired: false,
+    },
 });
 
 export default conf;

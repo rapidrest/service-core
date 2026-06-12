@@ -62,7 +62,7 @@ describe("OpenApiSpec Tests", () => {
         }
         apiSpec.merge(apiSpec1?.getSpec());
         expect(apiSpec?.servers?.length).toEqual(4);
-        expect(Object.entries(apiSpec?.paths).length).toEqual(5);
+        expect(Object.entries(apiSpec?.paths).length).toEqual(4);
         for (const [key, value] of Object.entries(apiSpec?.paths)) {
             expect(value.get.security.length).toBe(1)
         }

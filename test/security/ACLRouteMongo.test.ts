@@ -378,10 +378,7 @@ describe("ACLRouteMongo Tests", () => {
             }),
             new ACLRecordMongo({
                 userOrRoleId: ".*",
-                create: true,
-                read: true,
-                update: true,
-                delete: false,
+                full: true,
             }),
         ]);
         acl.records.push(

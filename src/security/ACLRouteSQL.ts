@@ -42,7 +42,7 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
     private create(
         objs: AccessControlListSQL | AccessControlListSQL[],
         @Request req: XRequest,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<AccessControlListSQL | AccessControlListSQL[]> {
         if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -59,7 +59,7 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
     private updateBulk(
         objs: AccessControlListSQL[],
         @Request req: XRequest,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<AccessControlListSQL[]> {
         if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -76,7 +76,7 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
         @Param() params: any,
         @Query() query: any,
         @Response res: XResponse,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<any> {
         if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -103,16 +103,16 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
     @Auth(["jwt"])
     @Delete("/:id")
     @Returns([null])
-    private delete(
+    private async delete(
         @Param("id") id: string,
         @Request req: XRequest,
         @Query("version") version: string,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<void> {
         if (
             !user ||
             (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !this.aclUtils?.hasPermission(user, id, ACLAction.FULL))
+                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
         ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -129,15 +129,15 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
     @Auth(["jwt"])
     @Get("/:id")
     @Returns([AccessControlListSQL])
-    private findById(
+    private async findById(
         @Param("id") id: string,
         @Query() query?: any,
-        @User user?: any
+        @User user?: any,
     ): Promise<AccessControlListSQL | null> {
         if (
             !user ||
             (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !this.aclUtils?.hasPermission(user, id, ACLAction.FULL))
+                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
         ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -150,16 +150,16 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
     @Auth(["jwt"])
     @Put("/:id")
     @Returns([AccessControlListSQL])
-    private update(
+    private async update(
         @Param("id") id: string,
         obj: AccessControlListSQL,
         @Request req: XRequest,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<AccessControlListSQL> {
         if (
             !user ||
             (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !this.aclUtils?.hasPermission(user, id, ACLAction.FULL))
+                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
         ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }

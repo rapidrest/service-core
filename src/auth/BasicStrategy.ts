@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ////////////////////////////////////////////////////////////////////////////////
 import { JWTUser } from "@rapidrest/core";
-import { HttpRequest } from "../http/types.js";
+import { HttpRequest, HttpResponse } from "../http/types.js";
 import { AuthResult, AuthStrategy } from "./AuthStrategy.js";
 import { ApiErrorMessages } from "../ApiErrors.js";
 
@@ -16,10 +16,16 @@ export class BasicStrategyOptions {
     public headerKey: string = "authorization";
     /** The authorization scheme type when using header based authentication. Default value is `jwt`. */
     public headerScheme: string = "basic";
-    /** The name of the requesty query parameter to retreive the token from when using query based authentication. Default value is `auth_token`. */
+    /** The name of the request query parameter to retrieve the token from when using query based authentication. Default value is `auth_basic`. */
     public queryKey: string = "auth_basic";
-    /** You must override this function to perform validation of the login information. */
-    public validate(uid: string, secret: string): JWTUser | Promise<JWTUser> | undefined {
+    /**
+     * Set to `true` to allow credentials to be supplied via the `queryKey` URL parameter.
+     * Disabled by default — query parameters appear in server logs, browser history, and
+     * Referer headers, which permanently exposes credentials outside the application.
+     */
+    public allowQueryParam: boolean = false;
+    /** You must override this function to perform verification of the login information. */
+    public verify(uid: string, secret: string): JWTUser | Promise<JWTUser> | undefined {
         return undefined;
     }
 }
@@ -35,14 +41,18 @@ export class BasicStrategy implements AuthStrategy {
         this.options = options;
     }
 
-    authenticate(req: HttpRequest, required?: boolean): AuthResult | Promise<AuthResult> | undefined {
+    authenticate(
+        req: HttpRequest,
+        res: HttpResponse,
+        required?: boolean,
+    ): AuthResult | Promise<AuthResult> | undefined {
         let error: string = "";
         let loginFound: boolean = false;
         let loginInfo: string = "";
 
         // Login info should be found in this order: Query Parameter => Authorization
-        // Check the query parameter
-        if (this.options.queryKey && req.query && this.options.queryKey in req.query) {
+        // Check the query parameter (only when explicitly opted in — tokens in URLs appear in logs)
+        if (this.options.allowQueryParam && this.options.queryKey && req.query && this.options.queryKey in req.query) {
             loginInfo = req.query[this.options.queryKey] as string;
             loginFound = true;
         }
@@ -78,7 +88,7 @@ export class BasicStrategy implements AuthStrategy {
             if (parts.length !== 2) {
                 throw new Error("Invalid or missing username of password.");
             }
-            const result: JWTUser | Promise<JWTUser> | undefined = this.options.validate(parts[0], parts[1]);
+            const result: JWTUser | Promise<JWTUser> | undefined = this.options.verify(parts[0], parts[1]);
             if (result) {
                 if (result instanceof Promise) {
                     return new Promise(async (resolve, reject) => {

@@ -37,6 +37,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             lastName,
             age,
             productUid,
+            password: "password",
         });
 
         return await repo.save(user);
@@ -142,8 +143,10 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,
+                password: "password",
             });
             const result = await request(server).post("/users").send(user);
+            expect(result.status).toBe(200);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(user.uid);
             expect(result.body.version).toEqual(user.version);
@@ -170,6 +173,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
                 productUid: uuid.v4(),
+                password: "password",
             });
             const result = await request(server).post("/users").send(user);
             expect(result.status).toBe(200);
@@ -195,6 +199,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,
+                password: "password",
             });
             const result = await request(server).post("/users").send(user);
             expect(result.status).toBe(400);
@@ -214,6 +219,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
                 productUid,
+                password: "password",
             });
             const result = await request(server).post("/users").send(user);
             expect(result.status).toBe(400);
@@ -234,7 +240,8 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 age: 47,
                 items: items.map((item) => item.uid),
                 parentUid: parent.uid,
-                skillRating: 2500
+                password: "password",
+                skillRating: 2500,
             });
             const result = await request(server).post("/users").send(player);
             expect(result).toHaveProperty("body");
@@ -276,6 +283,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 items: items.map((item) => item.uid),
                 parentUid: uuid.v4(),
                 skillRating: 2500,
+                password: "password",
             });
             const result = await request(server).post("/users").send(player);
             expect(result.status).toBe(400);
@@ -292,6 +300,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 items: items.map((item) => item.uid).concat([uuid.v4()]),
                 parentUid: parent.uid,
                 skillRating: 2500,
+                password: "password",
             });
             const result = await request(server).post("/users").send(player);
             expect(result.status).toBe(400);
@@ -524,6 +533,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                     firstName: "David",
                     lastName: "Tennant",
                     age: 47,
+                    password: "password",
                 });
                 users.push(user);
                 uids.push(user.uid);
@@ -557,6 +567,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                     firstName: "David",
                     lastName: "Tennant",
                     age: 47,
+                    password: "password",
                 };
                 const user: User = Math.random() < 0.5 ? new User(data) : new Player(data);
                 users.push(user);
@@ -595,6 +606,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                     firstName: "David",
                     lastName: "Tennant",
                     age: 47,
+                    password: "password",
                 });
                 users.push(user);
                 uids.push(user.uid);

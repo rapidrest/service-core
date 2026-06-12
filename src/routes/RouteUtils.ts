@@ -229,7 +229,7 @@ export class RouteUtils {
                                 if (this.authMiddleware) {
                                     try {
                                         const result: AuthResult | Promise<AuthResult> | undefined =
-                                            this.authMiddleware.authenticate(authStrategies, req, false);
+                                            this.authMiddleware.authenticate(authStrategies, req, undefined, false);
                                         if (result && !(result instanceof Promise)) {
                                             return result;
                                         }
@@ -268,6 +268,10 @@ export class RouteUtils {
                                         result = await result;
                                     }
                                     req.auth = result;
+                                    if (!result && authRequired) {
+                                        next(new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED));
+                                        return;
+                                    }
                                     next();
                                 } catch (err: any) {
                                     if (authRequired) {
@@ -347,8 +351,17 @@ export class RouteUtils {
                             const isGetRoute = routeType === "get";
                             const isHeadRoute = routeType === "head";
                             // Raw buffer encoded query
+                            const MAX_Q_BYTES = 65_536;
                             if ((isGetRoute || isHeadRoute) && _.has(args[i], "q")) {
-                                const bufferJsonString = Buffer.from(args[i]["q"], "base64").toString("ascii");
+                                const qParam = args[i]["q"];
+                                if (typeof qParam !== "string" || qParam.length > MAX_Q_BYTES) {
+                                    throw new ApiError(
+                                        ApiErrors.INVALID_REQUEST,
+                                        400,
+                                        "Query parameter 'q' exceeds maximum allowed size.",
+                                    );
+                                }
+                                const bufferJsonString = Buffer.from(qParam, "base64").toString("utf-8");
                                 args[i] = JSON.parse(bufferJsonString);
                             }
                         } else if (argMetadata[i][0] === "request") {

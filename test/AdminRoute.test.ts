@@ -81,34 +81,6 @@ describe("AdminRoute Tests", () => {
         })
     });
 
-    it.skip("Can connect to inspector with auth header.", async () => {
-        await requestws(server).ws(basePath + "/inspect", { headers: { Authorization: `jwt ${adminToken}` } })
-            .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: serviceName + "-logs" })
-            .close()
-            .expectClosed();
-    });
-
-    it.skip("Cannot connect to inspector with auth header using untrusted user.", async () => {
-        await requestws(server).ws(basePath + "/inspect", { headers: { Authorization: `jwt ${authToken}` } })
-            .expectClosed(1002, "api-102");
-    });
-
-    it.skip("Can connect to inspector with LOGIN message.", async () => {
-        await requestws(server).ws(basePath + "/inspect")
-            .sendJson({ id: 0, type: "LOGIN", data: adminToken })
-            .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
-            .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: serviceName + "-logs" })
-            .close()
-            .expectClosed();
-    });
-
-    it.skip("Cannot connect to inspector with LOGIN message using untrusted user.", async () => {
-        await requestws(server).ws(basePath + "/inspect")
-            .sendJson({ id: 0, type: "LOGIN", data: adminToken })
-            .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
-            .expectClosed(1002, "api-102");
-    });
-
     it("Can connect to logs with auth header.", async () => {
         await requestws(server).ws(basePath + "/logs", { headers: { Authorization: `jwt ${adminToken}` } })
             .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: serviceName + "-logs" })

@@ -1,4 +1,4 @@
-﻿///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, JWTUser, ObjectDecorators, UserUtils } from "@rapidrest/core";
@@ -6,8 +6,7 @@ import { Redis, ScanStream } from "ioredis";
 import Transport from "winston-transport";
 import { Auth, ContentType, Get, Route, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
-import ws, { createWebSocketStream as createWsStream } from "ws";
-import { createWebSocketStream, type UWSWebSocketShim } from "../http/WebSocket.js";
+import { type UWSWebSocketShim } from "../http/WebSocket.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 const { Config, Init, Logger } = ObjectDecorators;
@@ -124,52 +123,20 @@ export class AdminRoute {
         if (this.cacheClient) {
             const task: Promise<void> = new Promise((resolve, reject) => {
                 const stream: ScanStream | undefined = this.cacheClient?.scanStream({ match: "db.cache.*" });
-                if (stream) {
-                    let keys: string[] = [];
-                    stream.on("data", (k: string[]) => {
-                        keys = keys.concat(k);
-                    });
-                    stream.on("end", () => {
-                        void this.cacheClient?.unlink(keys);
-                    });
-                }
+                if (!stream) { resolve(); return; }
+                let keys: string[] = [];
+                stream.on("data", (k: string[]) => {
+                    keys = keys.concat(k);
+                });
+                stream.on("end", () => {
+                    (keys.length > 0 ? this.cacheClient!.unlink(keys) : Promise.resolve())
+                        .then(() => resolve())
+                        .catch(reject);
+                });
+                stream.on("error", reject);
             });
             await task;
         }
-    }
-
-    @Summary("{{serviceName}} websocket for NodeJS debug inspector")
-    @Description("Establishes a connection to the remote NodeJS debug inspector.")
-    @Auth(["jwt"])
-    @WebSocket("/inspect")
-    private async inspect(@Socket socket: UWSWebSocketShim, @User user: JWTUser): Promise<void> {
-        if (!UserUtils.hasRoles(user, this.trustedRoles)) {
-            socket.close(1002, ApiErrors.AUTH_PERMISSION_FAILURE);
-            return;
-        }
-
-        // Create a websocket connection to the debug inspector and forward all traffic between the two
-        const sDuplex = createWebSocketStream(socket);
-        const iws: ws = new ws("ws://localhost:9229");
-        const iDuplex = createWsStream(iws);
-        sDuplex.pipe(iDuplex);
-        iDuplex.pipe(sDuplex);
-
-        // Add the sockets to our tracked list
-        const socks: any[] = this.activeSockets.get(user.uid) || [];
-        socks.push(sDuplex);
-        socks.push(iDuplex);
-        this.activeSockets.set(user.uid, socks);
-
-        socket.on("close", async (code: number, reason: string) => {
-            iws.close();
-
-            // Remove the sockets from our tracked list
-            const socks: any[] = this.activeSockets.get(user.uid) || [];
-            socks.splice(socks.indexOf(sDuplex));
-            socks.splice(socks.indexOf(iDuplex));
-            this.activeSockets.set(user.uid, socks);
-        });
     }
 
     @Summary("{{serviceName}} websocket to view live logs")

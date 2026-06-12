@@ -45,10 +45,16 @@ export class NetUtils {
     /**
      * Extracts the IP address from a given url or HTTP request.
      *
+     * When `trustedProxies` is provided, forwarding headers (`X-Forwarded-For`, etc.) are
+     * only trusted when the direct connection's `remoteAddress` is in that list. Without a
+     * trusted-proxy list the headers are ignored and the socket address is returned directly,
+     * preventing clients from spoofing their IP in audit logs.
+     *
      * @param urlOrRequest The url or HTTP request to extract the IP from.
+     * @param trustedProxies Optional list of proxy IP addresses whose forwarding headers should be trusted.
      * @returns A `string` containing the IP address if found, otherwise `undefined`.
      */
-    public static getIPAddress(urlOrRequest: string | XRequest): string | undefined {
+    public static getIPAddress(urlOrRequest: string | XRequest, trustedProxies?: string[]): string | undefined {
         let result: string | undefined = undefined;
 
         if (typeof urlOrRequest === "string") {
@@ -75,18 +81,23 @@ export class NetUtils {
                 }
             }
         } else {
-            if (urlOrRequest.headers["x-original-forwarded-for"]) {
-                result = urlOrRequest.headers["x-original-forwarded-for"] as string;
-        }
-            else if (urlOrRequest.headers["x-forwarded-for"]) {
-                result = urlOrRequest.headers["x-forwarded-for"] as string;
+            const remoteAddr = urlOrRequest.socket?.remoteAddress;
+            const proxyTrusted =
+                trustedProxies && trustedProxies.length > 0
+                    ? remoteAddr !== undefined && trustedProxies.includes(remoteAddr)
+                    : false;
+
+            if (proxyTrusted) {
+                if (urlOrRequest.headers["x-original-forwarded-for"]) {
+                    result = urlOrRequest.headers["x-original-forwarded-for"] as string;
+                } else if (urlOrRequest.headers["x-forwarded-for"]) {
+                    result = urlOrRequest.headers["x-forwarded-for"] as string;
+                } else if (urlOrRequest.headers["x-real-ip"]) {
+                    result = urlOrRequest.headers["x-real-ip"] as string;
+                }
             }
-            else if (urlOrRequest.headers["x-real-ip"]) {
-                result = urlOrRequest.headers["x-real-ip"] as string;
-            }
-            else if (urlOrRequest.socket) {
-                result = urlOrRequest.socket.remoteAddress;
-            }
+
+            result = result ?? remoteAddr;
         }
 
         return result;

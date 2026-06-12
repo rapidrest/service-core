@@ -48,11 +48,13 @@ export class AuthMiddleware {
      *
      * @param strategies The list of strategy names to attempt authentication with.
      * @param req The request containing data to perform authenticate with.
+     * @param res The response to use when writing back directly to the client.
      * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
      */
     public authenticate(
         strategies: string[],
         req: HttpRequest,
+        res?: HttpResponse,
         required?: boolean,
     ): AuthResult | Promise<AuthResult> | undefined {
         let authResult: AuthResult | Promise<AuthResult> | undefined = undefined;
@@ -61,7 +63,7 @@ export class AuthMiddleware {
             // Attempt authentication with the strategy
             const strategy: AuthStrategy | undefined = this.strategies.get(name);
             if (strategy) {
-                authResult = strategy.authenticate(req, required);
+                authResult = strategy.authenticate(req, res, required);
             } else {
                 throw new Error("No authentication strategy has been registered with name: " + name);
             }

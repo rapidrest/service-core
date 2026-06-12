@@ -42,7 +42,7 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
     private create(
         objs: AccessControlListMongo | AccessControlListMongo[],
         @Request req: XRequest,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<AccessControlListMongo | AccessControlListMongo[]> {
         if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -59,7 +59,7 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
     private updateBulk(
         objs: AccessControlListMongo[],
         @Request req: XRequest,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<AccessControlListMongo[]> {
         if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -76,7 +76,7 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
         @Param() params: any,
         @Query() query: any,
         @Response res: XResponse,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<any> {
         if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -93,7 +93,7 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
     private findAll(
         @Param() params: any,
         @Query() query: any,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<AccessControlListMongo[]> {
         if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -107,16 +107,16 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
     @Auth(["jwt"])
     @Delete("/:id")
     @Returns([null])
-    private delete(
+    private async delete(
         @Param("id") id: string,
         @Request req: XRequest,
         @Query("version") version: string,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<void> {
         if (
             !user ||
             (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !this.aclUtils?.hasPermission(user, id, ACLAction.FULL))
+                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
         ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -133,15 +133,15 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
     @Auth(["jwt"])
     @Get("/:id")
     @Returns([AccessControlListMongo])
-    private findById(
+    private async findById(
         @Param("id") id: string,
         @Query() query?: any,
-        @User user?: any
+        @User user?: any,
     ): Promise<AccessControlListMongo | null> {
         if (
             !user ||
             (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !this.aclUtils?.hasPermission(user, id, ACLAction.FULL))
+                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
         ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -154,16 +154,16 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
     @Auth(["jwt"])
     @Put("/:id")
     @Returns([AccessControlListMongo])
-    private update(
+    private async update(
         @Param("id") id: string,
         obj: AccessControlListMongo,
         @Request req: XRequest,
-        @User user?: JWTUser
+        @User user?: JWTUser,
     ): Promise<AccessControlListMongo> {
         if (
             !user ||
             (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !this.aclUtils?.hasPermission(user, id, ACLAction.FULL))
+                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
         ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }

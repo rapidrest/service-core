@@ -2,9 +2,10 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import * as prom from "prom-client";
-import { Get, Param, Route, ContentType } from "../decorators/RouteDecorators.js";
+import { ApiError, JWTUser, UserUtils, ObjectDecorators } from "@rapidrest/core";
+import { Auth, Get, Param, Route, ContentType, User } from "../decorators/RouteDecorators.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
-import { ObjectDecorators } from "@rapidrest/core";
+import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 const { Config } = ObjectDecorators;
 
 /**
@@ -16,7 +17,15 @@ const { Config } = ObjectDecorators;
  */
 @Route("/metrics")
 export class MetricsRoute {
+    @Config("metrics")
+    private metricsConfig = {
+        authRequired: true,
+    };
+
     private registry: prom.Registry;
+
+    @Config("trusted_roles")
+    private trustedRoles: string[] = [];
 
     constructor() {
         this.registry = prom.register;
@@ -27,7 +36,10 @@ export class MetricsRoute {
     @Get()
     @ContentType(prom.register.contentType)
     @Returns([String])
-    private async getMetrics(): Promise<string> {
+    private async getMetrics(@User user?: JWTUser): Promise<string> {
+        if (this.metricsConfig.authRequired && (!user || !UserUtils.hasRoles(user, this.trustedRoles))) {
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+        }
         return await this.registry.metrics();
     }
 
@@ -36,7 +48,10 @@ export class MetricsRoute {
     @Get("/:metric")
     @ContentType(prom.register.contentType)
     @Returns([String])
-    private async getSingleMetric(@Param("metric") metric: any): Promise<string> {
+    private async getSingleMetric(@Param("metric") metric: any, @User user?: JWTUser): Promise<string> {
+        if (this.metricsConfig.authRequired && (!user || !UserUtils.hasRoles(user, this.trustedRoles))) {
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+        }
         return await this.registry.getSingleMetricAsString(metric);
     }
 }

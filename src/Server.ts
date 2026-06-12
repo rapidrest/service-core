@@ -342,15 +342,21 @@ export class Server {
                 ].join(", ");
                 this.app.use((req: HttpRequest, res: HttpResponse, next: NextFunction) => {
                     const origin = req.headers["origin"] as string || "";
-                    // Reflect the request origin back when it matches the configured allow-list,
-                    // or allow all origins when no list is configured.
-                    const allowOrigin =
-                        !corsOrigins || corsOrigins === "*" || (Array.isArray(corsOrigins) ? corsOrigins.includes(origin) : corsOrigins === origin)
-                            ? (origin || "*")
-                            : "";
+                    // When no allow-list is configured, permit all origins without credentials.
+                    // Only reflect a specific origin (with credentials) when it matches the explicit list.
+                    let allowOrigin = "";
+                    let allowCredentials = false;
+                    if (!corsOrigins || corsOrigins === "*") {
+                        allowOrigin = "*";
+                    } else if (Array.isArray(corsOrigins) ? corsOrigins.includes(origin) : corsOrigins === origin) {
+                        allowOrigin = origin;
+                        allowCredentials = true;
+                    }
                     if (allowOrigin) {
                         res.setHeader("access-control-allow-origin", allowOrigin);
-                        res.setHeader("access-control-allow-credentials", "true");
+                        if (allowCredentials) {
+                            res.setHeader("access-control-allow-credentials", "true");
+                        }
                         res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS,PUT,POST,DELETE");
                         res.setHeader("access-control-allow-headers", corsAllowedHeaders);
                     }
@@ -507,10 +513,10 @@ export class Server {
                             if (!res.headersSent) {
                                 res.status(500);
                             }
-                            res.json(err);
+                            res.json({ message: "Internal Server Error", status: 500 });
                         } else if (err instanceof BulkError) {
                             const errs: (Error | null)[] = err.errors;
-                            if (err.stack && process.env.NODE_ENV === "production") {
+                            if (err.stack && process.env.NODE_ENV !== "development") {
                                 for (const err of errs) {
                                     if (err) {
                                         delete err.stack;
@@ -534,7 +540,7 @@ export class Server {
                                 err = tmp;
                             }
                             // leverage NODE_ENV or another config?
-                            if (err.stack && process.env.NODE_ENV === "production") {
+                            if (err.stack && process.env.NODE_ENV !== "development") {
                                 delete err.stack;
                             }
                             if (!res.headersSent) {

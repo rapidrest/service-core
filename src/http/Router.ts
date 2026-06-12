@@ -423,7 +423,13 @@ export class HttpRouter {
             const req = new UWSRequest(uwsReq, remoteAddress);
             const res = new UWSResponse(uwsRes);
 
-            const filePath = path.join(basePath, req.path === "/" ? "/index.html" : req.path);
+            const safeBase = path.resolve(basePath);
+            const requestedPath = req.path === "/" ? "index.html" : req.path.replace(/^\/+/, "");
+            const filePath = path.resolve(safeBase, requestedPath);
+            if (!filePath.startsWith(safeBase + path.sep) && filePath !== safeBase) {
+                res.status(403).end();
+                return;
+            }
             const ext = path.extname(filePath);
 
             try {
