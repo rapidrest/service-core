@@ -11,7 +11,7 @@ import { ApiErrorMessages } from "../ApiErrors.js";
  *
  * @author Jean-Philippe Steinmetz
  */
-export class AuthStrategyOptions {
+export class BasicStrategyOptions {
     /** The name of the header to look for when performing header based authentication. Default value is `Authorization`. */
     public headerKey: string = "authorization";
     /** The authorization scheme type when using header based authentication. Default value is `jwt`. */
@@ -19,7 +19,7 @@ export class AuthStrategyOptions {
     /** The name of the requesty query parameter to retreive the token from when using query based authentication. Default value is `auth_token`. */
     public queryKey: string = "auth_basic";
     /** You must override this function to perform validation of the login information. */
-    public validate(uid: string, secret: string): JWTUser | undefined {
+    public validate(uid: string, secret: string): JWTUser | Promise<JWTUser> | undefined {
         return undefined;
     }
 }
@@ -29,9 +29,9 @@ export class AuthStrategyOptions {
  */
 export class BasicStrategy implements AuthStrategy {
     public readonly name: string = "basic";
-    private options: AuthStrategyOptions;
+    private options: BasicStrategyOptions;
 
-    constructor(options: AuthStrategyOptions = new AuthStrategyOptions()) {
+    constructor(options: BasicStrategyOptions = new BasicStrategyOptions()) {
         this.options = options;
     }
 
@@ -78,14 +78,30 @@ export class BasicStrategy implements AuthStrategy {
             if (parts.length !== 2) {
                 throw new Error("Invalid or missing username of password.");
             }
-            const user: JWTUser | undefined = this.options.validate(parts[0], parts[1]);
-            if (user) {
-                return {
-                    data: loginInfo,
-                    method: this.name,
-                    payload: info,
-                    user,
-                };
+            const result: JWTUser | Promise<JWTUser> | undefined = this.options.validate(parts[0], parts[1]);
+            if (result) {
+                if (result instanceof Promise) {
+                    return new Promise(async (resolve, reject) => {
+                        try {
+                            const user: JWTUser = await result;
+                            resolve({
+                                data: loginInfo,
+                                method: this.name,
+                                payload: info,
+                                user,
+                            });
+                        } catch (err) {
+                            reject(err);
+                        }
+                    });
+                } else {
+                    return {
+                        data: loginInfo,
+                        method: this.name,
+                        payload: info,
+                        user: result,
+                    };
+                }
             }
         }
 

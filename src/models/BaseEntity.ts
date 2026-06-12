@@ -51,7 +51,7 @@ export abstract class BaseEntity {
 
     constructor(other?: Partial<BaseEntity>) {
         if (other) {
-            this.uid = other.uid || this.uid;
+            this.uid = "uid" in other && other.uid !== undefined ? other.uid : this.uid;
             this.dateCreated =
                 typeof other.dateCreated === "string"
                     ? new Date(other.dateCreated)
@@ -60,7 +60,7 @@ export abstract class BaseEntity {
                 typeof other.dateModified === "string"
                     ? new Date(other.dateModified)
                     : other.dateModified || this.dateModified;
-            this.version = other.version || this.version;
+            this.version = "version" in other && other.version !== undefined ? other.version : this.version;
         }
     }
 }

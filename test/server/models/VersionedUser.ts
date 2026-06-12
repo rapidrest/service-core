@@ -33,10 +33,10 @@ export default class VersionedUser extends RecoverableBaseMongoEntity {
         super(other);
 
         if (other) {
-            this.name = other.name || this.name;
-            this.firstName = other.firstName || this.firstName;
-            this.lastName = other.lastName || this.lastName;
-            this.age = other.age || this.age;
+            this.name = "name" in other ? other.name : this.name;
+            this.firstName = "firstName" in other ? other.firstName : this.firstName;
+            this.lastName = "lastName" in other ? other.lastName : this.lastName;
+            this.age = "age" in other ? other.age : this.age;
         }
     }
 }

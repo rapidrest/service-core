@@ -30,7 +30,7 @@ export default class Player extends User {
         super(other);
 
         if (other) {
-            this.skillRating = other.skillRating || this.skillRating;
+            this.skillRating = "skillRating" in other ? other.skillRating : this.skillRating;
             this.items = "items" in other ? other.items : this.items;
             this.parentUid = "parentUid" in other ? other.parentUid : this.parentUid;
         }

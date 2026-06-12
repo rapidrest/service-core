@@ -28,9 +28,9 @@ export default class Item extends BaseEntity {
         super(other);
 
         if (other) {
-            this.name = other.name || this.name;
-            this.quantity = other.quantity || this.quantity;
-            this.cost = other.cost || this.cost;
+            this.name = "name" in other ? other.name : this.name;
+            this.quantity = "quantity" in other ? other.quantity : this.quantity;
+            this.cost = "cost" in other ? other.cost : this.cost;
         }
     }
 }

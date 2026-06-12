@@ -25,7 +25,7 @@ export abstract class SimpleEntity {
 
     constructor(other?: Partial<SimpleEntity>) {
         if (other) {
-            this.uid = other.uid || this.uid;
+            this.uid = "uid" in other && other.uid !== undefined ? other.uid : this.uid;
         }
     }
 }

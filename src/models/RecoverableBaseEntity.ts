@@ -23,7 +23,7 @@ export abstract class RecoverableBaseEntity extends BaseEntity {
         super(other);
 
         if (other) {
-            this.deleted = other.deleted || this.deleted;
+            this.deleted = "deleted" in other && other.deleted !== undefined ? other.deleted : this.deleted;
         }
     }
 }

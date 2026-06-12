@@ -260,7 +260,7 @@ export class RouteUtils {
                         // Build the auth middleware for this route
                         if (authStrategies && authStrategies.length > 0) {
                             // Required auth — reject with 401 if no valid authentication
-                            const jwtMw: RequestHandler = async (req, _res, next) => {
+                            const authMw: RequestHandler = async (req, _res, next) => {
                                 try {
                                     let result: AuthResult | Promise<AuthResult> | undefined =
                                         this.authMiddleware?.authenticate(authStrategies, req, authRequired);
@@ -277,7 +277,7 @@ export class RouteUtils {
                                     }
                                 }
                             };
-                            app[verb](path, jwtMw, ...middleware);
+                            app[verb](path, authMw, ...middleware);
                         } else {
                             app[verb](path, ...middleware);
                         }

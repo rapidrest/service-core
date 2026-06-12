@@ -34,7 +34,6 @@ const logger = Logger();
 @Route("/users")
 @Description("Handles processing of all HTTP requests for the path `/users`.")
 class UserRoute extends ModelRoute<UserModel> {
-    protected repo?: Repo<UserModel | Player>;
     protected readonly repoUtilsClass: any = RepoUtils;
 
     /**
@@ -46,9 +45,7 @@ class UserRoute extends ModelRoute<UserModel> {
 
     @Init
     private async initialize() {
-        if (this.repo) {
-            logger.info("Calling init counting users " + (await this.repo.count()));
-        }
+        // NO-OP
     }
 
     private validate(obj: UserModel | UserModel[]): Promise<void> {
@@ -71,7 +68,7 @@ class UserRoute extends ModelRoute<UserModel> {
         @Param() params: any,
         @Query() query: any,
         @Response res: XResponse,
-        @User user?: any
+        @User user?: any,
     ): Promise<any> {
         return super.doCount({ params, query, res, user });
     }
@@ -85,7 +82,7 @@ class UserRoute extends ModelRoute<UserModel> {
     protected create(
         objs: UserModel | UserModel[],
         @Request req: XRequest,
-        @User user?: any
+        @User user?: any,
     ): Promise<UserModel | UserModel[]> {
         return super.doCreate(objs, { req, user });
     }
@@ -111,14 +108,14 @@ class UserRoute extends ModelRoute<UserModel> {
     @Summary("Request")
     @Head(":id")
     @Description(
-        "Returns a boolean integer indicating whether or not a user account with the given unique identifier exists."
+        "Returns a boolean integer indicating whether or not a user account with the given unique identifier exists.",
     )
     @Returns([null])
     protected exists(
         @Param("id") id: string,
         @Query() query: any,
         @Response res: XResponse,
-        @User user?: any
+        @User user?: any,
     ): Promise<any> {
         return super.doExists(id, { query, res, user });
     }
@@ -166,7 +163,7 @@ class UserRoute extends ModelRoute<UserModel> {
         @Param("id") id: string,
         @Param("property") propertyName: string,
         obj: any,
-        @User user?: any
+        @User user?: any,
     ): Promise<UserModel> {
         return super.doUpdateProperty(id, propertyName, obj, { user });
     }

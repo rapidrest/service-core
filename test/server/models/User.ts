@@ -44,15 +44,25 @@ export default class User extends BaseMongoEntity {
     @Nullable
     public uType: string | number | undefined = undefined;
 
+    @Column()
+    @Description("The password to use for authentication.")
+    public password: string = "";
+
+    @Column()
+    @Description("The list of permission roles the user has.")
+    public roles: string[] = [];
+
     constructor(other?: Partial<User>) {
         super(other);
 
         if (other) {
-            this.name = other.name || this.name;
-            this.firstName = other.firstName || this.firstName;
-            this.lastName = other.lastName || this.lastName;
-            this.age = other.age || this.age;
-            this.productUid = other.productUid || this.productUid;
+            this.name = "name" in other ? other.name : this.name;
+            this.firstName = "firstName" in other ? other.firstName : this.firstName;
+            this.lastName = "lastName" in other ? other.lastName : this.lastName;
+            this.age = "age" in other ? other.age : this.age;
+            this.productUid = "productUid" in other ? other.productUid : this.productUid;
+            this.password = "password" in other ? other.password : this.password;
+            this.roles = "roles" in other ? other.roles : this.roles;
         }
     }
 }

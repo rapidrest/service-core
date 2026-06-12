@@ -8,7 +8,7 @@ export class StatusExtraData {
     }
     constructor(other: Partial<StatusExtraData>) {
         if (other) {
-            this._data = other.data || this._data;
+            this._data = "data" in other ? other.data : this._data;
         }
     }
 }

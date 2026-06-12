@@ -27,9 +27,9 @@ export default class CacheUser extends BaseMongoEntity {
         super(other);
 
         if (other) {
-            this.firstName = other.firstName || this.firstName;
-            this.lastName = other.lastName || this.lastName;
-            this.age = other.age || this.age;
+            this.firstName = "firstName" in other ? other.firstName : this.firstName;
+            this.lastName = "lastName" in other ? other.lastName : this.lastName;
+            this.age = "age" in other ? other.age : this.age;
         }
     }
 }
