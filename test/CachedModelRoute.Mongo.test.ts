@@ -3,7 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
 import * as crypto from "crypto";
-import { request } from "./request.js";
+import { request } from "../src/test/request.js";
 import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import CacheUser from "./server/models/CacheUser";

@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "./config";
-import { request } from "./request.js";
+import { request } from "../src/test/request.js";
 import { Server, ConnectionManager, ObjectFactory } from "../src";
 import Item from "./server/models/Item";
 import { MongoMemoryServer } from "mongodb-memory-server";

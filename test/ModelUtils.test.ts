@@ -963,7 +963,7 @@ describe("ModelUtils Tests", () => {
             ]);
         });
 
-        it.only("Can build search query with global composite OR criteria and sort", () => {
+        it("Can build search query with global composite OR criteria and sort", () => {
             const request: any = {};
             request.query = {
                 $or:

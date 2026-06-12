@@ -8,7 +8,7 @@ import { Server } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
-import { requestws } from "./requestws.js";
+import { requestws } from "../src/test/requestws.js";
 
 import { JWTUtils } from "@rapidrest/core";
 

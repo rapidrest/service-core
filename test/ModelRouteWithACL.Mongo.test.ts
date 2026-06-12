@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import config from "./config";
-import { request } from "./request.js";
+import { request } from "../src/test/request.js";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import ProtectedUser from "./server/models/ProtectedUser";
 import { MongoConnection, MongoRepository } from "../src";

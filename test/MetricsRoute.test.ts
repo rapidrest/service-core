@@ -11,7 +11,7 @@ import { default as config } from "./config";
 import { Server } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as uuid from "uuid";
-import { request } from "./request.js";
+import { request } from "../src/test/request.js";
 
 import { JWTUtils } from "@rapidrest/core";
 

@@ -8,7 +8,7 @@ import * as fs from "fs";
 import { default as config } from "./config";
 import { Server, ObjectFactory, ApiErrors } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { request } from "./request.js";
+import { request } from "../src/test/request.js";
 import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
 

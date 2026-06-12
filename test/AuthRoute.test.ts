@@ -7,7 +7,7 @@ process.env[`cors__origins`] = JSON.stringify(corsOrigins);
 import { default as config } from "./config";
 import { Server, ObjectFactory, MongoRepository, ConnectionManager, MongoConnection } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { request } from "./request.js";
+import { request } from "../src/test/request.js";
 import { JWTUtils, Logger } from "@rapidrest/core";
 import User from "./server/models/User";
 import * as uuid from "uuid";
