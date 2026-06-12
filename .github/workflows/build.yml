@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: node:lts-bookworm
+      image: node:lts-bookworm-slim
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +41,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: node:lts-bookworm
+      image: node:lts-bookworm-slim
     needs: build
     steps:
       - uses: actions/checkout@v4
@@ -73,7 +73,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     container:
-      image: node:lts-bookworm
+      image: node:lts-bookworm-slim
     needs: build
     continue-on-error: true
     steps:

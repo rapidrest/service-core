@@ -7,7 +7,7 @@ default:
             - dist/
         policy: pull
 .job_template: &job_configuration
-    image: node:lts-bookworm
+    image: node:lts-bookworm-slim
     before_script:
         - corepack enable
 
