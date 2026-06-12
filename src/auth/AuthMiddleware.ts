@@ -150,6 +150,8 @@ export class AuthMiddleware {
                             settle(() => {
                                 sock.send(JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: true }));
                                 req.user = loginUser;
+                                // Set req.auth so @User decorator in wrapMiddleware resolves correctly
+                                req.auth = { user: loginUser, method: "jwt", data: message.data, payload };
                                 next();
                             });
                         } else if (required) {

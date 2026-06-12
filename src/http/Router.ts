@@ -332,9 +332,11 @@ export class HttpRouter {
                         });
                         return;
                     }
-                    // Pre-authenticated — attach credentials so authWebSocket skips LOGIN
+                    // Pre-authenticated — attach credentials so authWebSocket skips LOGIN.
+                    // Also set req.auth so the @User decorator in wrapMiddleware resolves correctly.
                     if (authResult.user) {
                         req.user = authResult.user;
+                        req.auth = authResult;
                         req.authPayload = authResult.authPayload;
                         req.authToken = authResult.authToken;
                     }
