@@ -5,6 +5,7 @@ import "reflect-metadata";
 
 import { ModelUtils } from "../src";
 import { Identifier } from "../src/decorators/ModelDecorators";
+import * as typeorm from "typeorm";
 import {
     Not,
     ILike,
@@ -139,7 +140,7 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: "ASC" } }]);
+            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: 1 } }]);
         });
 
         it("Can build search query with sort (desc).", () => {
@@ -149,7 +150,7 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: "DESC" } }]);
+            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: -1 } }]);
         });
 
         it("Can build search query with sort (desc as object).", () => {
@@ -159,7 +160,7 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: "DESC" } }]);
+            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: -1 } }]);
         });
 
         it("Can build search query with single param (default)", () => {
@@ -457,6 +458,10 @@ describe("ModelUtils Tests", () => {
     });
 
     describe("SQL Tests", () => {
+        beforeAll(() => {
+            ModelUtils.setTypeOrm(typeorm);
+        });
+
         it("Can build search query with limit.", () => {
             const request: any = {};
             request.query = {
@@ -1016,7 +1021,7 @@ describe("ModelUtils Tests", () => {
     });
 
     it("Can load models.", async () => {
-        const results: Map<string, any> = await ModelUtils.loadModels("./test/models");
+        const results: Map<string, any> = await ModelUtils.loadModels("./test/server/models");
         expect(results).toBeDefined();
         expect(results.has("Item")).toBeTruthy();
         expect(results.has("User")).toBeTruthy();

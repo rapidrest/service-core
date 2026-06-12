@@ -471,7 +471,7 @@ export class ModelUtils {
         // add only one value to each query object.
         for (let key in queryParams) {
             // Ignore reserved query parameters
-            if (key.match(new RegExp("(jwt_|oauth_|cache).*", "i"))) {
+            if (key.match(new RegExp("(jwt_|oauth_|auth_|cache).*", "i"))) {
                 continue;
             }
 
@@ -598,7 +598,7 @@ export class ModelUtils {
 
         for (const key in queryParams) {
             // Ignore reserved query parameters
-            if (key.match(new RegExp("(jwt_|oauth_).*", "i"))) {
+            if (key.match(new RegExp("(jwt_|oauth_|auth_).*", "i"))) {
                 continue;
             }
 
@@ -631,7 +631,9 @@ export class ModelUtils {
 
                         if (!value) return;
 
-                        if (value.toUpperCase() === "ASC") {
+                        if (typeof value === "number") {
+                            sort[key] = value;
+                        } else if (value.toUpperCase() === "ASC") {
                             sort[key] = 1;
                         } else if (value.toUpperCase() === "DESC") {
                             sort[key] = -1;
