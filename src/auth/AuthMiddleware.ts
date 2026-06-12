@@ -8,6 +8,7 @@ import { RequestWS } from "../http/WebSocket.js";
 import { AuthResult, AuthStrategy } from "./AuthStrategy.js";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { JWTStrategy } from "./JWTStrategy.js";
+import { BasicStrategy } from "./BasicStrategy.js";
 const { Config, Init, Inject } = ObjectDecorators;
 
 /**
@@ -32,6 +33,7 @@ export class AuthMiddleware {
     private async init() {
         if (this.objectFactory) {
             // Register built-in strategy classes with ObjectFactory
+            this.objectFactory.register(BasicStrategy, "auth.BasicStrategy");
             this.objectFactory.register(JWTStrategy, "auth.JWTStrategy");
 
             if (this.authConfig.strategy) {

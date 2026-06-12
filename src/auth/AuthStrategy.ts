@@ -8,12 +8,12 @@ import { HttpRequest } from "../http/types.js";
  * Result returned by `AuthStrategy.authenticate()`.
  */
 export interface AuthResult {
+    /** The raw auth data that was verified. */
+    data?: string;
     /** The name of the auth strategy that produced this result. */
     method: string;
-    /** The full decoded auth payload. */
+    /** The fully decoded payload from the auth data. */
     payload?: any;
-    /** The raw auth string that was verified. */
-    token?: string;
     /** The authenticated user profile, or `undefined` if authentication failed. */
     user?: JWTUser;
 }

@@ -28,8 +28,8 @@ export class JWTStrategyOptions {
     public cookieName: string = "jwt";
     /** The name of the secured cookie to retreive the token from when using cookie based authentication. */
     public cookieSecure: boolean = false;
-    /** The name of the requesty query parameter to retreive the token from when using query based authentication. Default value is `jwt_token`. */
-    public queryKey: string = "jwt_token";
+    /** The name of the requesty query parameter to retreive the token from when using query based authentication. Default value is `auth_token`. */
+    public queryKey: string = "auth_token";
 }
 
 /** Result returned by `JWTStrategy.authenticate()`. */
@@ -161,7 +161,7 @@ export class JWTStrategy {
         }
 
         if (user) {
-            return { method: this.name, payload: authPayload, token: authToken, tokenFound, user };
+            return { data: authToken, method: this.name, payload: authPayload, tokenFound, user };
         }
 
         if (required) {

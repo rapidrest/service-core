@@ -447,7 +447,7 @@ describe("ModelUtils Tests", () => {
         it("Can build search query and filter reserved words.", () => {
             const request: any = {};
             request.query = {
-                jwt_token: "df0afawfa09uf093joihff3983ufq3olifhj329f8uh.f23908uf2ofj32fo2u.f208f09qf2",
+                auth_token: "df0afawfa09uf093joihff3983ufq3olifhj329f8uh.f23908uf2ofj32fo2u.f208f09qf2",
                 oauth_token: "df0afawfa09uf093joihff3983ufq3olifhj329f8uh.f23908uf2ofj32fo2u.f208f09qf2",
             };
 
@@ -912,7 +912,7 @@ describe("ModelUtils Tests", () => {
         it("Can build search query and filter reserved words.", () => {
             const request: any = {};
             request.query = {
-                jwt_token: "df0afawfa09uf093joihff3983ufq3olifhj329f8uh.f23908uf2ofj32fo2u.f208f09qf2",
+                auth_token: "df0afawfa09uf093joihff3983ufq3olifhj329f8uh.f23908uf2ofj32fo2u.f208f09qf2",
                 oauth_token: "df0afawfa09uf093joihff3983ufq3olifhj329f8uh.f23908uf2ofj32fo2u.f208f09qf2",
             };
 
