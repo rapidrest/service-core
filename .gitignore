@@ -10,11 +10,14 @@ compiled/
 coverage/
 dist/
 docs/_build
+docs/reference
 node_modules/
 temp/
 tmp*
 rrst-test
 mongomemory-*-test
+test\.dir\.copy/
+test\.dir/
 .pnp.*
 .yarn/*
 !.yarn/patches
