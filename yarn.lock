@@ -408,9 +408,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rapidrest/core@npm:^1.1.4":
-  version: 1.1.4
-  resolution: "@rapidrest/core@npm:1.1.4"
+"@rapidrest/core@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@rapidrest/core@npm:1.2.0"
   dependencies:
     form-data: "npm:^4.0.5"
     handlebars: "npm:^4.7.9"
@@ -427,7 +427,7 @@ __metadata:
     reflect-metadata: 0.2.x
     winston: 3.x
     winston-transport: 4.x
-  checksum: 10c0/c7c965b254709a0d2d295ec122b01879c968322f2cf46c8674df6040099cc0e8883437adc65ce0aed891bce058be220365b50c66d594baeaa85736add33b1eb5
+  checksum: 10c0/655cd447294beedde30274ba14845ccfb8408b49e585f3be7cb24dd80432d8bc18239945c9f46aeb87893b54de637dc99941c0871890679c1b59573476cb64ca
   languageName: node
   linkType: hard
 
@@ -435,7 +435,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@rapidrest/service-core@workspace:."
   dependencies:
-    "@rapidrest/core": "npm:^1.1.4"
+    "@rapidrest/core": "npm:^1.2.0"
     "@swc/core": "npm:^1.15.41"
     "@types/ioredis-mock": "npm:^8.2.7"
     "@types/node": "npm:^25.9.2"

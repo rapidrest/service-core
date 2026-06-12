@@ -43,8 +43,8 @@ conf.defaults({
     trusted_roles: ["admin"],
     // Settings pertaining to the signing and verification of authentication tokens
     auth: {
-        // The default PassportJS authentication strategy to use
-        strategy: "passportjs.JWTStrategy",
+        // The default authentication strategy to use
+        strategy: "auth.JWTStrategy",
         // The password to be used when signing or verifying authentication tokens
         secret: "MyPasswordIsSecure",
         options: {

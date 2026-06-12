@@ -40,20 +40,11 @@ export function Auth(strategies: string | string[], require: boolean = true) {
 }
 
 /**
- * Injects the authenticated JWT token payload as the value of the decorated argument.
+ * Injects the authenticated authentication result as the value of the decorated argument.
  */
-export function AuthPayload(target: any, propertyKey: string, index: number) {
+export function AuthResult(target: any, propertyKey: string, index: number) {
     let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
-    args[index] = ["authPayload"];
-    Reflect.defineMetadata("rrst:args", args, target, propertyKey);
-}
-
-/**
- * Injects the authenticated JWT token as the value of the decorated argument.
- */
-export function AuthToken(target: any, propertyKey: string, index: number) {
-    let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
-    args[index] = ["authToken"];
+    args[index] = ["authResult"];
     Reflect.defineMetadata("rrst:args", args, target, propertyKey);
 }
 

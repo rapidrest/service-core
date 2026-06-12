@@ -7,13 +7,12 @@ import * as prom from "prom-client";
 import "reflect-metadata";
 import { ConnectionManager } from "./database/ConnectionManager.js";
 import { StatusRoute } from "./routes/StatusRoute.js";
-import { JWTStrategy, JWTStrategyOptions } from "./passportjs/JWTStrategy.js";
 import { ApiError, ClassLoader, Logger } from "@rapidrest/core";
 import { OpenAPIRoute } from "./routes/OpenAPIRoute.js";
 import { MetricsRoute } from "./routes/MetricsRoute.js";
 import { ObjectFactory } from "./ObjectFactory.js";
 import { BackgroundServiceManager } from "./BackgroundServiceManager.js";
-import { RouteUtils } from "./express/RouteUtils.js";
+import { RouteUtils } from "./routes/RouteUtils.js";
 import { BulkError } from "./BulkError.js";
 import { BackgroundService } from "./BackgroundService.js";
 import { AdminRoute } from "./routes/index.js";
@@ -361,20 +360,6 @@ export class Server {
                     }
                     return next();
                 });
-
-                // Register the default auth strategy class with the object factory so it can be resolved by name
-                this.objectFactory.register(JWTStrategy, "passportjs.JWTStrategy");
-                if (this.config.get("auth:strategy")) {
-                    const jwtOptions: JWTStrategyOptions = new JWTStrategyOptions();
-                    jwtOptions.config = this.config.get("auth");
-                    await this.objectFactory.newInstance(this.config.get("auth:strategy"), {
-                        name: "default",
-                        initialize: true,
-                        args: [jwtOptions],
-                    });
-                } else {
-                    this.logger.warn("No JWT authentication strategy has been set.");
-                }
 
                 // Set all custom headers
                 const headers: any = this.config.get("headers") || {

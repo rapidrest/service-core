@@ -9,8 +9,9 @@ import { ServerResponse } from "http";
 import { OpenApiSpec } from "../OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { AccessControlList, ACLUtils } from "../security/index.js";
-import { JWTStrategy, JWTStrategyOptions } from "../passportjs/JWTStrategy.js";
 import _ from "lodash";
+import { AuthMiddleware } from "../auth/AuthMiddleware.js";
+import { AuthResult } from "../auth/AuthStrategy.js";
 const { Config, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -25,25 +26,11 @@ export class RouteUtils {
     @Inject(OpenApiSpec)
     private apiSpec: OpenApiSpec = new OpenApiSpec();
 
-    @Config("auth")
-    private authConfig: any;
-
-    @Config("auth:socketTimeout", 2000)
-    private authSocketTimeout: number = 2000;
+    @Inject(AuthMiddleware)
+    private authMiddleware?: AuthMiddleware;
 
     @Logger
     private logger?: any;
-
-    /** Lazily-constructed JWT strategy used for all auth middleware (no Passport dependency). */
-    private _jwtStrategy?: JWTStrategy;
-    private get jwtStrategy(): JWTStrategy {
-        if (!this._jwtStrategy) {
-            const opts = new JWTStrategyOptions();
-            opts.config = this.authConfig || { secret: "" };
-            this._jwtStrategy = new JWTStrategy(opts);
-        }
-        return this._jwtStrategy;
-    }
 
     /**
      * Creates a middleware function that verifies the incoming request is from a valid user with at least
@@ -51,9 +38,7 @@ export class RouteUtils {
      */
     public checkRequiredPerms(aclUid: string): RequestHandler {
         return async (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
-            let granted: boolean = this.aclUtils
-                ? await this.aclUtils.checkRequestPerms(aclUid, req.user, req)
-                : false;
+            let granted: boolean = this.aclUtils ? await this.aclUtils.checkRequestPerms(aclUid, req.user, req) : false;
 
             if (granted) {
                 return next();
@@ -61,132 +46,10 @@ export class RouteUtils {
                 const err: ApiError = new ApiError(
                     ApiErrors.AUTH_PERMISSION_FAILURE,
                     403,
-                    ApiErrorMessages.AUTH_PERMISSION_FAILURE
+                    ApiErrorMessages.AUTH_PERMISSION_FAILURE,
                 );
                 return next(err);
             }
-        };
-    }
-
-    /**
-     * Returns a request handler function that will perform authentication of a websocket connection. Authentication
-     * can be handled in two ways:
-     *
-     * 1. Authorization header
-     * 2. Negotiation via handshake
-     *
-     * This middleware function primarily provides the implementation for item 2 above.
-     *
-     * @param required Set to `true` to indicate that auth is required, otherwise `false`.
-     */
-    public authWebSocket(required: boolean): RequestHandler {
-        return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
-            const sock: any = (req as RequestWS).websocket || req.socket;
-            const user: JWTUser | undefined = req.user as JWTUser;
-
-            // Pre-upgrade auth already set req.user — no LOGIN handshake needed
-            if (user && user.uid) {
-                next();
-                return;
-            }
-
-            // Ensures timer, message listener, and close listener each fire at most once.
-            // Prevents the timer from firing after the socket closes (which would try to call
-            // sock.close() on an already-closed handle and throw an unhandled rejection).
-            let settled = false;
-            const settle = (fn: () => void) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                sock.removeListener("message", onMessage);
-                sock.removeListener("close", onClose);
-                fn();
-            };
-
-            const onClose = () => {
-                // Socket closed before auth completed — unblock runChain so the open handler can
-                // finish. The readyState === 3 guard in Router.ts will skip the final ws.close().
-                settle(() => next());
-            };
-
-            const onMessage = (data: any, isBinary: boolean) => {
-                if (isBinary) {
-                    settle(() => {
-                        if (required) {
-                            const error = new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
-                            sock.close(1002, error.code);
-                            next(error);
-                        } else {
-                            next();
-                        }
-                    });
-                    return;
-                }
-
-                try {
-                    const message: any = JSON.parse(data);
-
-                    if (message.type === "LOGIN") {
-                        const payload: JWTPayload = JWTUtils.decodeToken(this.authConfig, message.data);
-                        const loginUser: JWTUser | null =
-                            payload && payload.profile ? (payload.profile as JWTUser) : null;
-
-                        if (loginUser && loginUser.uid) {
-                            settle(() => {
-                                sock.send(JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: true }));
-                                req.user = loginUser;
-                                next();
-                            });
-                        } else if (required) {
-                            settle(() => {
-                                const error = new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED);
-                                sock.send(JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: false, data: error.message }));
-                                sock.close(1002, error.message);
-                                next(error);
-                            });
-                        } else {
-                            settle(() => {
-                                sock.send(JSON.stringify({ id: message.id, type: "LOGIN_RESPONSE", success: false, data: "Invalid authentication token." }));
-                                next();
-                            });
-                        }
-                    } else if (required) {
-                        settle(() => {
-                            const error = new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
-                            sock.close(1002, error.code);
-                            next(error);
-                        });
-                    } else {
-                        settle(() => next());
-                    }
-                } catch {
-                    settle(() => {
-                        if (required) {
-                            const error = new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
-                            sock.close(1002, error.code);
-                            next(error);
-                        } else {
-                            next();
-                        }
-                    });
-                }
-            };
-
-            sock.once("message", onMessage);
-            sock.once("close", onClose);
-
-            const timer: NodeJS.Timeout = setTimeout(() => {
-                settle(() => {
-                    if (required) {
-                        const error = new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED);
-                        error.status = 401;
-                        sock.close(1002, error.message);
-                        next(error);
-                    } else {
-                        next();
-                    }
-                });
-            }, this.authSocketTimeout);
         };
     }
 
@@ -206,7 +69,7 @@ export class RouteUtils {
                 const err: ApiError = new ApiError(
                     ApiErrors.AUTH_PERMISSION_FAILURE,
                     403,
-                    ApiErrorMessages.AUTH_PERMISSION_FAILURE
+                    ApiErrorMessages.AUTH_PERMISSION_FAILURE,
                 );
                 return next(err);
             }
@@ -363,19 +226,25 @@ export class RouteUtils {
                             // post-upgrade LOGIN message. Browsers that cannot send custom headers
                             // fall through to the message-based authWebSocket flow.
                             const upgradeAuth: WsUpgradeAuth = (req) => {
-                                const result = this.jwtStrategy.authenticate(req);
-                                if (result.user) {
-                                    return { user: result.user, authPayload: result.authPayload, authToken: result.authToken };
-                                }
-                                if (result.tokenFound) {
-                                    // Token was present but invalid — reject before handshake
-                                    return { reject: true };
+                                if (this.authMiddleware) {
+                                    try {
+                                        const result: AuthResult | Promise<AuthResult> | undefined =
+                                            this.authMiddleware.authenticate(authStrategies, req, false);
+                                        if (result && !(result instanceof Promise)) {
+                                            return result;
+                                        }
+                                    } catch (err: any) {
+                                        return { reject: true };
+                                    }
                                 }
                                 // No token — fall through to post-upgrade message-based auth
                                 return {};
                             };
 
-                            middleware.unshift(this.authWebSocket(authRequired));
+                            if (this.authMiddleware) {
+                                middleware.unshift(this.authMiddleware.authWebSocket(authRequired));
+                            }
+
                             // Set authRequired to false since we enforce it in the authWebSocket function
                             authRequired = false;
 
@@ -388,33 +257,27 @@ export class RouteUtils {
                             continue;
                         }
 
-                        // Build the JWT auth middleware for this route
+                        // Build the auth middleware for this route
                         if (authStrategies && authStrategies.length > 0) {
-                            if (authRequired) {
-                                // Required auth — reject with 401 if no valid token
-                                const jwtMw: RequestHandler = (req, _res, next) => {
-                                    const result = this.jwtStrategy.authenticate(req);
-                                    if (result.user) {
-                                        req.user = result.user;
-                                        req.authPayload = result.authPayload;
-                                        req.authToken = result.authToken;
-                                        next();
-                                    } else {
-                                        next(new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED));
+                            // Required auth — reject with 401 if no valid authentication
+                            const jwtMw: RequestHandler = async (req, _res, next) => {
+                                try {
+                                    let result: AuthResult | Promise<AuthResult> | undefined =
+                                        this.authMiddleware?.authenticate(authStrategies, req, authRequired);
+                                    if (result instanceof Promise) {
+                                        result = await result;
                                     }
-                                };
-                                app[verb](path, jwtMw, ...middleware);
-                            } else {
-                                // Optional auth — always proceeds; user may be undefined
-                                const jwtMw: RequestHandler = (req, _res, next) => {
-                                    const result = this.jwtStrategy.authenticate(req);
-                                    req.user = result.user;
-                                    req.authPayload = result.authPayload;
-                                    req.authToken = result.authToken;
+                                    req.auth = result;
                                     next();
-                                };
-                                app[verb](path, jwtMw, ...middleware);
-                            }
+                                } catch (err: any) {
+                                    if (authRequired) {
+                                        next(new ApiError(ApiErrors.AUTH_FAILED, 401, err.message));
+                                    } else {
+                                        next();
+                                    }
+                                }
+                            };
+                            app[verb](path, jwtMw, ...middleware);
                         } else {
                             app[verb](path, ...middleware);
                         }
@@ -460,10 +323,8 @@ export class RouteUtils {
                 if (argMetadata) {
                     for (const key in argMetadata) {
                         const i: number = Number(key);
-                        if (argMetadata[i][0] === "authPayload") {
-                            args[i] = (req as any).authPayload;
-                        } else if (argMetadata[i][0] === "authToken") {
-                            args[i] = (req as any).authToken;
+                        if (argMetadata[i][0] === "authResult") {
+                            args[i] = req.auth;
                         } else if (argMetadata[i][0] === "header") {
                             if (argMetadata[i][1]) {
                                 args[i] = req.headers[argMetadata[i][1]];
@@ -495,7 +356,7 @@ export class RouteUtils {
                         } else if (argMetadata[i][0] === "response") {
                             args[i] = res;
                         } else if (argMetadata[i][0] === "user") {
-                            args[i] = req.user;
+                            args[i] = req.auth?.user;
                         } else if (argMetadata[i][0] === "socket") {
                             args[i] =
                                 (req as RequestWS).websocket !== undefined ? (req as RequestWS).websocket : req.socket;

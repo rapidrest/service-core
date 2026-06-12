@@ -12,8 +12,7 @@ export * from "./Types.js";
 
 export * from "./database/index.js";
 export * from "./decorators/index.js";
-export * from "./express/index.js";
 export * from "./models/index.js";
-export * from "./passportjs/index.js";
+export * from "./auth/index.js";
 export * from "./routes/index.js";
 export * from "./security/index.js";
