@@ -67,10 +67,12 @@ export class JWTStrategy {
     public readonly name: string = "jwt";
 
     private options: JWTStrategyOptions;
+    private readonly _headerSchemeRegex: RegExp;
 
     constructor(options: JWTStrategyOptions = new JWTStrategyOptions()) {
         this.options = options;
         this.options.headerKey = options.headerKey.toLowerCase();
+        this._headerSchemeRegex = new RegExp("^" + this.options.headerScheme + "$", "i");
     }
 
     /**
@@ -105,7 +107,7 @@ export class JWTStrategy {
                     continue;
                 }
 
-                if (!parts[0].match(new RegExp("^" + this.options.headerScheme + "$", "i"))) {
+                if (!this._headerSchemeRegex.test(parts[0])) {
                     continue;
                 }
 

@@ -378,16 +378,10 @@ export class Server {
                     return next();
                 });
 
-                // Track request response time
-                this.app.use((req: HttpRequest, res: HttpResponse, next: NextFunction) => {
-                    const start = Date.now();
-                    const origEnd = res.end.bind(res);
-                    res.end = (...args: any[]) => {
-                        this.metricRequestTime
-                            .labels(req.method, req.path, String(res.statusCode))
-                            .observe(Date.now() - start);
-                        return origEnd(...args);
-                    };
+                // Stamp request start time — recorded in the terminal middleware to avoid
+                // per-request closure + bound-function allocations from monkey-patching res.end.
+                this.app.use((req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+                    (req as any)._metricsStart = Date.now();
                     return next();
                 });
 
@@ -562,6 +556,12 @@ export class Server {
                 }) as any);
 
                 this.app.use((req: HttpRequest, res: HttpResponse) => {
+                    const start: number | undefined = (req as any)._metricsStart;
+                    if (start !== undefined) {
+                        this.metricRequestTime
+                            .labels(req.method, req.path, String(res.statusCode))
+                            .observe(Date.now() - start);
+                    }
                     this.metricRequestPath.labels(req.path).inc();
                     this.metricRequestStatus.labels(req.method, req.path, String(res.statusCode)).inc();
                     this.metricTotalRequests.inc(1);

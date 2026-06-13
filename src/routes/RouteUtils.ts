@@ -313,24 +313,21 @@ export class RouteUtils {
      * @param send Set to true to have `func`'s result sent to the client.
      */
     public wrapMiddleware(obj: any, func: Function, send: boolean = false): RequestHandler {
+        // Capture at registration time — decorator metadata never changes after class definition.
+        const proto = Object.getPrototypeOf(obj);
+        const argMetadata: any = Reflect.getMetadata("rrst:args", proto, func.name);
+        const routeMetadata: any = Reflect.getMetadata("rrst:route", proto, func.name);
+        const routeType: string | undefined = [...(routeMetadata?.methods?.keys() || [])][0];
+        const funcLength = func.length;
+        const boundFunc: Function = func.bind(obj);
+
         return async (req: HttpRequest, res: HttpResponse, next: NextFunction) => {
             try {
-                const argMetadata: any = Reflect.getMetadata("rrst:args", Object.getPrototypeOf(obj), func.name);
-                const routeMetadata: any = Reflect.getMetadata("rrst:route", Object.getPrototypeOf(obj), func.name);
-                const args: any[] = [];
-
-                const routeType = [...(routeMetadata?.methods?.keys() || [])][0];
-
-                // this.logger.debug(`Arg metadata: ${JSON.stringify(argMetadata)}`);
-                // this.logger.debug(`Route metadata: ${JSON.stringify(routeMetadata)}`);
-                // this.logger.debug(`Route type: ${JSON.stringify(routeType)}`);
-
+                // Pre-sized array avoids repeated push() + dynamic growth per invocation.
                 // This is a hack that lets us stub out function arguments because we no longer can access
                 // them directly with func.arguments. Unfortunately this means we can't get default values
                 // as there's no way to reference them. =(
-                for (let i = 0; i < func.length; i++) {
-                    args.push(undefined);
-                }
+                const args: any[] = new Array(funcLength);
 
                 // Populate the list of function arguments based on the metadata
                 if (argMetadata) {
@@ -407,8 +404,7 @@ export class RouteUtils {
                     }
                 }
 
-                // Call the wrapped function
-                const boundFunc: Function = func.bind(obj);
+                // Call the wrapped function (pre-bound at registration time)
                 result = boundFunc(...args);
                 if (result instanceof Promise) {
                     // Wait for the real result

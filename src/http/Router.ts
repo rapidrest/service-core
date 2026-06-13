@@ -165,6 +165,10 @@ function makeUWSHandler(
     paramNames: string[],
     isHead: boolean = false
 ) {
+    // Built lazily on the first request and reused thereafter. Safe because all use() calls
+    // complete before listen() is invoked, and requests only arrive after listen().
+    let allHandlers: RequestHandler[] | null = null;
+
     return async (uwsRes: uWS.HttpResponse, uwsReq: uWS.HttpRequest) => {
         // Capture remote address before any async work
         const remoteAddress = Buffer.from(uwsRes.getRemoteAddressAsText()).toString();
@@ -186,10 +190,14 @@ function makeUWSHandler(
             // Non-fatal: body may not exist for GET/HEAD/OPTIONS
         }
 
-        // Split global middleware: pre-route (registered before this route) and post-route (registered after)
-        const preMiddleware = globalMiddleware.slice(0, preLength);
-        const postMiddleware = globalMiddleware.slice(preLength);
-        const allHandlers = [...preMiddleware, ...routeHandlers, ...postMiddleware];
+        // Build the combined handler chain once; reuse on every subsequent request.
+        if (allHandlers === null) {
+            allHandlers = [
+                ...globalMiddleware.slice(0, preLength),
+                ...routeHandlers,
+                ...globalMiddleware.slice(preLength),
+            ];
+        }
         await runChain(allHandlers, req, res);
 
         // If no handler sent a response, end with 204

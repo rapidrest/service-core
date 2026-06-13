@@ -228,34 +228,45 @@ export function readBody(uwsRes: UWSHttpResponse, req: UWSRequest): Promise<void
             return;
         }
 
+        let hasChunks = false;
         const chunks: Buffer[] = [];
 
+        const parseBody = (raw: Buffer) => {
+            req.rawBody = raw;
+            if (raw.length > 0) {
+                const contentType: string = String(req.headers["content-type"] || "").toLowerCase();
+                if (contentType.includes("application/json")) {
+                    try {
+                        req.body = JSON.parse(raw.toString("utf8"));
+                    } catch {
+                        req.body = raw.toString("utf8");
+                    }
+                } else if (contentType.includes("application/x-www-form-urlencoded")) {
+                    req.body = Object.fromEntries(
+                        new URLSearchParams(raw.toString("utf8")).entries()
+                    );
+                } else {
+                    req.body = raw;
+                }
+            } else {
+                req.body = undefined;
+            }
+        };
+
         uwsRes.onData((chunk, isLast) => {
+            if (isLast && !hasChunks) {
+                // Fast path: single-chunk body — skip the chunks array and Buffer.concat entirely.
+                parseBody(Buffer.from(chunk));
+                resolve();
+                return;
+            }
+
+            // Multi-chunk path: copy each chunk (ArrayBuffer is only valid during this callback).
+            hasChunks = true;
             chunks.push(Buffer.from(chunk));
 
             if (isLast) {
-                const raw = Buffer.concat(chunks);
-                req.rawBody = raw;
-
-                if (raw.length > 0) {
-                    const contentType: string = String(req.headers["content-type"] || "").toLowerCase();
-                    if (contentType.includes("application/json")) {
-                        try {
-                            req.body = JSON.parse(raw.toString("utf8"));
-                        } catch {
-                            req.body = raw.toString("utf8");
-                        }
-                    } else if (contentType.includes("application/x-www-form-urlencoded")) {
-                        req.body = Object.fromEntries(
-                            new URLSearchParams(raw.toString("utf8")).entries()
-                        );
-                    } else {
-                        req.body = raw;
-                    }
-                } else {
-                    req.body = undefined;
-                }
-
+                parseBody(Buffer.concat(chunks));
                 resolve();
             }
         });

@@ -78,7 +78,14 @@ export class ACLUtils {
             return result;
         }
 
-        let acl: AccessControlList | null = await this.findACL(uid);
+        // Request-scoped cache avoids duplicate Redis/DB fetches when the same ACL uid is
+        // checked more than once within a single request (e.g. class + method @Protect).
+        if (!(req as any)._aclCache) {
+            (req as any)._aclCache = new Map<string, AccessControlList | null>();
+        }
+        const reqCache: Map<string, AccessControlList | null> = (req as any)._aclCache;
+
+        let acl: AccessControlList | null = await this.findACL(uid, [], reqCache);
         if (acl) {
             // Make sure all parents are populated
             if (!acl.parent) {
@@ -192,9 +199,19 @@ export class ACLUtils {
      * @param entityId The unique identifier of the ACL to retrieve.
      * @param parentUids The list of already found parent UIDs. This is used to break circular dependencies.
      */
-    public async findACL(entityId: string, parentUids: string[] = []): Promise<AccessControlList | null> {
+    public async findACL(
+        entityId: string,
+        parentUids: string[] = [],
+        reqCache?: Map<string, AccessControlList | null>,
+    ): Promise<AccessControlList | null> {
         if (!this.repo) {
             return null;
+        }
+
+        // Check request-scoped cache first — eliminates redundant Redis/DB round trips
+        // when the same ACL uid is visited more than once within one request.
+        if (reqCache?.has(entityId)) {
+            return reqCache.get(entityId) ?? null;
         }
 
         let acl: AccessControlList | null = null;
@@ -230,11 +247,17 @@ export class ACLUtils {
             }
         }
 
+        // Populate request-scoped cache before fetching the parent chain so recursive
+        // calls for the same uid are served from memory.
+        if (reqCache) {
+            reqCache.set(entityId, acl);
+        }
+
         // Retrieve the parent ACL and assign it if available. Don't populate parents we've
         // already found to prevent a circular dependency.
         if (acl && acl.parentUid && !parentUids.includes(acl.parentUid)) {
             parentUids.push(acl.parentUid);
-            acl.parent = await this.findACL(acl.parentUid, parentUids);
+            acl.parent = await this.findACL(acl.parentUid, parentUids, reqCache);
         }
 
         return acl;
