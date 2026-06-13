@@ -17,7 +17,7 @@ const { Config } = ObjectDecorators;
  */
 @Route("/metrics")
 export class MetricsRoute {
-    @Config("metrics")
+    @Config("metrics", { authRequired: true })
     private metricsConfig = {
         authRequired: true,
     };
