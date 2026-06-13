@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { ApiError, JWTPayload, JWTUser, JWTUtils, ObjectDecorators, UserUtils } from "@rapidrest/core";
+import { ApiError, ObjectDecorators, UserUtils } from "@rapidrest/core";
 import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "../http/types.js";
 import type { WsUpgradeAuth } from "../http/Router.js";
 import type { RequestWS } from "../http/WebSocket.js";
@@ -228,9 +228,13 @@ export class RouteUtils {
                             const upgradeAuth: WsUpgradeAuth = (req) => {
                                 if (this.authMiddleware) {
                                     try {
-                                        const result: AuthResult | Promise<AuthResult> | undefined =
-                                            this.authMiddleware.authenticate(authStrategies, req, undefined, false);
-                                        if (result && !(result instanceof Promise)) {
+                                        const result: AuthResult | undefined = this.authMiddleware.authenticateSync(
+                                            authStrategies,
+                                            req,
+                                            undefined,
+                                            false,
+                                        );
+                                        if (result) {
                                             return result;
                                         }
                                     } catch (err: any) {
@@ -258,16 +262,21 @@ export class RouteUtils {
                         }
 
                         // Build the auth middleware for this route
-                        if (authStrategies && authStrategies.length > 0) {
+                        if (this.authMiddleware && authStrategies && authStrategies.length > 0) {
                             // Required auth — reject with 401 if no valid authentication
                             const authMw: RequestHandler = async (req, _res, next) => {
+                                if (!this.authMiddleware) {
+                                    throw new Error("authMiddleware is not set.");
+                                }
                                 try {
-                                    let result: AuthResult | Promise<AuthResult> | undefined =
-                                        this.authMiddleware?.authenticate(authStrategies, req, authRequired);
-                                    if (result instanceof Promise) {
-                                        result = await result;
-                                    }
+                                    const result: AuthResult | undefined = await this.authMiddleware.authenticate(
+                                        authStrategies,
+                                        req,
+                                        _res,
+                                        authRequired,
+                                    );
                                     req.auth = result;
+                                    req.user = result?.user;
                                     if (!result && authRequired) {
                                         next(new ApiError(ApiErrors.AUTH_FAILED, 401, ApiErrorMessages.AUTH_FAILED));
                                         return;

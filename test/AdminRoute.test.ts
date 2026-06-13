@@ -43,7 +43,7 @@ describe("AdminRoute Tests", () => {
         ],
         roles: config.get("trusted_roles"),
     };
-    const adminToken = JWTUtils.createToken(config.get("auth"), admin);
+    const adminToken = JWTUtils.createTokenSync(config.get("auth"), admin);
     const user: any = {
         uid: uuid.v4(),
         personas: [
@@ -57,7 +57,7 @@ describe("AdminRoute Tests", () => {
             },
         ],
     };
-    const authToken = JWTUtils.createToken(config.get("auth"), user);
+    const authToken = JWTUtils.createTokenSync(config.get("auth"), user);
 
     beforeAll(async () => {
         config.set("datastores:logs", {

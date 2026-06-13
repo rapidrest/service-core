@@ -51,19 +51,57 @@ export class AuthMiddleware {
      * @param res The response to use when writing back directly to the client.
      * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
      */
-    public authenticate(
+    public async authenticate(
         strategies: string[],
         req: HttpRequest,
         res?: HttpResponse,
         required?: boolean,
-    ): AuthResult | Promise<AuthResult> | undefined {
-        let authResult: AuthResult | Promise<AuthResult> | undefined = undefined;
+    ): Promise<AuthResult | undefined> {
+        for (const name of strategies) {
+            // Attempt authentication with the strategy
+            const strategy: AuthStrategy | undefined = this.strategies.get(name);
+            if (strategy) {
+                const authResult: AuthResult | undefined = await strategy.authenticate(req, res, required);
+
+                // Was it successful?
+                if (authResult) {
+                    return authResult;
+                }
+            } else {
+                throw new Error("No authentication strategy has been registered with name: " + name);
+            }
+        }
+
+        if (required) {
+            throw new Error("Authentication failed but is required to proceed.");
+        }
+
+        return undefined;
+    }
+
+    /**
+     * Performs authentication of the given request using one of the provided strategies.
+     *
+     * This is the synchronous version of `authenticate` that performs blocking based authentication.
+     *
+     * @param strategies The list of strategy names to attempt authentication with.
+     * @param req The request containing data to perform authenticate with.
+     * @param res The response to use when writing back directly to the client.
+     * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
+     */
+    public authenticateSync(
+        strategies: string[],
+        req: HttpRequest,
+        res?: HttpResponse,
+        required?: boolean,
+    ): AuthResult | undefined {
+        let authResult: AuthResult | undefined = undefined;
 
         for (const name of strategies) {
             // Attempt authentication with the strategy
             const strategy: AuthStrategy | undefined = this.strategies.get(name);
             if (strategy) {
-                authResult = strategy.authenticate(req, res, required);
+                authResult = strategy.authenticateSync(req, res, required);
             } else {
                 throw new Error("No authentication strategy has been registered with name: " + name);
             }
@@ -144,7 +182,7 @@ export class AuthMiddleware {
                     const message: any = JSON.parse(data);
 
                     if (message.type === "LOGIN") {
-                        const payload: JWTPayload = JWTUtils.decodeToken(this.authConfig, message.data);
+                        const payload: JWTPayload = JWTUtils.decodeTokenSync(this.authConfig, message.data);
                         const loginUser: JWTUser | null =
                             payload && payload.profile ? (payload.profile as JWTUser) : null;
 

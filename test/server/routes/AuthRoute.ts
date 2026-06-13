@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { Route, Get, User, Auth, WebSocket, Socket, Query } from "../../../src/decorators/RouteDecorators";
+import { Route, Get, User, Auth } from "../../../src/decorators/RouteDecorators";
 import { JWTUser, ObjectDecorators } from "@rapidrest/core";
 import { Description, Returns, Summary } from "../../../src/decorators/DocDecorators";
 import { AuthMiddleware, BasicStrategy, BasicStrategyOptions, ObjectFactory, RepoUtils } from "../../../src";
@@ -34,7 +34,7 @@ class AuthRoute {
         }
 
         const options: BasicStrategyOptions = new BasicStrategyOptions();
-        options.verify = async (username: string, password: string): Promise<JWTUser> | undefined => {
+        options.verify = async (username: string, password: string): Promise<JWTUser | undefined> => {
             const repoUtils: RepoUtils<UserModel> | undefined =
                 this.objectFactory?.getInstance<RepoUtils<UserModel>>("RepoUtils:User");
             if (repoUtils) {

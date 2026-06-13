@@ -2,7 +2,6 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { JWTUtils, JWTUtilsConfig, JWTUser, JWTPayload, ObjectDecorators } from "@rapidrest/core";
-import { ApiErrorMessages } from "../ApiErrors.js";
 import type { HttpRequest, HttpResponse } from "../http/types.js";
 import dayjs from "dayjs";
 import { createRequire } from "module";
@@ -75,99 +74,120 @@ export class JWTStrategy {
     }
 
     /**
-     * Attempts to authenticate the incoming request by extracting and verifying a JWT token.
-     * Returns a `JWTAuthResult` describing the outcome.
+     * Scans the provided request object for an authentication token this strategy can process.
+     * @param req The request to scan for an auth token.
+     * @returns The auth token if found, otherwise `undefined`.
      */
-    public authenticate(req: HttpRequest, res: HttpResponse, required?: boolean): JWTAuthResult | undefined {
-        let error: string = "";
-        let user: JWTUser | undefined = undefined;
-        let authPayload: JWTPayload | undefined = undefined;
+    private getAuthToken(req: HttpRequest): string | undefined {
         let authToken: string | undefined = undefined;
-        let tokenFound: boolean = false;
 
         // Tokens should be found in this order: Query Parameter => Authorization => Cookie
         // Check the query parameter (only when explicitly opted in — tokens in URLs appear in logs)
-        if ((this.options.allowQueryParam || this.config?.allowQueryParam) && this.options.queryKey && req.query && this.options.queryKey in req.query) {
-            let token: string = req.query[this.options.queryKey] as string;
-            tokenFound = true;
-
-            const payload: JWTPayload = JWTUtils.decodeToken(this.config, token);
-            // If the verification succeeded clear out any existing error, we have success
-            if (payload && payload.profile) {
-                error = "";
-                user = payload.profile as JWTUser;
-            }
-            // Store the payload in the request in case someone needs it
-            authPayload = payload;
-            // Store the full token in the request in case someone needs it
-            authToken = token;
+        if (
+            (this.options.allowQueryParam || this.config?.allowQueryParam) &&
+            this.options.queryKey &&
+            req.query &&
+            this.options.queryKey in req.query
+        ) {
+            authToken = req.query[this.options.queryKey] as string;
         }
 
         // Next check the headers. It's possible there is more than one header value defined. Loop through each of
         // them until we have a verified token.
-        if (!user && this.options.headerKey && this.options.headerKey in req.headers) {
-            tokenFound = true;
+        if (this.options.headerKey && this.options.headerKey in req.headers) {
             const value: string | string[] | undefined = req.headers[this.options.headerKey];
             const headers: string[] = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
 
-            // Loop throught th
+            // Loop through the headers looking for Authentication and our scheme
             for (const header in headers) {
                 const parts: string[] = headers[header].split(" ");
                 if (parts.length !== 2) {
-                    error = ApiErrorMessages.AUTH_FAILED;
                     continue;
                 }
 
                 if (!parts[0].match(new RegExp("^" + this.options.headerScheme + "$", "i"))) {
-                    error = ApiErrorMessages.AUTH_FAILED;
                     continue;
                 }
 
-                let token: string = parts[1];
-                const payload: JWTPayload = JWTUtils.decodeToken(this.config, token);
-                // If the verification succeeded clear out any existing error, we have success
-                if (payload && payload.profile) {
-                    error = "";
-                    user = payload.profile as JWTUser;
-                    authPayload = payload;
-                    authToken = token;
-                    // No need to continue checking remaining headers. We have our success.
-                    break;
-                }
-                authPayload = payload;
-                authToken = token;
+                authToken = parts[1];
             }
         }
 
-        // Check the cookie header
-        let token: string = "";
-        if (!user && this.options.cookieSecure && this.options.cookieName && req.signedCookies) {
+        // Check the cookie header — only overwrite if a value is actually present
+        if (this.options.cookieSecure && this.options.cookieName && req.signedCookies) {
             // TODO Decrypt the signed cookie
-            token = req.signedCookies[this.options.cookieName];
+            const cookieToken = req.signedCookies[this.options.cookieName];
+            if (cookieToken) {
+                authToken = cookieToken;
+            }
         }
-        if (!user && !this.options.cookieSecure && this.options.cookieName && req.cookies) {
-            token = req.cookies[this.options.cookieName];
+        if (!this.options.cookieSecure && this.options.cookieName && req.cookies) {
+            const cookieToken = req.cookies[this.options.cookieName];
+            if (cookieToken) {
+                authToken = cookieToken;
+            }
         }
+
+        return authToken;
+    }
+
+    public async authenticate(
+        req: HttpRequest,
+        res: HttpResponse,
+        required?: boolean,
+    ): Promise<JWTAuthResult | undefined> {
+        let user: JWTUser | undefined = undefined;
+        let authPayload: JWTPayload | undefined = undefined;
+        let authToken: string | undefined = this.getAuthToken(req);
 
         // If the token has been found, verify it.
-        if (!user && token && token.length > 0) {
-            tokenFound = true;
-            try {
-                const payload: JWTPayload = JWTUtils.decodeToken(this.config, token);
-                // If the verification succeeded clear out any existing error, we have success
-                if (payload && payload.profile) {
-                    error = "";
-                    user = payload.profile as JWTUser;
-                }
-                authPayload = payload;
-                authToken = token;
-            } catch (err: any) {
-                error = err;
+        if (authToken && authToken.length > 0) {
+            const payload: JWTPayload = await JWTUtils.decodeToken(this.config, authToken);
+            // If the verification succeeded clear out any existing error, we have success
+            if (payload && payload.profile) {
+                user = payload.profile as JWTUser;
+            }
+            authPayload = payload;
+            if (user) {
+                return {
+                    data: authToken,
+                    method: this.name,
+                    payload: authPayload,
+                    tokenFound: authToken !== undefined,
+                    user,
+                };
             }
         }
 
-        if (user) {
-            return { data: authToken, method: this.name, payload: authPayload, tokenFound, user };
+        if (required) {
+            throw new Error("Invalid or missing auth token.");
+        }
+
+        return undefined;
+    }
+
+    public authenticateSync(req: HttpRequest, res: HttpResponse, required?: boolean): JWTAuthResult | undefined {
+        let user: JWTUser | undefined = undefined;
+        let authPayload: JWTPayload | undefined = undefined;
+        let authToken: string | undefined = this.getAuthToken(req);
+
+        // If the token has been found, verify it.
+        if (authToken && authToken.length > 0) {
+            const payload: JWTPayload = JWTUtils.decodeTokenSync(this.config, authToken);
+            // If the verification succeeded clear out any existing error, we have success
+            if (payload && payload.profile) {
+                user = payload.profile as JWTUser;
+            }
+            authPayload = payload;
+            if (user) {
+                return {
+                    data: authToken,
+                    method: this.name,
+                    payload: authPayload,
+                    tokenFound: authToken !== undefined,
+                    user,
+                };
+            }
         }
 
         if (required) {

@@ -41,7 +41,7 @@ describe("MetricsRoute Tests", () => {
             },
         ],
     };
-    const authToken = JWTUtils.createToken(config.get("auth"), user);
+    const authToken = JWTUtils.createTokenSync(config.get("auth"), user);
 
     beforeAll(async () => {
         await mongod.start();

@@ -138,7 +138,7 @@ describe("Server Tests", () => {
             password: "MyP@ssw0rd1sS3cuR3!",
         });
 
-        const token = JWTUtils.createToken(config.get("auth"), {
+        const token = JWTUtils.createTokenSync(config.get("auth"), {
             uid: uuid.v4(),
             roles: config.get("trusted_roles"),
         } as any);

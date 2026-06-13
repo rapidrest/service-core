@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { JWTPayload, JWTUser } from "@rapidrest/core";
+import { JWTUser } from "@rapidrest/core";
 import { HttpRequest, HttpResponse } from "../http/types.js";
 
 /**
@@ -34,9 +34,18 @@ export interface AuthStrategy {
      * @param res The response to use when writing back directly to the client.
      * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
      */
-    authenticate(
-        req: HttpRequest,
-        res?: HttpResponse,
-        required?: boolean,
-    ): AuthResult | Promise<AuthResult> | undefined;
+    authenticate(req: HttpRequest, res?: HttpResponse, required?: boolean): Promise<AuthResult | undefined>;
+
+    /**
+     * Attempts to perform authentication with the given request data. If authentication was successful, returns an
+     * `AuthResult` containing the authentication details. If authentication fails and `required` is set to `true`
+     * throws an error, otherwise returns `undefined`.
+     *
+     * This is the synchronous version of `authenticate` that performs blocking based authentication.
+     *
+     * @param req The request containing data to attempt authentication with.
+     * @param res The response to use when writing back directly to the client.
+     * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
+     */
+    authenticateSync(req: HttpRequest, res?: HttpResponse, required?: boolean): AuthResult | undefined;
 }

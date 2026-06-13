@@ -4,7 +4,6 @@
 import { JWTUser } from "@rapidrest/core";
 import { HttpRequest, HttpResponse } from "../http/types.js";
 import { AuthResult, AuthStrategy } from "./AuthStrategy.js";
-import { ApiErrorMessages } from "../ApiErrors.js";
 
 /**
  * Describes the configuration options that can be used to initialize BasicStrategy.
@@ -24,9 +23,13 @@ export class BasicStrategyOptions {
      * Referer headers, which permanently exposes credentials outside the application.
      */
     public allowQueryParam: boolean = false;
-    /** You must override this function to perform verification of the login information. */
-    public verify(uid: string, secret: string): JWTUser | Promise<JWTUser> | undefined {
-        return undefined;
+    /** Override this function to handle asynchronous (non-blocking) verification of the login info. */
+    public verify(uid: string, secret: string): JWTUser | Promise<JWTUser | undefined> | undefined {
+        throw new Error("Did you forget to override BasicStrategyOptions.verify?");
+    }
+    /** Override this function to handle synchronous (blocking) verification of the login info. */
+    public verifySync(uid: string, secret: string): JWTUser | undefined {
+        throw new Error("Did you forget to override BasicStrategyOptions.verifySync?");
     }
 }
 
@@ -41,26 +44,18 @@ export class BasicStrategy implements AuthStrategy {
         this.options = options;
     }
 
-    authenticate(
-        req: HttpRequest,
-        res: HttpResponse,
-        required?: boolean,
-    ): AuthResult | Promise<AuthResult> | undefined {
-        let error: string = "";
-        let loginFound: boolean = false;
+    private getLoginInfo(req: HttpRequest): any {
         let loginInfo: string = "";
 
         // Login info should be found in this order: Query Parameter => Authorization
         // Check the query parameter (only when explicitly opted in — tokens in URLs appear in logs)
         if (this.options.allowQueryParam && this.options.queryKey && req.query && this.options.queryKey in req.query) {
             loginInfo = req.query[this.options.queryKey] as string;
-            loginFound = true;
         }
 
         // Next check the headers. It's possible there is more than one header value defined. Loop through each of
         // them until we have a verified login info.
-        if (!loginFound && this.options.headerKey && this.options.headerKey in req.headers) {
-            loginFound = true;
+        if (!loginInfo && this.options.headerKey && this.options.headerKey in req.headers) {
             const value: string | string[] | undefined = req.headers[this.options.headerKey];
             const headers: string[] = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
 
@@ -68,12 +63,10 @@ export class BasicStrategy implements AuthStrategy {
             for (const header in headers) {
                 const parts: string[] = headers[header].split(" ");
                 if (parts.length !== 2) {
-                    error = ApiErrorMessages.AUTH_FAILED;
                     continue;
                 }
 
                 if (!parts[0].match(new RegExp("^" + this.options.headerScheme + "$", "i"))) {
-                    error = ApiErrorMessages.AUTH_FAILED;
                     continue;
                 }
 
@@ -81,42 +74,64 @@ export class BasicStrategy implements AuthStrategy {
             }
         }
 
+        return loginInfo;
+    }
+
+    public async authenticate(
+        req: HttpRequest,
+        res: HttpResponse,
+        required?: boolean,
+    ): Promise<AuthResult | undefined> {
+        let loginInfo: string = this.getLoginInfo(req);
+
         // If the login info has been found, verify it.
         if (loginInfo && loginInfo.length > 0) {
             const info: string = Buffer.from(loginInfo, "base64").toString("utf-8");
             const parts: string[] = info.split(":");
             if (parts.length !== 2) {
-                throw new Error("Invalid or missing username of password.");
+                throw new Error("Invalid username or password.");
             }
-            const result: JWTUser | Promise<JWTUser> | undefined = this.options.verify(parts[0], parts[1]);
-            if (result) {
-                if (result instanceof Promise) {
-                    return new Promise(async (resolve, reject) => {
-                        try {
-                            const user: JWTUser = await result;
-                            resolve({
-                                data: loginInfo,
-                                method: this.name,
-                                payload: info,
-                                user,
-                            });
-                        } catch (err) {
-                            reject(err);
-                        }
-                    });
-                } else {
-                    return {
-                        data: loginInfo,
-                        method: this.name,
-                        payload: info,
-                        user: result,
-                    };
-                }
+            const user: JWTUser | undefined = await this.options.verify(parts[0], parts[1]);
+            if (user) {
+                return {
+                    data: loginInfo,
+                    method: this.name,
+                    payload: info,
+                    user,
+                };
             }
         }
 
         if (required) {
-            throw new Error("Invalid or missing username of password.");
+            throw new Error("Invalid username or password.");
+        }
+
+        return undefined;
+    }
+
+    public authenticateSync(req: HttpRequest, res: HttpResponse, required?: boolean): AuthResult | undefined {
+        let loginInfo: string = this.getLoginInfo(req);
+
+        // If the login info has been found, verify it.
+        if (loginInfo && loginInfo.length > 0) {
+            const info: string = Buffer.from(loginInfo, "base64").toString("utf-8");
+            const parts: string[] = info.split(":");
+            if (parts.length !== 2) {
+                throw new Error("Invalid username or password.");
+            }
+            const user: JWTUser | undefined = this.options.verifySync(parts[0], parts[1]);
+            if (user) {
+                return {
+                    data: loginInfo,
+                    method: this.name,
+                    payload: info,
+                    user,
+                };
+            }
+        }
+
+        if (required) {
+            throw new Error("Invalid username or password.");
         }
 
         return undefined;

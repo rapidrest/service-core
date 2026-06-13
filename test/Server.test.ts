@@ -219,7 +219,7 @@ describe("Server Tests", () => {
 
     it("Can authorize user.", async () => {
         const user: any = { uid: uuid.v4() };
-        const token = JWTUtils.createToken(config.get("auth"), user);
+        const token = JWTUtils.createTokenSync(config.get("auth"), user);
         const result = await request(server)
             .get("/token")
             .set("Authorization", "jwt " + token);
@@ -229,7 +229,7 @@ describe("Server Tests", () => {
 
     it("Can authorize user with query param.", async () => {
         const user: any = { uid: uuid.v4() };
-        const token = JWTUtils.createToken(config.get("auth"), user);
+        const token = JWTUtils.createTokenSync(config.get("auth"), user);
         const result = await request(server).get("/token?auth_token=" + token);
         expect(result.status).toBe(200);
         expect(result.body).toEqual(user);

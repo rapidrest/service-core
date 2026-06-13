@@ -111,7 +111,7 @@ describe("Server WebSocket Tests", () => {
 
     it("Can connect via unsecured WebSocket [user via header]", async () => {
         const user: any = { uid: uuid.v4() };
-        const token = JWTUtils.createToken(config.get("auth"), user);
+        const token = JWTUtils.createTokenSync(config.get("auth"), user);
         expect(server.isRunning()).toBe(true);
         await requestws(server)
             .ws("/connect", { headers: { Authorization: `jwt ${token}` } })
@@ -126,7 +126,7 @@ describe("Server WebSocket Tests", () => {
 
     it("Can connect via unsecured WebSocket [user via handshake]", async () => {
         const user: any = { uid: uuid.v4() };
-        const token = JWTUtils.createToken(config.get("auth"), user);
+        const token = JWTUtils.createTokenSync(config.get("auth"), user);
         expect(server.isRunning()).toBe(true);
         await requestws(server)
             .ws("/connect")
@@ -148,7 +148,7 @@ describe("Server WebSocket Tests", () => {
 
     it("Can connect via secured WebSocket [user via header]", async () => {
         const user: any = { uid: uuid.v4() };
-        const token = JWTUtils.createToken(config.get("auth"), user);
+        const token = JWTUtils.createTokenSync(config.get("auth"), user);
         expect(server.isRunning()).toBe(true);
         await requestws(server)
             .ws("/connect-secure", { headers: { Authorization: `jwt ${token}` } })
@@ -163,7 +163,7 @@ describe("Server WebSocket Tests", () => {
 
     it("Can connect via secured WebSocket [user via handshake]", async () => {
         const user: any = { uid: uuid.v4() };
-        const token = JWTUtils.createToken(config.get("auth"), user);
+        const token = JWTUtils.createTokenSync(config.get("auth"), user);
         expect(server.isRunning()).toBe(true);
         await requestws(server)
             .ws("/connect-secure")

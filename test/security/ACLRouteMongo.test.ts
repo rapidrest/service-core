@@ -25,11 +25,11 @@ describe("ACLRouteMongo Tests", () => {
         uid: uuid.v4(),
         roles: ["admin"],
     };
-    const adminToken: string = JWTUtils.createToken(config.get("auth"), admin);
+    const adminToken: string = JWTUtils.createTokenSync(config.get("auth"), admin);
     const user: any = {
         uid: uuid.v4(),
     };
-    const userToken: string = JWTUtils.createToken(config.get("auth"), user);
+    const userToken: string = JWTUtils.createTokenSync(config.get("auth"), user);
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
     let repo: MongoRepository<AccessControlListMongo>;
@@ -61,7 +61,7 @@ describe("ACLRouteMongo Tests", () => {
     };
 
     beforeAll(async () => {
-        EventUtils.init(config, Logger(), adminToken);
+        await EventUtils.init(config, Logger(), adminToken);
 
         await mongod.start();
         await server.start();

@@ -103,12 +103,12 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
     const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
 
     beforeAll(async () => {
-        const authToken = JWTUtils.createToken(config.get("auth"), {
+        const authToken = JWTUtils.createTokenSync(config.get("auth"), {
             uid: uuid.v4(),
             name: "before",
             roles: config.get("trusted_roles"),
         });
-        EventUtils.init(config, Logger(), authToken);
+        await EventUtils.init(config, Logger(), authToken);
 
         await mongod.start();
         await server.start();
@@ -181,7 +181,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
             });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
             } as any);
@@ -221,7 +221,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 lastName: "Tennant",
                 age: 47,
             });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
             } as any);
             const result = await request(server)
@@ -233,7 +233,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can delete document (admin). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 name: user.name,
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
@@ -252,7 +252,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can delete document (me). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: user.uid,
                 name: user.name,
                 roles: [],
@@ -271,7 +271,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can delete document (self). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: user.uid,
                 name: user.name,
                 roles: [],
@@ -290,7 +290,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Cannot delete document (other). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "other",
                 roles: [],
@@ -321,7 +321,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can find document by id (admin). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
                 name: "admin",
@@ -341,7 +341,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can find document by id (me). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: user.uid,
                 name: user.name,
                 roles: [],
@@ -361,7 +361,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can find document by id (self). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: user.uid,
                 name: user.name,
                 roles: [],
@@ -381,7 +381,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can find document by id (other). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: [],
                 name: "other",
@@ -410,7 +410,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             user.firstName = "Matt";
             user.lastName = "Smith";
             user.age = 36;
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
                 name: "admin",
@@ -445,7 +445,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             user.firstName = "Matt";
             user.lastName = "Smith";
             user.age = 36;
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: user.uid,
                 name: user.name,
                 roles: [],
@@ -480,7 +480,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             user.firstName = "Matt";
             user.lastName = "Smith";
             user.age = 36;
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: user.uid,
                 name: user.name,
                 roles: [],
@@ -515,7 +515,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             user.firstName = "Matt";
             user.lastName = "Smith";
             user.age = 36;
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "other",
                 roles: [],
@@ -562,7 +562,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
     describe("Multiple Document Tests [MongoDB]", () => {
         it("Can count documents (admin). [MongoDB]", async () => {
             const users: ProtectedUser[] = await createUsers(20);
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
                 name: "admin",
@@ -578,7 +578,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can count documents (user). [MongoDB]", async () => {
             const users: ProtectedUser[] = await createUsers(20);
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "user",
                 roles: [],
@@ -602,7 +602,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             const users: ProtectedUser[] = await createUsers(13);
             await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
             await createUser({ firstName: "Matt", lastName: "Smith", age: 36 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "admin",
                 roles: config.get("trusted_roles"),
@@ -620,7 +620,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             const users: ProtectedUser[] = await createUsers(13);
             await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
             await createUser({ firstName: "Matt", lastName: "Smith", age: 36 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "user",
                 roles: [],
@@ -644,7 +644,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can find all documents (admin). [MongoDB]", async () => {
             const users: ProtectedUser[] = await createUsers(25);
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
                 name: "admin",
@@ -660,7 +660,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can find all documents (user). [MongoDB]", async () => {
             const users: ProtectedUser[] = await createUsers(25);
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "user",
                 roles: [],
@@ -684,7 +684,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             const users: ProtectedUser[] = await createUsers(13);
             await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
             await createUser({ firstName: "Matt", lastName: "Smith", age: 36 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
                 name: "admin",
@@ -705,7 +705,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             const users: ProtectedUser[] = await createUsers(13);
             await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
             await createUser({ firstName: "Matt", lastName: "Smith", age: 36 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "user",
                 roles: [],
@@ -730,7 +730,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             await createUser({ firstName: "David", lastName: "Tennant 3", age: 47 });
             await createUser({ firstName: "David", lastName: "Tennant 4", age: 47 });
             await createUser({ firstName: "David", lastName: "Tennant 5", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "user",
                 roles: [],
@@ -753,7 +753,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             await createUser({ firstName: "David", lastName: "Tennant 3", age: 47 });
             await createUser({ firstName: "David", lastName: "Tennant 4", age: 47 });
             await createUser({ firstName: "David", lastName: "Tennant 5", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "user",
                 roles: [],
@@ -777,7 +777,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             await createUser({ firstName: "David", lastName: "Tennant 3", age: 47 });
             await createUser({ firstName: "David", lastName: "Tennant 4", age: 47 });
             await createUser({ firstName: "David", lastName: "Tennant 5", age: 47 });
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 name: "user",
                 roles: [],
@@ -801,7 +801,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can truncate datastore (admin) [MongoDB].", async () => {
             const users: ProtectedUser[] = await createUsers(25);
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
                 name: "admin",
@@ -819,7 +819,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             const userUid: string = uuid.v4();
             const users: ProtectedUser[] = await createUsers(25);
             const myUsers: ProtectedUser[] = await createUsers(5, undefined, userUid);
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: userUid,
                 name: "joe",
                 roles: [],
@@ -835,7 +835,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Cannot truncate datastore (user) [MongoDB].", async () => {
             const users: ProtectedUser[] = await createUsers(25);
-            const token = JWTUtils.createToken(config.get("auth"), {
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
                 roles: [],
                 name: "user",
