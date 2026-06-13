@@ -4,7 +4,7 @@
 import { oas31 as oa } from "openapi3-ts";
 import { DocumentsData } from "./decorators/DocDecorators.js";
 import merge from "deepmerge";
-import * as _ from "lodash";
+import * as _ from "lodash-es";
 import { ObjectDecorators, StringUtils } from "@rapidrest/core";
 const { Config, Init } = ObjectDecorators;
 

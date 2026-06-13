@@ -37,7 +37,7 @@
     "peerDependencies": {
         "@rapidrest/core": "1.x",
         "ioredis": "5.x",
-        "lodash": "4.x",
+        "lodash-es": "4.x",
         "mongodb": "^7.0.0",
         "openapi3-ts": "4.x",
         "prom-client": "15.x",
@@ -78,7 +78,7 @@
         "globals": "^17.6.0",
         "ioredis": "^5.11.1",
         "ioredis-mock": "^8.13.1",
-        "lodash": "^4.18.1",
+        "lodash-es": "^4.18.1",
         "mongodb": "^7.3.0",
         "mongodb-memory-server": "^11.2.0",
         "nconf": "^0.13.0",

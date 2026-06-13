@@ -5,7 +5,7 @@ import type { Repository } from "typeorm";
 import { MongoRepository } from "../database/MongoRepository.js";
 import { ApiError, ClassLoader, Logger, StringUtils } from "@rapidrest/core";
 import "reflect-metadata";
-import _, { isEmpty } from "lodash";
+import _, { isEmpty } from "lodash-es";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 

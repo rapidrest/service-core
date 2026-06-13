@@ -9,7 +9,7 @@ import { ServerResponse } from "http";
 import { OpenApiSpec } from "../OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { AccessControlList, ACLUtils } from "../security/index.js";
-import _ from "lodash";
+import _ from "lodash-es";
 import { AuthMiddleware } from "../auth/AuthMiddleware.js";
 import { AuthResult } from "../auth/AuthStrategy.js";
 const { Config, Inject, Logger } = ObjectDecorators;
