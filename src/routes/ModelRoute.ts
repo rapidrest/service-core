@@ -286,7 +286,10 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param options The options to process the request using.
      */
     protected async doCreate(obj: Partial<T> | Partial<T>[], options: CreateRequestOptions): Promise<T | T[]> {
-        if (!(await this.aclUtils?.hasPermission(options.user, this.defaultACLUid, ACLAction.CREATE))) {
+        if (
+            this.aclUtils?.enabled &&
+            !(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.CREATE))
+        ) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
 
@@ -375,7 +378,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
 
         // Check user permissions
-        if (this.aclUtils && !options.ignoreACL) {
+        if (this.aclUtils?.enabled && !options.ignoreACL) {
             if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.READ))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
@@ -403,7 +406,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
 
         // Check user permissions
-        if (this.aclUtils && !options.ignoreACL) {
+        if (this.aclUtils?.enabled && !options.ignoreACL) {
             if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.READ))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
@@ -458,7 +461,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
         }
 
-        if (this.aclUtils && !options.ignoreACL) {
+        if (this.aclUtils?.enabled && !options.ignoreACL) {
             const acl: AccessControlList | null = await this.aclUtils.findACL(result.uid);
             if (!(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.READ))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);

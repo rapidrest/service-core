@@ -154,10 +154,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new Error(`Cannot initialize RepoUtils. No repository found for class ${this.modelClass.name}.`);
         }
 
-        let defaultAcl: AccessControlList | undefined = this.getDefaultACL();
-        if (defaultAcl) {
-            this.defaultACLUid = defaultAcl.uid;
-            await this.aclUtils?.saveDefaultACL(defaultAcl);
+        if (this.aclUtils?.enabled) {
+            let defaultAcl: AccessControlList | undefined = this.getDefaultACL();
+            if (defaultAcl) {
+                this.defaultACLUid = defaultAcl.uid;
+                await this.aclUtils?.saveDefaultACL(defaultAcl);
+            }
         }
 
         // Does the model specify a MongoDB shard configuration?
@@ -205,7 +207,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         let count: number = 0;
 
         // Check user permissions
-        if (this.aclUtils && !options?.ignoreACL) {
+        if (this.aclUtils?.enabled && !options?.ignoreACL) {
             if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
@@ -236,7 +238,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // Verify the user's permission to create objects
         if (
-            this.aclUtils &&
+            this.aclUtils?.enabled &&
             !options?.ignoreACL &&
             !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.CREATE))
         ) {
@@ -287,7 +289,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             void this.cacheClient.setex(cacheKey, this.modelClass.cacheTTL, JSON.stringify(result));
         }
 
-        if (this.aclUtils && this.modelClass.recordACL) {
+        if (this.aclUtils?.enabled && this.modelClass.recordACL) {
             // If ACLs are enabled but no ACL was given create one
             const acl: AccessControlList = {
                 uid: result.uid,
@@ -311,7 +313,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 });
             }
 
-            await this.aclUtils?.saveACL(acl);
+            await this.aclUtils.saveACL(acl);
         }
 
         if (!options?.skipPush) {
@@ -327,7 +329,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        if (this.aclUtils && !options.ignoreACL) {
+        if (this.aclUtils?.enabled && !options.ignoreACL) {
             const acl: AccessControlList | null = await this.aclUtils.findACL(uid);
             if (!(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.DELETE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -353,7 +355,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 await this.repo.delete(query.where);
             }
 
-            if (this.aclUtils && this.modelClass.recordACL) {
+            if (this.aclUtils?.enabled && this.modelClass.recordACL) {
                 await this.aclUtils.removeACL(uid);
             }
         } else {
@@ -401,7 +403,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         let results: T[] = [];
 
         // Check user permissions
-        if (this.aclUtils && !options?.ignoreACL) {
+        if (this.aclUtils?.enabled && !options?.ignoreACL) {
             if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
@@ -609,7 +611,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // Check user permissions. Don't check if record-level ACLs are used as this will be done
         // per record later.
-        if (this.aclUtils && !options.ignoreACL && !this.modelClass.recordACL) {
+        if (this.aclUtils?.enabled && !options.ignoreACL && !this.modelClass.recordACL) {
             if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.DELETE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
@@ -633,10 +635,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // Check if this class uses record level ACLs. If so, we need to check the perms of
                 // each one. We will remove any from our list that the user does not have permission to
                 // delete.
-                if (this.modelClass.recordACL) {
+                if (this.aclUtils?.enabled && this.modelClass.recordACL) {
                     finalUids = [];
                     for (const uid of uids) {
-                        if (this.aclUtils && !options.ignoreACL) {
+                        if (!options.ignoreACL) {
                             if (await this.aclUtils.hasPermission(options.user, uid, ACLAction.DELETE)) {
                                 finalUids.push(uid);
                             }
@@ -676,7 +678,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        if (this.aclUtils && !options?.ignoreACL) {
+        if (this.aclUtils?.enabled && !options?.ignoreACL) {
             const acl: AccessControlList | null = await this.aclUtils.findACL(existing.uid);
             if (!(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.UPDATE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);

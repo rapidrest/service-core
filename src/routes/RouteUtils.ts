@@ -38,6 +38,10 @@ export class RouteUtils {
      */
     public checkRequiredPerms(aclUid: string): RequestHandler {
         return async (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+            if (!this.aclUtils?.enabled) {
+                return next();
+            }
+
             let granted: boolean = this.aclUtils ? await this.aclUtils.checkRequestPerms(aclUid, req.user, req) : false;
 
             if (granted) {
@@ -145,11 +149,12 @@ export class RouteUtils {
         // Check if this route defines a class level ACL. If so, we need to store it and then add middleware to validate
         // against it.
         let defaultAcl: AccessControlList | null = Reflect.getMetadata("rrst:acl", route);
-        if (defaultAcl && this.aclUtils) {
+        if (this.aclUtils?.enabled && defaultAcl) {
             try {
                 defaultAcl = await this.aclUtils.saveDefaultACL(defaultAcl);
             } catch (err) {
                 this.logger.info(`Failed to save default ACL for: ${defaultAcl?.uid}`);
+                this.logger.debug(err);
             }
         }
 
@@ -176,8 +181,10 @@ export class RouteUtils {
                 }
 
                 // Does this endpoint have an associated ACL?
-                let acl: AccessControlList | null = Reflect.getMetadata("rrst:acl", route, key);
-                if (acl && this.aclUtils) {
+                let acl: AccessControlList | null = this.aclUtils?.enabled
+                    ? Reflect.getMetadata("rrst:acl", route, key)
+                    : null;
+                if (acl && this.aclUtils?.enabled) {
                     acl.parentUid = defaultAcl?.uid;
                     acl = await this.aclUtils.saveDefaultACL(acl);
                 }
@@ -195,9 +202,11 @@ export class RouteUtils {
                 if (requiredRoles) {
                     middleware.push(this.checkRequiredRoles(requiredRoles));
                 }
-                const aclUid: string | undefined = acl?.uid || defaultAcl?.uid;
-                if (aclUid) {
-                    middleware.push(this.checkRequiredPerms(aclUid));
+                if (this.aclUtils?.enabled) {
+                    const aclUid: string | undefined = acl?.uid || defaultAcl?.uid;
+                    if (aclUid) {
+                        middleware.push(this.checkRequiredPerms(aclUid));
+                    }
                 }
                 if (validator) {
                     middleware = middleware.concat(this.getFuncArray(route, [validator]));

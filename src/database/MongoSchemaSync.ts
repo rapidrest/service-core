@@ -72,7 +72,7 @@ export class MongoSchemaSync {
         if (existing.length === 0) {
             try {
                 await this.db.createCollection(name);
-                this.logger?.info(`Created collection: ${name}`);
+                this.logger?.debug(`Created collection: ${name}`);
             } catch (err: any) {
                 // Tolerate concurrent creation races
                 if (err.codeName !== "NamespaceExists") {
@@ -112,16 +112,18 @@ export class MongoSchemaSync {
                     continue;
                 }
                 // The index definition has changed. Drop and re-create it.
-                this.logger?.info(`Re-creating index ${current.name} on collection ${name} due to changed definition.`);
+                this.logger?.debug(
+                    `Re-creating index ${current.name} on collection ${name} due to changed definition.`,
+                );
                 await collection.dropIndex(current.name as string);
             } else {
                 // If an unrelated index already uses the desired name it must be dropped first to avoid a conflict
                 const conflict: Document | undefined = currentIndexes.find((idx) => idx.name === spec.name);
                 if (conflict) {
-                    this.logger?.info(`Dropping index ${spec.name} on collection ${name} due to changed key.`);
+                    this.logger?.debug(`Dropping index ${spec.name} on collection ${name} due to changed key.`);
                     await collection.dropIndex(spec.name);
                 }
-                this.logger?.info(`Creating index ${spec.name} on collection ${name}.`);
+                this.logger?.debug(`Creating index ${spec.name} on collection ${name}.`);
             }
 
             await collection.createIndex(spec.key, {

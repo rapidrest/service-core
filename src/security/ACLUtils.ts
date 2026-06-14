@@ -12,7 +12,7 @@ import { ConnectionManager } from "../database/ConnectionManager.js";
 import { isSqlDataSource } from "../database/ConnectionKinds.js";
 import { MongoConnection } from "../database/MongoConnection.js";
 import { MongoRepository } from "../database/MongoRepository.js";
-const { Config, Inject } = ObjectDecorators;
+const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 const CACHE_BASE_KEY: string = "db.cache.AccessControlList";
 
@@ -20,24 +20,50 @@ const CACHE_BASE_KEY: string = "db.cache.AccessControlList";
  * Common utility functions for working with `AccessControlList` objects and validating user permissions.
  */
 export class ACLUtils {
+    @Config("rbac:enabled", true)
+    public enabled: boolean = true;
+
     private cacheTTL: number = 30;
     @Inject(ConnectionManager)
     private connMgr?: ConnectionManager;
+    @Logger
+    private logger?: any;
     @Config("trusted_roles", ["admin"])
     private trustedRoles: string[] = ["admin"];
 
+    private _cacheClient: Redis | undefined = undefined;
+    private _repo: MongoRepository<any> | Repository<any> | undefined = undefined;
+
     private get cacheClient(): Redis | undefined {
-        return this.connMgr?.connections.get("cache") as Redis | undefined;
+        if (!this._cacheClient) {
+            this._cacheClient = this.connMgr?.connections.get("cache") as Redis | undefined;
+        }
+        return this._cacheClient;
     }
 
     private get repo(): MongoRepository<any> | Repository<any> | undefined {
-        const conn: any = this.connMgr?.connections.get("acl");
-        if (conn instanceof MongoConnection) {
-            return conn.getRepository(AccessControlListMongo);
-        } else if (isSqlDataSource(conn)) {
-            return conn.getRepository(AccessControlListSQL.name);
+        if (!this._repo) {
+            const conn: any = this.connMgr?.connections.get("acl");
+            if (conn instanceof MongoConnection) {
+                this._repo = conn.getRepository(AccessControlListMongo);
+            } else if (isSqlDataSource(conn)) {
+                this._repo = conn.getRepository(AccessControlListSQL.name);
+            }
         }
-        return undefined;
+
+        return this._repo;
+    }
+
+    @Init
+    private init() {
+        if (this.enabled) {
+            if (!this.repo) {
+                throw new Error("Failed to initialize ACLUtils. Did you forget to configure the `acl` datastore?");
+            }
+            this.logger?.info("RBAC system is enabled and ready.");
+        } else {
+            this.logger?.warn("RBAC system is disabled.");
+        }
     }
 
     /**
@@ -73,8 +99,8 @@ export class ACLUtils {
     public async checkRequestPerms(uid: string, user: JWTUser | undefined, req: Request): Promise<boolean> {
         let result: boolean = true;
 
-        // If no repo is set then ACL support is not configured so just return
-        if (!this.repo) {
+        // If RBAC is disabled just return
+        if (!this.enabled) {
             return result;
         }
 
@@ -134,12 +160,12 @@ export class ACLUtils {
     public async hasPermission(
         user: JWTUser | undefined,
         acl: AccessControlList | string,
-        action: ACLAction
+        action: ACLAction,
     ): Promise<boolean> {
         let result: boolean | null = null;
 
         // If the repo isn't available, no acl was provided or the ACL string is empty just return, assume always true
-        if (!this.repo || !acl || acl === "") {
+        if (!this.enabled || !this.repo || !acl || acl === "") {
             return true;
         }
 
@@ -204,7 +230,7 @@ export class ACLUtils {
         parentUids: string[] = [],
         reqCache?: Map<string, AccessControlList | null>,
     ): Promise<AccessControlList | null> {
-        if (!this.repo) {
+        if (!this.enabled || !this.repo) {
             return null;
         }
 
@@ -268,14 +294,16 @@ export class ACLUtils {
      * @param uid The unique identifier of the ACL to remove.
      */
     public async removeACL(uid: string): Promise<void> {
-        try {
-            if (this.repo instanceof MongoRepository) {
-                await this.repo.deleteOne({ uid });
-            } else if (this.repo) {
-                await this.repo.delete({ uid });
+        if (this.enabled) {
+            try {
+                if (this.repo instanceof MongoRepository) {
+                    await this.repo.deleteOne({ uid });
+                } else if (this.repo) {
+                    await this.repo.delete({ uid });
+                }
+            } catch (err) {
+                // It's okay if this fails because no document exists
             }
-        } catch (err) {
-            // It's okay if this fails because no document exists
         }
     }
 
@@ -355,7 +383,7 @@ export class ACLUtils {
      */
     public async saveACL(acl: AccessControlList): Promise<AccessControlList | null> {
         let result: AccessControlList | null = null;
-        if (!acl) {
+        if (!this.enabled || !acl) {
             return result;
         }
 
@@ -369,7 +397,7 @@ export class ACLUtils {
             // Make sure that the versions match before we proceed
             if (existing && existing.version !== mACL.version) {
                 throw new Error(
-                    `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${mACL.version}`
+                    `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${mACL.version}`,
                 );
             }
             const aclMongo: AccessControlListMongo = new AccessControlListMongo({
@@ -388,7 +416,7 @@ export class ACLUtils {
             // Make sure that the versions match before we proceed
             if (existing && existing.version !== sACL.version) {
                 throw new Error(
-                    `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${sACL.version}`
+                    `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${sACL.version}`,
                 );
             }
             const aclSQL: AccessControlListSQL = new AccessControlListSQL({
@@ -421,7 +449,7 @@ export class ACLUtils {
      */
     public async saveDefaultACL(acl: AccessControlList): Promise<AccessControlList | null> {
         let result: AccessControlList | null = null;
-        if (!acl) {
+        if (!this.enabled || !acl) {
             return result;
         }
 

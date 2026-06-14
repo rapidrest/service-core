@@ -404,19 +404,24 @@ export class Server {
                 await this.routeUtils.registerRoute(this.app, admin);
 
                 // Register the ACLs route if configured
-                const aclConn: any = this.connectionManager?.connections.get("acl");
-                if (aclConn instanceof MongoConnection) {
-                    const aclRoute: ACLRouteMongo = await this.objectFactory.newInstance(ACLRouteMongo, {
-                        name: "default",
-                    });
-                    await this.routeUtils.registerRoute(this.app, aclRoute);
-                    allRoutes.push(aclRoute);
-                } else if (isSqlDataSource(aclConn)) {
-                    const aclRoute: ACLRouteSQL = await this.objectFactory.newInstance(ACLRouteSQL, {
-                        name: "default",
-                    });
-                    await this.routeUtils.registerRoute(this.app, aclRoute);
-                    allRoutes.push(aclRoute);
+                const rbacEnabled = this.config.get("rbac:enabled");
+                if (rbacEnabled) {
+                    const aclConn: any = this.connectionManager?.connections.get("acl");
+                    if (aclConn instanceof MongoConnection) {
+                        const aclRoute: ACLRouteMongo = await this.objectFactory.newInstance(ACLRouteMongo, {
+                            name: "default",
+                        });
+                        await this.routeUtils.registerRoute(this.app, aclRoute);
+                        allRoutes.push(aclRoute);
+                    } else if (isSqlDataSource(aclConn)) {
+                        const aclRoute: ACLRouteSQL = await this.objectFactory.newInstance(ACLRouteSQL, {
+                            name: "default",
+                        });
+                        await this.routeUtils.registerRoute(this.app, aclRoute);
+                        allRoutes.push(aclRoute);
+                    } else {
+                        throw new Error("Failed to register ACL routes. Did you forget to configur the ACL datastore?");
+                    }
                 }
 
                 // Register the OpenAPI route if a spec has been provided

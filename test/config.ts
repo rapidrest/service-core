@@ -55,6 +55,9 @@ conf.defaults({
             issuer: "api.mydomain.com",
         },
     },
+    rbac: {
+        enabled: true,
+    },
     session: {
         secret: "SessionsHaveSecrets",
     },
