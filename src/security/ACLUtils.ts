@@ -31,27 +31,18 @@ export class ACLUtils {
     @Config("trusted_roles", ["admin"])
     private trustedRoles: string[] = ["admin"];
 
-    private _cacheClient: Redis | undefined = undefined;
-    private _repo: MongoRepository<any> | Repository<any> | undefined = undefined;
-
     private get cacheClient(): Redis | undefined {
-        if (!this._cacheClient) {
-            this._cacheClient = this.connMgr?.connections.get("cache") as Redis | undefined;
-        }
-        return this._cacheClient;
+        return this.connMgr?.connections.get("cache") as Redis | undefined;
     }
 
     private get repo(): MongoRepository<any> | Repository<any> | undefined {
-        if (!this._repo) {
-            const conn: any = this.connMgr?.connections.get("acl");
-            if (conn instanceof MongoConnection) {
-                this._repo = conn.getRepository(AccessControlListMongo);
-            } else if (isSqlDataSource(conn)) {
-                this._repo = conn.getRepository(AccessControlListSQL.name);
-            }
+        const conn: any = this.connMgr?.connections.get("acl");
+        if (conn instanceof MongoConnection) {
+            return conn.getRepository(AccessControlListMongo);
+        } else if (isSqlDataSource(conn)) {
+            return conn.getRepository(AccessControlListSQL.name);
         }
-
-        return this._repo;
+        return undefined;
     }
 
     @Init
