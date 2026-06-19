@@ -82,7 +82,6 @@ export class ModelUtils {
      * @param modelClass The class definition of the data model to build a search query for.
      * @param id The unique identifier to search for.
      * @param version The version number of the document to search for.
-     * @param productUid The optional product uid that is associated with the uid (when a compound key is used).
      * @returns An object that can be passed to a TypeORM `find` function.
      */
     public static buildIdSearchQuery<T extends {}>(
@@ -90,12 +89,11 @@ export class ModelUtils {
         modelClass: any,
         id: any | any[],
         version?: number,
-        productUid?: string
     ): any {
         if (repo instanceof MongoRepository) {
-            return ModelUtils.buildIdSearchQueryMongo(modelClass, id, version, productUid);
+            return ModelUtils.buildIdSearchQueryMongo(modelClass, id, version);
         } else {
-            return ModelUtils.buildIdSearchQuerySQL(modelClass, id, version, productUid);
+            return ModelUtils.buildIdSearchQuerySQL(modelClass, id, version);
         }
     }
 
@@ -106,23 +104,16 @@ export class ModelUtils {
      * @param modelClass The class definition of the data model to build a search query for.
      * @param id The unique identifier to search for.
      * @param version The version number of the document to search for.
-     * @param productUid The optional product uid that is associated with the uid (when a compound key is used).
      * @returns An object that can be passed to a TypeORM `find` function.
      */
-    public static buildIdSearchQuerySQL(modelClass: any, id: any | any[], version?: number, productUid?: string): any {
+    public static buildIdSearchQuerySQL(modelClass: any, id: any | any[], version?: number): any {
         const props: string[] = ModelUtils.getIdPropertyNames(modelClass);
 
         // Create the where in SQL syntax. We only care about one of the identifier field's matching.
         // e.g. WHERE idField1 = :idField1 OR idField2 = :idField2 ...
         const where: any = [];
         for (const prop of props) {
-            // If productUid is an id, skip it because it's used as a compound key
-            if (prop === "productUid") continue;
-
             const q: any = { [prop]: Array.isArray(id) ? ModelUtils.orm.In(id) : id };
-            if (props.includes("productUid")) {
-                q.productUid = productUid;
-            }
             if (version !== undefined) {
                 q.version = version;
             }
@@ -139,39 +130,30 @@ export class ModelUtils {
      * @param modelClass The class definition of the data model to build a search query for.
      * @param id The unique identifier to search for.
      * @param version The version number of the document to search for.
-     * @param productUid The optional product uid that is associated with the uid (when a compound key is used).
      * @returns An object that can be passed to a MongoDB `find` function.
      */
-    public static buildIdSearchQueryMongo(
-        modelClass: any,
-        id: any | any[],
-        version?: number,
-        productUid?: string
-    ): any {
+    public static buildIdSearchQueryMongo(modelClass: any, id: any | any[], version?: number): any {
         const props: string[] = ModelUtils.getIdPropertyNames(modelClass);
 
-        // We want to performa case-insensitive search. So convert all strings to regex.
-        if (Array.isArray(id)) {
-            for (let i = 0; i < id.length; i++) {
-                if (typeof id[i] === "string") {
-                    id[i] = new RegExp("^" + id[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");
-                }
-            }
-        } else if (typeof id === "string") {
-            id = new RegExp("^" + id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");
-        }
+        // We want to performa case-insensitive search. We used to convert strings to RegEx but this is _very_
+        // slow. Instead, we use case-insenstive indexes that are configured using the `collation` option. Now
+        // we only need to pass in the raw string. So we skip this section but we retain the code for historical
+        // reasons.
+        // See: https://www.mongodb.com/docs/v7.0/core/index-case-insensitive/
+        // if (Array.isArray(id)) {
+        //     for (let i = 0; i < id.length; i++) {
+        //         if (typeof id[i] === "string") {
+        //             id[i] = new RegExp("^" + id[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");
+        //         }
+        //     }
+        // } else if (typeof id === "string") {
+        //     id = new RegExp("^" + id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");
+        // }
 
-        // Create the where in SQL syntax. We only care about one of the identifier field's matching.
-        // e.g. WHERE idField1 = :idField1 OR idField2 = :idField2 ...
+        // Create the where in Mongo filter syntax. We only care about one of the identifier field's matching.
         const query: any[] = [];
         for (const prop of props) {
-            // If productUid is an id, skip it because it's used as a compound key
-            if (prop === "productUid") continue;
-
             const q: any = { [prop]: Array.isArray(id) ? { $in: id } : id };
-            if (productUid && props.includes("productUid")) {
-                q.productUid = productUid;
-            }
             if (version !== undefined) {
                 q.version = version;
             }
@@ -383,7 +365,7 @@ export class ModelUtils {
         params?: any,
         queryParams?: any,
         exactMatch: boolean = false,
-        user?: any
+        user?: any,
     ): any {
         // By default we don't want to return deleted recoverable objects unless explicitly requested
         if (new modelClass() instanceof RecoverableBaseEntity) {
@@ -428,7 +410,7 @@ export class ModelUtils {
         params?: any,
         queryParams?: any,
         exactMatch: boolean = false,
-        user?: any
+        user?: any,
     ): any {
         const query: any = {};
         query.where = [];
@@ -441,7 +423,7 @@ export class ModelUtils {
                     throw new ApiError(
                         ApiErrors.SEARCH_INVALID_ME_REFERENCE,
                         403,
-                        ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE
+                        ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                     );
                 }
                 query.where[key] = user.uid;
@@ -572,7 +554,7 @@ export class ModelUtils {
         params?: any,
         queryParams?: any,
         exactMatch: boolean = false,
-        user?: any
+        user?: any,
     ): any {
         const queries: any[] = [{}];
         let sort: any = undefined;
@@ -585,7 +567,7 @@ export class ModelUtils {
                     throw new ApiError(
                         ApiErrors.SEARCH_INVALID_ME_REFERENCE,
                         403,
-                        ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE
+                        ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                     );
                 }
                 queries[0][key] = user.uid;
@@ -650,7 +632,9 @@ export class ModelUtils {
                 for (const query of queryParams[key] as Array<any>) {
                     const subQueryOrResult = this.buildSearchQueryMongo(modelClass, undefined, query, exactMatch, user);
                     const validSubQueryResult =
-                        subQueryOrResult && subQueryOrResult.length > 0 && subQueryOrResult[0]["$match"];
+                        Array.isArray(subQueryOrResult) && subQueryOrResult.length > 0
+                            ? subQueryOrResult[0]["$match"]
+                            : subQueryOrResult["$match"];
                     validSubQueryResult && orResults.push(validSubQueryResult);
                 }
 
@@ -698,6 +682,16 @@ export class ModelUtils {
         if (sort && !isEmpty(sort)) {
             result.push({ $sort: sort });
         }
+
+        // If this is a simple query (e.g. only $match and $sort) then we want to extract this query so that
+        // we don't run it as an aggregate pipeline.
+        if (result.length < 3) {
+            return {
+                ...result[0],
+                ...result[1],
+            };
+        }
+
         return result;
     }
 

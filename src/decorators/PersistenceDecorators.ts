@@ -5,6 +5,22 @@ import "reflect-metadata";
 import { snakeCase } from "../database/NamingUtils.js";
 
 /**
+ * The language-specific rules to use for string comparison in MongoDB collections.
+ *
+ * @see https://www.mongodb.com/docs/v7.0/reference/collation/#std-label-collation
+ */
+export interface CollationOptions {
+    locale: string,
+    caseLevel?: boolean,
+    caseFirst?: string,
+    strength?: number,
+    numericOrdering?: boolean,
+    alternate?: string,
+    maxVariable?: string,
+    backwards?: boolean
+}
+
+/**
  * The set of options available when declaring a persisted column/property via the `@Column` decorator.
  */
 export interface ColumnOptions {
@@ -19,6 +35,17 @@ export interface ColumnOptions {
 }
 
 /**
+ * The set of options to use when declaring a persistent class type via the `@Entity` decorator.
+ */
+export interface EntityOptions {
+    /** The name of the collection (or table) that records will be stored in. Defaults to the snake_case
+     * form of the class name. */
+    name?: string;
+    /** The language-specific collation rules to apply to the collection. (MongoDB only) */
+    collation?: CollationOptions;
+}
+
+/**
  * The set of options available when declaring a database index via the `@Index` decorator.
  */
 export interface IndexOptions {
@@ -30,6 +57,8 @@ export interface IndexOptions {
     background?: boolean;
     /** The time, in seconds, after which indexed documents will be automatically deleted. (MongoDB only) */
     expireAfterSeconds?: number;
+    /** The language-specific collation rules to apply to the index. (MongoDB only) */
+    collation?: CollationOptions;
 }
 
 /**
@@ -192,18 +221,15 @@ export function Unique(nameOrFields?: string | string[], maybeFields?: string[])
 /**
  * Indicates that the class describes an entity that is persisted to a datastore.
  *
- * @param name The name of the collection (or table) that records will be stored in. Defaults to the snake_case
- * form of the class name.
+ * @param options The options to set.
  */
-export function Entity(name?: string) {
+export function Entity(options?: EntityOptions) {
     return function (target: any): void {
-        const entityName: string = name ?? snakeCase(target.name);
-        Reflect.defineMetadata(ENTITY_NAME_KEY, entityName, target);
-        Object.defineProperty(target, "entityName", {
-            enumerable: true,
-            writable: true,
-            value: entityName,
-        });
+        options = options ?? {};
+        options.name = options.name ?? snakeCase(target.name);
+
+        Reflect.defineMetadata("rrst:entityOptions", options, target);
+        Reflect.defineMetadata("rrst:entityName", options.name, target);
     };
 }
 
@@ -236,18 +262,22 @@ export function getColumnMetadata(clazz: any): ColumnInfo[] {
 export function getIndexMetadata(clazz: any): IndexInfo[] {
     const merged: Map<string, IndexInfo> = new Map();
     const identity = (idx: IndexInfo): string => idx.name ?? `cols:${idx.columns.join(",")}`;
-    // Most-derived first; first occurrence of an identity wins
-    const lists: any[][] = [
-        ...collectOwnMetadata(INDEXES_KEY, clazz.prototype ?? clazz),
-        ...collectOwnMetadata(CLASS_INDEXES_KEY, clazz),
-    ];
-    for (const list of lists) {
-        for (const index of list as IndexInfo[]) {
-            const key: string = identity(index);
+    // Walk from most-derived to most-ancestral. At each class level, process class-level indexes
+    // (CLASS_INDEXES_KEY) before property-level indexes (INDEXES_KEY) so that a subclass can
+    // shadow an ancestor's property-level index via a class-level @Index declaration.
+    let ctor = clazz;
+    let proto = clazz.prototype ?? clazz;
+    while (ctor && ctor !== Function.prototype && ctor !== Object.prototype) {
+        const classIdxs: IndexInfo[] = Reflect.getOwnMetadata(CLASS_INDEXES_KEY, ctor) ?? [];
+        const propIdxs: IndexInfo[] = Reflect.getOwnMetadata(INDEXES_KEY, proto) ?? [];
+        for (const index of [...classIdxs, ...propIdxs]) {
+            const key = identity(index);
             if (!merged.has(key)) {
                 merged.set(key, index);
             }
         }
+        ctor = Object.getPrototypeOf(ctor);
+        proto = Object.getPrototypeOf(proto);
     }
     return Array.from(merged.values());
 }

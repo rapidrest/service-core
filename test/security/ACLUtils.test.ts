@@ -238,8 +238,8 @@ describe("ACLUtils Tests", () => {
         it("Can find ACL with circular dependencies.", async () => {
             const testACLs: AccessControlList[] = [
                 new AccessControlListMongo({
-                    uid: "parent",
-                    parentUid: "child2",
+                    uid: "circ-parent",
+                    parentUid: "circ-child2",
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
@@ -248,8 +248,8 @@ describe("ACLUtils Tests", () => {
                     ],
                 }),
                 new AccessControlListMongo({
-                    uid: "child",
-                    parentUid: "parent",
+                    uid: "circ-child",
+                    parentUid: "circ-parent",
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "god",
@@ -265,8 +265,8 @@ describe("ACLUtils Tests", () => {
                     ],
                 }),
                 new AccessControlListMongo({
-                    uid: "child2",
-                    parentUid: "child",
+                    uid: "circ-child2",
+                    parentUid: "circ-child",
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
@@ -296,9 +296,9 @@ describe("ACLUtils Tests", () => {
             }
 
             expect(savedACLs).toHaveLength(testACLs.length);
-            const child2: AccessControlList | null | undefined = await aclUtils?.findACL("child2");
+            const child2: AccessControlList | null | undefined = await aclUtils?.findACL("circ-child2");
             if (child2) {
-                expect(child2.uid).toBe("child2");
+                expect(child2.uid).toBe("circ-child2");
             }
         });
 
@@ -414,8 +414,8 @@ describe("ACLUtils Tests", () => {
         it("Can populate parent with circular dependencies.", async () => {
             const testACLs: AccessControlList[] = [
                 new AccessControlListMongo({
-                    uid: "parent",
-                    parentUid: "child2",
+                    uid: "circ-parent",
+                    parentUid: "circ-child2",
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
@@ -424,8 +424,8 @@ describe("ACLUtils Tests", () => {
                     ],
                 }),
                 new AccessControlListMongo({
-                    uid: "child",
-                    parentUid: "parent",
+                    uid: "circ-child",
+                    parentUid: "circ-parent",
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "god",
@@ -441,8 +441,8 @@ describe("ACLUtils Tests", () => {
                     ],
                 }),
                 new AccessControlListMongo({
-                    uid: "child2",
-                    parentUid: "child",
+                    uid: "circ-child2",
+                    parentUid: "circ-child",
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
@@ -474,7 +474,7 @@ describe("ACLUtils Tests", () => {
             const child2: AccessControlList = testACLs[2];
             await aclUtils?.populateParent(child2);
             if (child2) {
-                expect(child2.uid).toBe("child2");
+                expect(child2.uid).toBe("circ-child2");
                 expect(child2.parent).toBeDefined();
             }
         });

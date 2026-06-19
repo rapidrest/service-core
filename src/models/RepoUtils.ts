@@ -53,8 +53,6 @@ export interface RepoCreateOptions extends RepoOperationOptions {
  * The available options for the `RepoUtils.delete()` operation.
  */
 export interface RepoDeleteOptions extends RepoOperationOptions {
-    /** The desired product uid of the resource to delete. */
-    productUid?: string;
     /** Set to true to permanently remove the object from the database (if applicable). */
     purge?: boolean;
     /** The desired version number of the resource to delete. */
@@ -66,8 +64,6 @@ export interface RepoFindOptions extends RepoOperationOptions {
     limit?: number;
     /** The page number of the paginated results to retrieve. */
     page?: number;
-    /** The desired product uid of the resources to retrieve. */
-    productUid?: string;
     /** Set to `true` to skip retrieval from the cache. Default is `false`. */
     skipCache?: boolean;
     /** The desired version number of the resources to retrieve. */
@@ -78,8 +74,6 @@ export interface RepoFindOptions extends RepoOperationOptions {
  * The available options for the `RepoUtils.update()` operation.
  */
 export interface RepoUpdateOptions<T extends BaseEntity | SimpleEntity> extends RepoOperationOptions {
-    /** The desired product uid of the resource to update. */
-    productUid?: string;
     /** The desired version number of the resource to update. */
     version?: number | string;
 }
@@ -165,7 +159,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Does the model specify a MongoDB shard configuration?
         const shardConfig: any = Reflect.getMetadata("rrst:shardConfig", this.modelClass);
         if (shardConfig && this.repo instanceof MongoRepository) {
-            const conn = this.connectionManager?.connections.get(this.modelClass.datastore) as MongoConnection | undefined;
+            const conn = this.connectionManager?.connections.get(this.modelClass.datastore) as
+                | MongoConnection
+                | undefined;
             const admin = conn?.admin();
             if (admin) {
                 const collectionName: string = resolveCollectionName(this.modelClass);
@@ -213,10 +209,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        if (this.repo instanceof MongoRepository && Array.isArray(query)) {
-            query.push({ $count: "count" });
-            const result: any = await this.repo.aggregate(query).next();
-            count = result ? result.count : count;
+        if (this.repo instanceof MongoRepository) {
+            if (Array.isArray(query)) {
+                query.push({ $count: "count" });
+                const result: any = await this.repo.aggregate(query).next();
+                count = result ? result.count : count;
+            } else {
+                count = await this.repo.count(query["$match"] ? query["$match"] : query);
+            }
         } else {
             count = await this.repo.count(query);
         }
@@ -253,14 +253,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         const ids: any[] = [];
         const idProps: string[] = ModelUtils.getIdPropertyNames(clazz);
         for (const prop of idProps) {
-            // Skip `productUid` as it is considered a compound key
-            if (prop === "productUid") continue;
             const val: string = (newObj as any)[prop];
             if (val) {
                 ids.push(val);
             }
         }
-        const query: any = ModelUtils.buildIdSearchQuery(this.repo, clazz, ids, undefined, (newObj as any).productUid);
+        const query: any = ModelUtils.buildIdSearchQuery(this.repo, clazz, ids, undefined);
         const count: number = await this.repo.count(query);
         if (!this.modelClass.trackChanges && count > 0) {
             throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
@@ -343,7 +341,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             this.modelClass,
             uid,
             options.version ? Number(options.version) : undefined,
-            options.productUid,
         );
 
         // If the object(s) are being permenantly removed from the database do so and then clear the accompanying
@@ -382,7 +379,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             let channels: string[] = [uid].concat(options?.pushChannels || []);
             this.notificationUtils?.sendMessage(channels, this.modelClass.name, "delete", {
                 uid,
-                productUid: options.productUid,
                 version: options.version,
             });
         }
@@ -441,9 +437,19 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // If the query wasn't cached retrieve from the database
         if (results.length === 0) {
-            if (this.repo instanceof MongoRepository && Array.isArray(query)) {
+            if (this.repo instanceof MongoRepository) {
                 const skip: number = page * limit;
-                results = await this.repo.aggregate(query).skip(skip).limit(limit).toArray();
+                if (Array.isArray(query)) {
+                    results = await this.repo.aggregate(query).skip(skip).limit(limit).toArray();
+                } else {
+                    results = await this.repo
+                        .find(query["$match"] ? query["$match"] : query, {
+                            limit,
+                            skip,
+                            sort: query["$sort"],
+                        })
+                        .toArray();
+                }
             } else {
                 results = await this.repo.find(query);
             }
@@ -479,7 +485,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        const query: any = this.searchIdQuery(id, options?.version, options?.productUid);
+        const query: any = this.searchIdQuery(id, options?.version);
         if (!options?.skipCache && this.cacheClient && this.modelClass.cacheTTL) {
             // First attempt to retrieve the object from the cache
             const json: string | null = await this.cacheClient.get(`${this.baseCacheKey}.${this.hashQuery(query)}`);
@@ -498,15 +504,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         let existing: T | null = null;
         if (this.repo instanceof MongoRepository) {
             existing = await this.repo
-                .aggregate([
-                    {
-                        $match: query,
-                    },
-                    {
-                        $sort: { version: -1 },
-                    },
-                ])
-                .limit(1)
+                .find(query["$match"] ? query["$match"] : query, {
+                    sort: { version: -1 },
+                })
                 .next();
         } else {
             existing = await this.repo.findOne(query);
@@ -582,11 +582,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             clazz = this.getClassType(obj);
         }
 
-        if (this.objectFactory) {
-            return this.objectFactory.newInstance(clazz, { initialize: false, args: [obj] }) as T;
-        } else {
-            return new clazz(obj);
-        }
+        return new clazz(obj);
     }
 
     /**
@@ -594,13 +590,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      *
      * The result of this function is compatible with all `Repository.find()` functions.
      */
-    public searchIdQuery(id: string, version?: number | string, productUid?: string): any {
+    public searchIdQuery(id: string, version?: number | string): any {
         return ModelUtils.buildIdSearchQuery(
             this.repo,
             this.modelClass,
             id,
             typeof version === "string" ? parseInt(version, 10) : version,
-            productUid,
         );
     }
 
@@ -623,7 +618,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 if (Array.isArray(query)) {
                     uids = await this.repo.distinct("uid", query[0].$match);
                 } else {
-                    uids = await this.repo.distinct("uid", query);
+                    uids = await this.repo.distinct("uid", query["$match"] ? query["$match"] : query);
                 }
             } else {
                 (await this.repo.find(query)).forEach((obj: T) => uids.push(obj.uid));
@@ -648,7 +643,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
                 // Now delete all records that were found
                 if (this.repo instanceof MongoRepository) {
-                    await this.repo.deleteMany({ uid: { $in: finalUids } });
+                    await this.repo.deleteMany({ uid: { $in: finalUids } } as any);
                 } else {
                     await this.repo.delete(finalUids);
                 }
@@ -659,7 +654,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         const finalChannels: string[] = channels.concat([uid]);
                         this.notificationUtils?.sendMessage(finalChannels, this.modelClass.name, "delete", {
                             uid,
-                            productUid: options.productUid,
                             version: options.version,
                         });
                     }
@@ -703,11 +697,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         const keepPrevious: boolean = !!this.modelClass.trackChanges;
-        let query: any = this.searchIdQuery(
-            existing.uid,
-            options?.version || (obj as any).version,
-            options?.productUid || (obj as any).productUid,
-        );
+        let query: any = this.searchIdQuery(existing.uid, options?.version || (obj as any).version);
         let result: T | null = null;
 
         if (this.repo instanceof MongoRepository) {
@@ -789,17 +779,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         query = this.searchIdQuery(existing.uid, obj instanceof BaseEntity ? obj.version + 1 : undefined);
         if (!result) {
             if (this.repo instanceof MongoRepository) {
-                result = await this.repo
-                    .aggregate([
-                        {
-                            $match: query,
-                        },
-                        {
-                            $sort: { version: -1 },
-                        },
-                    ])
-                    .limit(1)
-                    .next();
+                result = await this.repo.findOne(query["$match"] ? query["$match"] : query);
             } else {
                 result = await this.repo.findOne(query);
             }
@@ -858,7 +838,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         // Attempt to grab the repository for this reference type
                         const conn: any = this.connectionManager?.connections.get(clazz.datastore);
                         const repo: MongoRepository<any> | Repository<any> | undefined =
-                            (conn instanceof MongoConnection || isSqlDataSource(conn)) ? conn.getRepository(clazz) : undefined;
+                            conn instanceof MongoConnection || isSqlDataSource(conn)
+                                ? conn.getRepository(clazz)
+                                : undefined;
                         if (repo) {
                             // Check to see if there are any objects with this UID in the datastore. If the value is an array
                             // let's make sure that every uid is valid.

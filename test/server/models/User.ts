@@ -1,15 +1,15 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
+import { Column, Entity, Index } from "../../../src/decorators/PersistenceDecorators";
 import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity";
-import { Index, Entity, Column } from "typeorm";
 import { Identifier, DataStore } from "../../../src/decorators/ModelDecorators";
 import { Description, TypeInfo } from "../../../src/decorators/DocDecorators";
 import { ObjectDecorators, ValidationUtils } from "@rapidrest/core";
 const { Nullable, Validator } = ObjectDecorators;
 
 @DataStore("mongodb")
-@Entity()
+@Entity({ collation: { locale: "en", strength: 2 } })
 @Description("The User class describes a user within the system.")
 export default class User extends BaseMongoEntity {
     @Identifier
@@ -32,13 +32,6 @@ export default class User extends BaseMongoEntity {
     // TODO  @Validator(ValidationUtils.check((val) => val >= 13))
     public age: number = 0;
 
-    @Identifier
-    @Index()
-    @Column()
-    @Description("The uuid of the product that is associated with this user.")
-    @Nullable
-    public productUid: string | undefined = undefined;
-
     @Column()
     @TypeInfo([String, Number, undefined])
     @Nullable
@@ -60,7 +53,6 @@ export default class User extends BaseMongoEntity {
             this.firstName = "firstName" in other ? other.firstName : this.firstName;
             this.lastName = "lastName" in other ? other.lastName : this.lastName;
             this.age = "age" in other ? other.age : this.age;
-            this.productUid = "productUid" in other ? other.productUid : this.productUid;
             this.password = "password" in other ? other.password : this.password;
             this.roles = "roles" in other ? other.roles : this.roles;
         }

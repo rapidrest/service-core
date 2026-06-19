@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { Entity, Column, Index } from "typeorm";
+import { Column, Entity, Index } from "../../../src/decorators/PersistenceDecorators";
 import { Identifier, DataStore, TrackChanges } from "../../../src/decorators/ModelDecorators";
 import { RecoverableBaseMongoEntity } from "../../../src/models";
 import { Description } from "../../../src/decorators/DocDecorators";

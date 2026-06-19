@@ -4,9 +4,15 @@
 import type {
     AggregationCursor,
     Collection,
+    CountDocumentsOptions,
     Db,
+    DeleteOptions,
     DeleteResult,
     Document,
+    Filter,
+    FindCursor,
+    FindOptions,
+    UpdateOptions,
     UpdateResult,
 } from "mongodb";
 
@@ -52,41 +58,37 @@ export class MongoRepository<T extends Document = any> {
      * collection does not exist.
      */
     public async clear(): Promise<void> {
-        try {
-            await this.collection.drop();
-        } catch (err: any) {
-            // Ignore "ns not found" errors for collections that don't exist yet
-            if (err.codeName !== "NamespaceNotFound" && !String(err.message).includes("ns not found")) {
-                throw err;
-            }
-        }
+        await this.collection.deleteMany({});
     }
 
     /**
      * Returns the number of documents matching the given filter.
      *
-     * @param filter The query filter to match documents against.
+     * @param filter - The filter for the count
+     * @param options - Optional settings for the command
      */
-    public async count(filter?: any): Promise<number> {
-        return this.collection.countDocuments(filter ?? {});
+    public count(filter?: Filter<T>, options?: CountDocumentsOptions): Promise<number> {
+        return this.collection.countDocuments(filter ?? {}, options);
     }
 
     /**
      * Deletes all documents matching the given filter.
      *
      * @param filter The query filter to match documents against.
+     * @param options - Optional settings for the command
      */
-    public async deleteMany(filter: any): Promise<DeleteResult> {
-        return this.collection.deleteMany(filter);
+    public deleteMany(filter: Filter<T>, options?: DeleteOptions): Promise<DeleteResult> {
+        return this.collection.deleteMany(filter, options);
     }
 
     /**
      * Deletes the first document matching the given filter.
      *
      * @param filter The query filter to match documents against.
+     * @param options - Optional settings for the command
      */
-    public async deleteOne(filter: any): Promise<DeleteResult> {
-        return this.collection.deleteOne(filter);
+    public deleteOne(filter?: Filter<T>, options?: DeleteOptions): Promise<DeleteResult> {
+        return this.collection.deleteOne(filter, options);
     }
 
     /**
@@ -95,7 +97,7 @@ export class MongoRepository<T extends Document = any> {
      * @param field The name of the document field to return distinct values of.
      * @param filter The query filter to match documents against.
      */
-    public async distinct(field: string, filter?: any): Promise<any[]> {
+    public distinct(field: string, filter?: Filter<T>): Promise<any[]> {
         return this.collection.distinct(field, filter ?? {});
     }
 
@@ -103,9 +105,10 @@ export class MongoRepository<T extends Document = any> {
      * Returns all documents matching the given filter.
      *
      * @param filter The query filter to match documents against.
+     * @param options - Optional settings for the command
      */
-    public async find(filter?: any): Promise<any[]> {
-        return this.collection.find(filter ?? {}).toArray();
+    public find(filter?: Filter<T>, options?: FindOptions): FindCursor<T> {
+        return this.collection.find(filter ?? {}, options) as FindCursor<T>;
     }
 
     /**
@@ -113,8 +116,8 @@ export class MongoRepository<T extends Document = any> {
      *
      * @param filter The query filter to match documents against.
      */
-    public async findOne(filter: any): Promise<any | null> {
-        return this.collection.findOne(filter);
+    public findOne(filter: any): Promise<T | null> {
+        return this.collection.findOne(filter) as Promise<T | null>;
     }
 
     /**
@@ -125,7 +128,7 @@ export class MongoRepository<T extends Document = any> {
      * @param doc The document to save.
      * @returns The saved document.
      */
-    public async save(doc: any): Promise<any> {
+    public async save(doc: any): Promise<T> {
         const copy: any = { ...doc };
         // Strip any undefined properties so they are omitted from the stored document
         for (const key of Object.keys(copy)) {
@@ -149,9 +152,10 @@ export class MongoRepository<T extends Document = any> {
      *
      * @param filter The query filter to match documents against.
      * @param update The update operations (e.g. `$set`) to apply.
+     * @param options - Optional settings for the command
      */
-    public async updateMany(filter: any, update: any): Promise<UpdateResult> {
-        return this.collection.updateMany(filter, update);
+    public updateMany(filter: any, update: any, options?: UpdateOptions): Promise<UpdateResult<T>> {
+        return this.collection.updateMany(filter, update, options);
     }
 
     /**
@@ -159,8 +163,9 @@ export class MongoRepository<T extends Document = any> {
      *
      * @param filter The query filter to match documents against.
      * @param update The update operations (e.g. `$set`) to apply.
+     * @param options - Optional settings for the command
      */
-    public async updateOne(filter: any, update: any): Promise<UpdateResult> {
-        return this.collection.updateOne(filter, update);
+    public updateOne(filter: any, update: any, options?: UpdateOptions): Promise<UpdateResult<T>> {
+        return this.collection.updateOne(filter, update, options);
     }
 }

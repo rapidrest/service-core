@@ -45,7 +45,7 @@ describe("PersistenceDecorators Tests", () => {
         public version: number = 0;
     }
 
-    @Entity("custom_people")
+    @Entity({ name: "custom_people" })
     class CustomNamed extends Person {}
 
     class Employee extends Person {

@@ -1,9 +1,15 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import type { Db, Document } from "mongodb";
-import { getIndexMetadata, IndexInfo } from "../decorators/PersistenceDecorators.js";
-import { resolveCollectionName } from "./NamingUtils.js";
+import type { CreateCollectionOptions, Db, Document } from "mongodb";
+import { CollationOptions, EntityOptions, getIndexMetadata, IndexInfo } from "../decorators/PersistenceDecorators.js";
+import { snakeCase } from "./NamingUtils.js";
+
+interface CollectionInfo {
+    name: string;
+    classes: any[];
+    options?: CreateCollectionOptions;
+}
 
 /**
  * Describes a single index that should exist on a MongoDB collection.
@@ -15,6 +21,7 @@ interface DesiredIndex {
     sparse: boolean;
     background?: boolean;
     expireAfterSeconds?: number;
+    collation?: CollationOptions;
 }
 
 /**
@@ -40,6 +47,50 @@ export class MongoSchemaSync {
     }
 
     /**
+     * Resolves the entity info of the database collection (or table) that records of the given model class are stored in.
+     *
+     * The entity info is resolved using the following rules:
+     * 1. The nearest class in the inheritance chain (starting with `clazz` itself) that specifies an explicit
+     * entity info via the `@Entity(info)` decorator.
+     * 2. Otherwise, the most ancestral class in the inheritance chain that declares its own `@DataStore` binding.
+     * This ensures that `@ChildEntity` subclasses are stored in the same collection as their parent entity
+     * (single collection inheritance).
+     * 3. Otherwise, a new info object containing the snake_case form of the class name.
+     *
+     * @param clazz The model class to resolve the collection name for.
+     */
+    public resolveCollectionInfo(clazz: any): CollectionInfo {
+        // Rule 1: nearest explicit entity options
+        for (let c = clazz; c && c !== Function.prototype; c = Object.getPrototypeOf(c)) {
+            const entityOptions: EntityOptions | undefined = Reflect.getOwnMetadata("rrst:entityOptions", c);
+            if (entityOptions) {
+                const info: CollectionInfo = {
+                    name: entityOptions.name!,
+                    classes: [],
+                };
+                if (entityOptions.collation) {
+                    info.options = { collation: entityOptions.collation };
+                }
+                return info;
+            }
+        }
+
+        // Rule 2: most ancestral class owning a datastore binding
+        let owner: any = undefined;
+        for (let c = clazz; c && c !== Function.prototype; c = Object.getPrototypeOf(c)) {
+            if (Reflect.getOwnMetadata("rrst:datastore", c)) {
+                owner = c;
+            }
+        }
+
+        // Rule 3: fall back to the class itself
+        return {
+            name: snakeCase((owner ?? clazz).name),
+            classes: [],
+        };
+    }
+
+    /**
      * Synchronizes the structure of all collections associated with the given model classes.
      *
      * @param entities The list of model classes to synchronize collections for.
@@ -47,32 +98,30 @@ export class MongoSchemaSync {
     public async synchronize(entities: Iterable<any>): Promise<void> {
         // Group the model classes by their resolved collection name so that all classes stored in the same
         // collection (e.g. @ChildEntity subclasses) contribute their indexes to a single specification.
-        const collections: Map<string, any[]> = new Map();
+        const collections: Map<string, CollectionInfo> = new Map();
         for (const clazz of entities) {
-            const name: string = resolveCollectionName(clazz);
-            const group: any[] = collections.get(name) ?? [];
-            group.push(clazz);
-            collections.set(name, group);
+            const info: CollectionInfo = this.resolveCollectionInfo(clazz);
+            info.classes.push(clazz);
+            collections.set(info.name, info);
         }
 
-        for (const [name, classes] of collections.entries()) {
-            await this.syncCollection(name, classes);
+        for (const [name, info] of collections.entries()) {
+            await this.syncCollection(info);
         }
     }
 
     /**
      * Synchronizes the structure of a single collection.
      *
-     * @param name The name of the collection to synchronize.
-     * @param classes The list of model classes whose records are stored in the collection.
+     * @param info The information about the collection to synchronize.
      */
-    private async syncCollection(name: string, classes: any[]): Promise<void> {
+    private async syncCollection(info: CollectionInfo): Promise<void> {
         // Create the collection if it doesn't already exist
-        const existing: Document[] = await this.db.listCollections({ name }, { nameOnly: true }).toArray();
+        const existing: Document[] = await this.db.listCollections({ name: info.name }, { nameOnly: true }).toArray();
         if (existing.length === 0) {
             try {
-                await this.db.createCollection(name);
-                this.logger?.debug(`Created collection: ${name}`);
+                await this.db.createCollection(info.name, info.options);
+                this.logger?.debug(`Created collection: ${info.name}`);
             } catch (err: any) {
                 // Tolerate concurrent creation races
                 if (err.codeName !== "NamespaceExists") {
@@ -83,7 +132,7 @@ export class MongoSchemaSync {
 
         // Build the merged set of desired indexes from all classes stored in this collection
         const desired: Map<string, DesiredIndex> = new Map();
-        for (const clazz of classes) {
+        for (const clazz of info.classes) {
             for (const index of getIndexMetadata(clazz)) {
                 const spec: DesiredIndex = this.toDesiredIndex(index);
                 desired.set(JSON.stringify(spec.key), spec);
@@ -91,7 +140,7 @@ export class MongoSchemaSync {
         }
 
         // Retrieve the collection's current indexes
-        const collection = this.db.collection(name);
+        const collection = this.db.collection(info.name);
         let currentIndexes: Document[] = [];
         try {
             currentIndexes = await collection.listIndexes().toArray();
@@ -113,26 +162,31 @@ export class MongoSchemaSync {
                 }
                 // The index definition has changed. Drop and re-create it.
                 this.logger?.debug(
-                    `Re-creating index ${current.name} on collection ${name} due to changed definition.`,
+                    `Re-creating index ${current.name} on collection ${info.name} due to changed definition.`,
                 );
                 await collection.dropIndex(current.name as string);
             } else {
                 // If an unrelated index already uses the desired name it must be dropped first to avoid a conflict
                 const conflict: Document | undefined = currentIndexes.find((idx) => idx.name === spec.name);
                 if (conflict) {
-                    this.logger?.debug(`Dropping index ${spec.name} on collection ${name} due to changed key.`);
+                    this.logger?.debug(`Dropping index ${spec.name} on collection ${info.name} due to changed key.`);
                     await collection.dropIndex(spec.name);
                 }
-                this.logger?.debug(`Creating index ${spec.name} on collection ${name}.`);
+                this.logger?.debug(`Creating index ${spec.name} on collection ${info.name}.`);
             }
 
-            await collection.createIndex(spec.key, {
+            const options: any = {
                 name: spec.name,
                 unique: spec.unique,
                 sparse: spec.sparse,
                 ...(spec.background !== undefined ? { background: spec.background } : {}),
                 ...(spec.expireAfterSeconds !== undefined ? { expireAfterSeconds: spec.expireAfterSeconds } : {}),
-            });
+            };
+            // HAX For some reason MongoDB chokes if you pass in `collation` with a value of `undefined`
+            if (spec.collation) {
+                options.collation = spec.collation;
+            }
+            await collection.createIndex(spec.key, options);
         }
     }
 
@@ -151,6 +205,7 @@ export class MongoSchemaSync {
             sparse: index.options.sparse ?? false,
             background: index.options.background,
             expireAfterSeconds: index.options.expireAfterSeconds,
+            collation: index.options.collation,
         };
     }
 

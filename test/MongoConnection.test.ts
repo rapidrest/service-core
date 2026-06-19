@@ -153,8 +153,8 @@ describe("MongoConnection Tests", () => {
             await repo.save(new Widget({ uid: "w2", name: "b", size: 2 }));
             await repo.save(new Widget({ uid: "w3", name: "b", size: 3 }));
 
-            expect((await repo.find()).length).toBe(3);
-            expect((await repo.find({ name: "b" })).length).toBe(2);
+            expect((await repo.find().toArray()).length).toBe(3);
+            expect((await repo.find({ name: "b" }).toArray()).length).toBe(2);
             expect((await repo.findOne({ uid: "w2" }))?.size).toBe(2);
             expect(await repo.count({ name: "b" })).toBe(2);
             expect((await repo.distinct("name")).sort()).toEqual(["a", "b"]);

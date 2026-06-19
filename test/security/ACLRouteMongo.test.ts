@@ -71,7 +71,7 @@ describe("ACLRouteMongo Tests", () => {
         if (conn instanceof MongoConnection) {
             repo = conn.getRepository(AccessControlListMongo);
         }
-        const results: any[] = await repo.find();
+        const results: any[] = await repo.find().toArray();
         console.log(results.length);
     });
 

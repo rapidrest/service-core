@@ -22,7 +22,7 @@ export abstract class BaseEntity {
     @Description("The universally unique identifier of the entity.")
     @Default("randomUUID()")
     @Identifier
-    @Index("uid", { unique: true })
+    @Index("uid", { unique: true, collation: { locale: "en", strength: 2 } })
     @PrimaryColumn()
     public uid: string = uuid.v4();
 

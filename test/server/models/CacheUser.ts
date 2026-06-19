@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity";
-import { Entity, Column } from "typeorm";
+import { Column, Entity } from "../../../src/decorators/PersistenceDecorators";
 import { Cache, DataStore } from "../../../src/decorators/ModelDecorators";
 import { Description } from "../../../src/decorators/DocDecorators";
 

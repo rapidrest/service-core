@@ -101,7 +101,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             expect(result.body.lastName).toEqual(user.lastName);
             expect(result.body.age).toEqual(user.age);
 
-            const stored: User[] | null = await repo.find({ uid: result.body.uid } as any);
+            const stored: User[] | null = await repo.find({ uid: result.body.uid } as any).toArray();
             expect(stored).toHaveLength(1);
             if (stored) {
                 expect(stored[0].uid).toEqual(user.uid);
@@ -130,7 +130,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             expect(result.body.lastName).toEqual(userV2.lastName);
             expect(result.body.age).toEqual(userV2.age);
 
-            const stored: User[] | null = await repo.find({ name: user.name } as any);
+            const stored: User[] | null = await repo.find({ name: user.name } as any).toArray();
             expect(stored).toHaveLength(2);
             if (stored) {
                 expect(stored[0].uid).toEqual(user.uid);

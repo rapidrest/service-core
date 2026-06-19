@@ -44,8 +44,6 @@ export interface CreateRequestOptions extends RequestOptions {
  * The set of options required by delete request handlers.
  */
 export interface DeleteRequestOptions extends RequestOptions {
-    /** The desired product uid of the resource to delete. */
-    productUid?: string;
     /** Set to true to permanently remove the object from the database (if applicable). */
     purge?: boolean;
     /** An additional list of channel names to send push notifications to. */
@@ -89,8 +87,6 @@ export type UpdateObject<T extends BaseEntity | SimpleEntity> = Partial<T> & Pic
 export interface UpdateRequestOptions<T extends BaseEntity | SimpleEntity> extends RequestOptions {
     /** The existing object that has already been recently pulled from the datastore. */
     existing?: T | null;
-    /** The desired product uid of the resource to update. */
-    productUid?: string;
     /** An additional list of channel names to send push notifications to. */
     pushChannels?: string[];
     /** Set to `true` to not send a push notification. */
@@ -208,7 +204,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         const result: number = await this.repoUtils.count(searchQuery, {
             limit: options.query?.limit,
             page: options.query?.page,
-            productUid: options.params?.productUid || options.query?.productUid,
             version: options.params?.version || options.query?.version,
             user: options.user,
         });
@@ -332,7 +327,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
 
         const existing: T | undefined = await this.repoUtils.findOne(id, {
-            productUid: options.productUid,
             version: options.version,
         });
         if (!existing) {
@@ -424,7 +418,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         return await this.repoUtils.find(searchQuery, {
             limit: options.query?.limit,
             page: options.query?.page,
-            productUid: options.params?.productUid || options.query?.productUid,
             version: options.params?.version || options.query?.version,
             user: options.user,
         });
@@ -454,7 +447,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
 
         const result: T | undefined = await this.repoUtils.findOne(id, {
-            productUid: options.params?.productUid || options.query?.productUid,
             version: options.params?.version || options.query?.version,
         });
         if (!result) {
@@ -494,7 +486,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         await this.repoUtils?.truncate(searchQuery, {
             limit: options.query?.limit,
             page: options.query?.page,
-            productUid: options.params?.productUid || options.query?.productUid,
             pushChannels: options.pushChannels,
             skipPush: options.skipPush,
             version: options.params?.version || options.query?.version,
@@ -564,7 +555,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
 
         const existing: T | undefined = await this.repoUtils.findOne(id, {
-            productUid: options.productUid || (obj as any).productUid,
             skipCache: true,
         });
         if (!existing) {
@@ -615,11 +605,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        const existing: T | null | undefined =
-            options.existing ||
-            (await this.repoUtils?.findOne(id, {
-                productUid: options.productUid,
-            }));
+        const existing: T | null | undefined = options.existing || (await this.repoUtils?.findOne(id, {}));
         if (!existing) {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
         }
@@ -628,14 +614,13 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             id,
             {
                 uid: existing.uid,
-                productUid: options.productUid || "productUid" in existing ? (existing as any).productUid : undefined,
                 version: options.version || "version" in existing ? (existing as any).version : undefined,
                 [propertyName]: value,
             } as any,
             {
                 ...options,
                 existing,
-            }
+            },
         );
     }
 

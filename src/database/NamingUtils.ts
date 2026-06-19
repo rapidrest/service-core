@@ -2,6 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
+import { EntityOptions } from "../decorators/PersistenceDecorators.js";
 
 /**
  * Converts a string into snake_case.
@@ -27,7 +28,7 @@ export function snakeCase(str: string): string {
  *
  * The name is resolved using the following rules:
  * 1. The nearest class in the inheritance chain (starting with `clazz` itself) that specifies an explicit
- * entity name via the `@Entity(name)` decorator.
+ * entity name via the `@Entity(options)` decorator.
  * 2. Otherwise, the most ancestral class in the inheritance chain that declares its own `@DataStore` binding.
  * This ensures that `@ChildEntity` subclasses are stored in the same collection as their parent entity
  * (single collection inheritance).
@@ -38,9 +39,9 @@ export function snakeCase(str: string): string {
 export function resolveCollectionName(clazz: any): string {
     // Rule 1: nearest explicit entity name
     for (let c = clazz; c && c !== Function.prototype; c = Object.getPrototypeOf(c)) {
-        const entityName: string | undefined = Reflect.getOwnMetadata("rrst:entityName", c);
-        if (entityName) {
-            return entityName;
+        const options: EntityOptions | undefined = Reflect.getOwnMetadata("rrst:entityOptions", c);
+        if (options && options.name) {
+            return options.name;
         }
     }
 

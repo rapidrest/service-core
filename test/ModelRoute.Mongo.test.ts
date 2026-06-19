@@ -24,30 +24,23 @@ describe("ModelRoute Tests [MongoDB]", () => {
     let repo: MongoRepository<any>;
     let itemRepo: any;
 
-    const createUser = async (
-        name: string,
-        firstName: string,
-        lastName: string,
-        age: number = 21,
-        productUid?: string
-    ): Promise<User> => {
+    const createUser = async (name: string, firstName: string, lastName: string, age: number = 21): Promise<User> => {
         const user: User = new User({
             name,
             firstName,
             lastName,
             age,
-            productUid,
             password: "password",
         });
 
         return await repo.save(user);
     };
 
-    const createUsers = async (num: number, lastName: string = "Doctor", productUid?: string): Promise<User[]> => {
+    const createUsers = async (num: number, lastName: string = "Doctor"): Promise<User[]> => {
         const results: User[] = [];
 
         for (let i = 1; i <= num; i++) {
-            results.push(await createUser(`user-${i}`, String(i), lastName, 100 * i, productUid));
+            results.push(await createUser(`user-${i}`, String(i), lastName, 100 * i));
         }
 
         return results;
@@ -59,14 +52,12 @@ describe("ModelRoute Tests [MongoDB]", () => {
         lastName: string,
         age: number = 21,
         skillRating: number = 1500,
-        productUid?: string
     ): Promise<Player> => {
         const player: Player = new Player({
             name,
             firstName,
             lastName,
             age,
-            productUid,
             skillRating,
         });
 
@@ -77,12 +68,11 @@ describe("ModelRoute Tests [MongoDB]", () => {
         num: number,
         lastName: string = "Doctor",
         skillRating: number = 1500,
-        productUid?: string
     ): Promise<Player[]> => {
         const results: Player[] = [];
 
         for (let i = 1; i <= num; i++) {
-            results.push(await createPlayer(`user-${i}`, String(i), lastName, 100 * i, skillRating, productUid));
+            results.push(await createPlayer(`user-${i}`, String(i), lastName, 100 * i, skillRating));
         }
 
         return results;
@@ -165,33 +155,6 @@ describe("ModelRoute Tests [MongoDB]", () => {
             }
         });
 
-        it("Can create document with same name but different products. [MongoDB]", async () => {
-            await createUser("dtennant", "David", "Tennant", 47, uuid.v4());
-            const user: User = new User({
-                name: "dtennant",
-                firstName: "David",
-                lastName: "Tennant",
-                age: 47,
-                productUid: uuid.v4(),
-                password: "password",
-            });
-            const result = await request(server).post("/users").send(user);
-            expect(result.status).toBe(200);
-
-            const stored: User | null = await repo.findOne({ uid: user.uid } as any);
-            expect(stored).toBeDefined();
-            if (stored) {
-                expect(stored.uid).toEqual(user.uid);
-                expect(stored.version).toEqual(user.version);
-                expect(stored.firstName).toEqual(user.firstName);
-                expect(stored.lastName).toEqual(user.lastName);
-                expect(stored.age).toEqual(user.age);
-                expect(stored.productUid).toEqual(user.productUid);
-            }
-            const count: number = await repo.count({ name: "dtennant" });
-            expect(count).toBe(2);
-        });
-
         it("Cannot create document with same name. [MongoDB]", async () => {
             await createUser("dtennant", "David", "Tennant", 47);
             const user: User = new User({
@@ -199,26 +162,6 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,
-                password: "password",
-            });
-            const result = await request(server).post("/users").send(user);
-            expect(result.status).toBe(400);
-
-            const stored: User | null = await repo.findOne({ uid: user.uid } as any);
-            expect(stored).toBeNull();
-            const count: number = await repo.count({ name: "dtennant" });
-            expect(count).toBe(1);
-        });
-
-        it("Cannot create document with same name and product. [MongoDB]", async () => {
-            const productUid: string = uuid.v4();
-            await createUser("dtennant", "David", "Tennant", 47, productUid);
-            const user: User = new User({
-                name: "dtennant",
-                firstName: "David",
-                lastName: "Tennant",
-                age: 47,
-                productUid,
                 password: "password",
             });
             const result = await request(server).post("/users").send(user);
@@ -375,27 +318,6 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(result.body.age).toEqual(user.age);
         });
 
-        it("Can find document by id by name and product. [MongoDB]", async () => {
-            await createUser("dtennant", "David", "Tennant", 47, uuid.v4());
-            const user: User = await createUser("dtennant", "David", "Tennant", 47, uuid.v4());
-            await createUser("dtennant2", "David", "Tennant", 47);
-            await createUser("dtennant3", "David", "Tennant", 47);
-
-            const count: number = await repo.count({ name: "dtennant" });
-            expect(count).toBe(2);
-
-            const result = await request(server)
-                .get(`/users/${user.name}?productUid=${user.productUid}`)
-                .send();
-            expect(result).toHaveProperty("body");
-            expect(result.body.uid).toEqual(user.uid);
-            expect(result.body.version).toEqual(user.version);
-            expect(result.body.firstName).toEqual("");
-            expect(result.body.lastName).toEqual("");
-            expect(result.body.age).toEqual(user.age);
-            expect(result.body.productUid).toEqual(user.productUid);
-        });
-
         it("Can update document. [MongoDB]", async () => {
             const user: User = await createUser("dtennant", "David", "Tennant", 47);
             const diff: any = {
@@ -542,18 +464,18 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
 
-            const stored: User[] | null = await repo.find({ uid: { $in: uids } } as any);
+            const stored: User[] | null = await repo.find({ uid: { $in: uids } } as any).toArray();
             expect(stored).toBeDefined();
             expect(stored).toHaveLength(users.length);
             if (stored) {
-                for (let i = 0; i < stored.length; i++) {
-                    const user: User = stored[i];
-
-                    expect(user.uid).toEqual(users[i].uid);
-                    expect(user.version).toEqual(users[i].version);
-                    expect(user.firstName).toEqual(users[i].firstName);
-                    expect(user.lastName).toEqual(users[i].lastName);
-                    expect(user.age).toEqual(users[i].age);
+                const userMap = new Map(users.map((u) => [u.uid, u]));
+                for (const user of stored) {
+                    const original = userMap.get(user.uid)!;
+                    expect(original).toBeDefined();
+                    expect(user.version).toEqual(original.version);
+                    expect(user.firstName).toEqual(original.firstName);
+                    expect(user.lastName).toEqual(original.lastName);
+                    expect(user.age).toEqual(original.age);
                 }
             }
         });
@@ -583,15 +505,16 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(stored).toBeDefined();
             expect(stored).toHaveLength(users.length);
             if (stored) {
-                for (let i = 0; i < stored.length; i++) {
-                    const user: User | Player = stored[i];
-                    expect(user.uid).toEqual(users[i].uid);
-                    expect(user.version).toEqual(users[i].version);
-                    expect(user.firstName).toEqual(users[i].firstName);
-                    expect(user.lastName).toEqual(users[i].lastName);
-                    expect(user.age).toEqual(users[i].age);
-                    if ((users[i] as any)._type === "Player") {
-                        expect((user as Player).skillRating).toEqual((users[i] as Player).skillRating);
+                const userMap = new Map(users.map((u) => [u.uid, u]));
+                for (const user of stored) {
+                    const original = userMap.get(user.uid)!;
+                    expect(original).toBeDefined();
+                    expect(user.version).toEqual(original.version);
+                    expect(user.firstName).toEqual(original.firstName);
+                    expect(user.lastName).toEqual(original.lastName);
+                    expect(user.age).toEqual(original.age);
+                    if ((original as any)._type === "Player") {
+                        expect((user as Player).skillRating).toEqual((original as Player).skillRating);
                     }
                 }
             }
@@ -620,7 +543,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 expect(err.status).toBe(400);
             }
 
-            const stored: User[] | null = await repo.find({ uid: { $in: uids } } as any);
+            const stored: User[] | null = await repo.find({ uid: { $in: uids } } as any).toArray();
             expect(stored).toBeDefined();
             expect(stored).toHaveLength(1);
             if (stored) {
@@ -760,7 +683,6 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 expect(result.body[i].firstName).toEqual(users[i].firstName);
                 expect(result.body[i].lastName).toEqual(users[i].lastName);
                 expect(result.body[i].name).toEqual(users[i].name);
-                // expect(result.body[i].productUid).toEqual(users[i].productUid);
                 // expect(result.body[i].uType).toEqual(users[i].uType);
                 expect(result.body[i].version).toEqual(users[i].version);
             }
@@ -782,7 +704,6 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 expect(result.body[i].firstName).toEqual(all[i].firstName);
                 expect(result.body[i].lastName).toEqual(all[i].lastName);
                 expect(result.body[i].name).toEqual(all[i].name);
-                // expect(result.body[i].productUid).toEqual(users[i].productUid);
                 // expect(result.body[i].uType).toEqual(all[i].uType);
                 expect(result.body[i].version).toEqual(all[i].version);
                 if (all[i] instanceof Player) {
@@ -870,15 +791,16 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const result = await request(server).put("/users").send(updates);
             expect(result.status).toBe(200);
 
-            const existing: User[] = await repo.find({ uid: { $in: uids } } as any);
+            const existing: User[] = await repo.find({ uid: { $in: uids } } as any).toArray();
             expect(existing).toHaveLength(users.length);
-            for (let i = 0; i < existing.length; i++) {
-                const saved: User = existing[i];
-                expect(saved.uid).toBe(users[i].uid);
-                expect(saved.name).toBe(users[i].name);
+            const userMap = new Map(users.map((u) => [u.uid, u]));
+            for (const saved of existing) {
+                const original = userMap.get(saved.uid)!;
+                expect(original).toBeDefined();
+                expect(saved.name).toBe(original.name);
                 expect(saved.firstName).toBe("Matt");
-                expect(saved.lastName).toBe(users[i].lastName);
-                expect(saved.version).toBeGreaterThan(users[i].version);
+                expect(saved.lastName).toBe(original.lastName);
+                expect(saved.version).toBeGreaterThan(original.version);
             }
         });
 
@@ -912,20 +834,20 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
             const existing: Array<User | Player> = await repo.aggregate([{ $match: { uid: { $in: uids } } }]).toArray();
             expect(existing).toHaveLength(all.length);
-            for (let i = 0; i < existing.length; i++) {
-                const saved: User | Player = existing[i];
-                expect(saved.uid).toEqual(all[i].uid);
-                expect(saved.age).toEqual(all[i].age);
-                expect(saved.dateCreated).toEqual(all[i].dateCreated);
-                expect(saved.dateModified.getTime()).toBeGreaterThan(all[i].dateModified.getTime());
-                expect(saved.firstName).toEqual(updates[i].firstName);
-                expect(saved.lastName).toEqual(all[i].lastName);
-                expect(saved.name).toEqual(all[i].name);
-                // expect(saved.productUid).toEqual(users[i].productUid);
-                // expect(saved.uType).toEqual(all[i].uType);
-                expect(saved.version).toBeGreaterThan(all[i].version);
-                if (all[i] instanceof Player) {
-                    expect((saved as Player).skillRating).toEqual((updates[i] as Player).skillRating);
+            const allMap = new Map(all.map((u, i) => [u.uid, { entity: u, update: updates[i] }]));
+            for (const saved of existing) {
+                const { entity: original, update } = allMap.get(saved.uid)!;
+                expect(original).toBeDefined();
+                expect(saved.age).toEqual(original.age);
+                expect(saved.dateCreated).toEqual(original.dateCreated);
+                expect(saved.dateModified.getTime()).toBeGreaterThan(original.dateModified.getTime());
+                expect(saved.firstName).toEqual(update.firstName);
+                expect(saved.lastName).toEqual(original.lastName);
+                expect(saved.name).toEqual(original.name);
+                // expect(saved.uType).toEqual(original.uType);
+                expect(saved.version).toBeGreaterThan(original.version);
+                if (original instanceof Player) {
+                    expect((saved as Player).skillRating).toEqual((update as Player).skillRating);
                 }
             }
         });

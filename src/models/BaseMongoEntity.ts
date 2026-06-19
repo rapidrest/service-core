@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { Column } from "../decorators/PersistenceDecorators.js";
+import { Column, Index } from "../decorators/PersistenceDecorators.js";
 import { BaseEntity } from "./BaseEntity.js";
 import { ObjectId } from "mongodb";
 import { ObjectDecorators } from "@rapidrest/core";
@@ -12,6 +12,9 @@ const { Nullable } = ObjectDecorators;
  *
  * @author Jean-Philippe Steinmetz <rapidrests@gmail.com>
  */
+// Shadow BaseEntity's unique uid index — MongoDB entities store version history (multiple docs per uid),
+// so uniqueness is enforced at the application layer (optimistic locking) rather than via a unique index.
+@Index("uid", ["uid"], { collation: { locale: "en", strength: 2 } })
 export abstract class BaseMongoEntity extends BaseEntity {
     /**
      * The internal unique identifier used by MongoDB.

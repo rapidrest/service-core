@@ -40,96 +40,61 @@ class DoubleIdentifierClass {
     public id2: number = 0;
 }
 
-@Entity()
-class ProductIdentifierClass {
-    @Identifier
-    @PrimaryColumn()
-    public id: string = "";
-
-    @Identifier
-    @Column()
-    public id2: number = 0;
-
-    @Identifier
-    @Column()
-    public productUid: string | undefined = undefined;
-}
-
 describe("ModelUtils Tests", () => {
 
     describe("MongoDB Tests", () => {
         it("Can build id search query with single identifier.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(SingleIdentifierClass, "MyID");
             expect(query).toEqual({
-                $or: [{ id: new RegExp(/^MyID$/, "i") }]
+                $or: [{ id: "MyID" }],
             });
         });
 
         it("Can build id search query with single identifier and version.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(SingleIdentifierClass, "MyID", 2);
             expect(query).toEqual({
-                $or: [{ id: new RegExp(/^MyID$/, "i"), version: 2 }]
+                $or: [{ id: "MyID", version: 2 }],
             });
         });
 
         it("Can build id search query with single identifier and version 0.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(SingleIdentifierClass, "MyID", 0);
             expect(query).toEqual({
-                $or: [{ id: new RegExp(/^MyID$/, "i"), version: 0 }]
+                $or: [{ id: "MyID", version: 0 }],
             });
         });
 
         it("Can build id search query with multiple identifiers.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(DoubleIdentifierClass, "MyID");
             expect(query).toEqual({
-                $or: [{ id: new RegExp(/^MyID$/, "i") }, { id2: new RegExp(/^MyID$/, "i") }],
+                $or: [{ id: "MyID" }, { id2: "MyID" }],
             });
         });
 
         it("Can build id search query with multiple identifiers and version.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(DoubleIdentifierClass, "MyID", 3);
             expect(query).toEqual({
-                $or: [{ id: new RegExp(/^MyID$/, "i"), version: 3 }, { id2: new RegExp(/^MyID$/, "i"), version: 3 }]
+                $or: [
+                    { id: "MyID", version: 3 },
+                    { id2: "MyID", version: 3 },
+                ],
             });
         });
 
         it("Can build id search query with multiple identifiers and values.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(DoubleIdentifierClass, ["MyID", "MyID2"]);
             expect(query).toEqual({
-                $or: [{ id: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] } }, { id2: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] } }],
+                $or: [{ id: { $in: ["MyID", "MyID2"] } }, { id2: { $in: ["MyID", "MyID2"] } }],
             });
         });
 
         it("Can build id search query with multiple identifiers and values and version.", () => {
             const query: any = ModelUtils.buildIdSearchQueryMongo(DoubleIdentifierClass, ["MyID", "MyID2"], 3);
             expect(query).toEqual({
-                $or: [{ id: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] }, version: 3 }, { id2: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] }, version: 3 }]
-            });
-        });
-
-        it("Can build id search query with product identifier.", () => {
-            const query: any = ModelUtils.buildIdSearchQueryMongo(ProductIdentifierClass, "MyID");
-            expect(query).toEqual({
-                $or: [{ id: new RegExp(/^MyID$/, "i"), productUid: undefined }, { id2: new RegExp(/^MyID$/, "i"), productUid: undefined }],
-            });
-
-            const productUid: string = uuid.v4();
-            const query2: any = ModelUtils.buildIdSearchQueryMongo(ProductIdentifierClass, "MyID", undefined, productUid);
-            expect(query2).toEqual({
-                $or: [{ id: new RegExp(/^MyID$/, "i"), productUid }, { id2: new RegExp(/^MyID$/, "i"), productUid }],
-            });
-        });
-
-        it("Can build id search query with product identifier and multiple values.", () => {
-            const query: any = ModelUtils.buildIdSearchQueryMongo(ProductIdentifierClass, ["MyID", "MyID2"]);
-            expect(query).toEqual({
-                $or: [{ id: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] } }, { id2: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] } }],
-            });
-
-            const productUid: string = uuid.v4();
-            const query2: any = ModelUtils.buildIdSearchQueryMongo(ProductIdentifierClass, ["MyID", "MyID2"], undefined, productUid);
-            expect(query2).toEqual({
-                $or: [{ id: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] }, productUid }, { id2: { $in: [new RegExp(/^MyID$/, "i"), new RegExp(/^MyID2$/, "i")] }, productUid }],
+                $or: [
+                    { id: { $in: ["MyID", "MyID2"] }, version: 3 },
+                    { id2: { $in: ["MyID", "MyID2"] }, version: 3 },
+                ],
             });
         });
 
@@ -140,7 +105,7 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: 1 } }]);
+            expect(query).toEqual({ $match: {}, $sort: { paramName: 1 } });
         });
 
         it("Can build search query with sort (desc).", () => {
@@ -150,7 +115,7 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: -1 } }]);
+            expect(query).toEqual({ $match: {}, $sort: { paramName: -1 } });
         });
 
         it("Can build search query with sort (desc as object).", () => {
@@ -160,7 +125,7 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{ $match: {} }, { $sort: { paramName: -1 } }]);
+            expect(query).toEqual({ $match: {}, $sort: { paramName: -1 } });
         });
 
         it("Can build search query with single param (default)", () => {
@@ -170,11 +135,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: "myValue",
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param of int type default", () => {
@@ -184,11 +149,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: 100,
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param of boolean type (default)", () => {
@@ -198,11 +163,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: true,
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param of date type (default)", () => {
@@ -212,11 +177,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: new Date("2019-09-05T03:27:13.258Z"),
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (eq)", () => {
@@ -226,11 +191,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: "myValue",
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param of boolean type (eq)", () => {
@@ -240,11 +205,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: true,
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param of number type (eq)", () => {
@@ -254,11 +219,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: 105.56,
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (gt)", () => {
@@ -268,11 +233,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $gt: "myValue" },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param of date type (gt)", () => {
@@ -282,11 +247,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $gt: new Date("2019-09-05T03:27:13.258Z") },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (gte)", () => {
@@ -296,11 +261,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $gte: "myValue" },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (in)", () => {
@@ -310,11 +275,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $in: ["myValue", "myValue2", "myValue3", "myValue4"] },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (ILike)", () => {
@@ -324,11 +289,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $options: "i", $regex: "myValue" },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (lt)", () => {
@@ -338,11 +303,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $lt: "myValue" },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (lte)", () => {
@@ -352,11 +317,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $lte: "myValue" },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (not)", () => {
@@ -366,11 +331,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $not: "myValue" },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with single param (range)", () => {
@@ -380,11 +345,11 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     myParam: { $gte: 1, $lte: 100 },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with multiple params.", () => {
@@ -396,13 +361,13 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     equals: "myValue",
                     not: { $not: "myValue2" },
                     range: { $gte: 1, $lte: 100 },
-                }
-            }]);
+                },
+            });
         });
 
         it("Can build search query with multiple params with same name.", () => {
@@ -412,15 +377,15 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{
+            expect(query).toEqual({
                 $match: {
                     $or: [
                         { param: "myValue" },
                         { param: { $not: "myValue2" } },
-                        { param: { $regex: "myValue3", $options: "i" } }
-                    ]
-                }
-            }]);
+                        { param: { $regex: "myValue3", $options: "i" } },
+                    ],
+                },
+            });
         });
 
         it("Can build search query with multiple params and with same name.", () => {
@@ -432,17 +397,19 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([
-                {
-                    $match: {
-                        $or: [
-                            { param: "myValue", param2: { $gte: 0, $lte: 100 }, param3: "hello" },
-                            { param: { $not: "myValue2" }, param2: { $gte: 0, $lte: 100 }, param3: "hello" },
-                            { param: { $regex: "myValue3", $options: "i" }, param2: { $gte: 0, $lte: 100 }, param3: "hello" }
-                        ]
-                    }
-                }
-            ]);
+            expect(query).toEqual({
+                $match: {
+                    $or: [
+                        { param: "myValue", param2: { $gte: 0, $lte: 100 }, param3: "hello" },
+                        { param: { $not: "myValue2" }, param2: { $gte: 0, $lte: 100 }, param3: "hello" },
+                        {
+                            param: { $regex: "myValue3", $options: "i" },
+                            param2: { $gte: 0, $lte: 100 },
+                            param3: "hello",
+                        },
+                    ],
+                },
+            });
         });
 
         it("Can build search query and filter reserved words.", () => {
@@ -453,7 +420,7 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([{ $match: {} }]);
+            expect(query).toEqual({ $match: {} });
         });
     });
 
@@ -939,33 +906,28 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([
-                {
-                    "$match": {
-                        "$or": [
-                            {
-
-                                "param": "myValue",
-                                "param2": {
-                                    "$gte": 0,
-                                    "$lte": 100
-                                }
-
+            expect(query).toEqual({
+                $match: {
+                    $or: [
+                        {
+                            param: "myValue",
+                            param2: {
+                                $gte: 0,
+                                $lte: 100,
                             },
-                            {
-
-                                "param": {
-                                    "$not": "myValue2"
-                                },
-                                "param2": {
-                                    "$gte": 100,
-                                    "$lte": 200
-                                }
-                            }
-                        ]
-                    }
-                }
-            ]);
+                        },
+                        {
+                            param: {
+                                $not: "myValue2",
+                            },
+                            param2: {
+                                $gte: 100,
+                                $lte: 200,
+                            },
+                        },
+                    ],
+                },
+            });
         });
 
         it("Can build search query with global composite OR criteria and sort", () => {
@@ -985,38 +947,32 @@ describe("ModelUtils Tests", () => {
             };
 
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user);
-            expect(query).toEqual([
-                {
-                    "$match": {
-                        "$or": [
-                            {
-                                "param": "myValue",
-                                "param2": {
-                                    "$gte": 0,
-                                    "$lte": 100
-                                }
-
+            expect(query).toEqual({
+                $match: {
+                    $or: [
+                        {
+                            param: "myValue",
+                            param2: {
+                                $gte: 0,
+                                $lte: 100,
                             },
-                            {
-
-                                "param": {
-                                    "$not": "myValue2"
-                                },
-                                "param2": {
-                                    "$gte": 100,
-                                    "$lte": 200
-                                }
-                            }
-                        ]
-                    }
+                        },
+                        {
+                            param: {
+                                $not: "myValue2",
+                            },
+                            param2: {
+                                $gte: 100,
+                                $lte: 200,
+                            },
+                        },
+                    ],
                 },
-                {
-                    $sort: {
-                        paramName: -1,
-                        secondParamName: 1,
-                    }
-                }
-            ]);
+                $sort: {
+                    paramName: -1,
+                    secondParamName: 1,
+                },
+            });
         });
     });
 
