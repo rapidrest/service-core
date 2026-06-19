@@ -131,7 +131,7 @@ export class MongoSchemaSync {
         }
 
         // Build the merged set of desired indexes from all classes stored in this collection
-        const entityCollation = info.options?.collation as CollationOptions | undefined;
+        const entityCollation = info.options?.collation;
         const desired: Map<string, DesiredIndex> = new Map();
         for (const clazz of info.classes) {
             for (const index of getIndexMetadata(clazz)) {
