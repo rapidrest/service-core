@@ -14,7 +14,7 @@ const { Nullable } = ObjectDecorators;
  */
 // Shadow BaseEntity's unique uid index — MongoDB entities store version history (multiple docs per uid),
 // so uniqueness is enforced at the application layer (optimistic locking) rather than via a unique index.
-@Index("uid", ["uid"], { collation: { locale: "en", strength: 2 } })
+@Index("uid", ["uid"])
 export abstract class BaseMongoEntity extends BaseEntity {
     /**
      * The internal unique identifier used by MongoDB.

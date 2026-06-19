@@ -15,8 +15,8 @@ import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
  */
 // Shadow BaseEntity's unique uid index — versioned entities store multiple documents per uid (one per
 // version), so uniqueness must be enforced on the compound (uid, version) key instead.
-@Index("uid_version", ["uid", "version"], { unique: true, collation: { locale: "en", strength: 2 } })
-@Index("uid", ["uid"], { collation: { locale: "en", strength: 2 } })
+@Index("uid_version", ["uid", "version"], { unique: true })
+@Index("uid", ["uid"])
 export abstract class RecoverableBaseMongoEntity extends RecoverableBaseEntity {
     /**
      * The internal unique identifier used by MongoDB.

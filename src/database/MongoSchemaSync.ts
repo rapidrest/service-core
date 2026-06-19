@@ -131,10 +131,16 @@ export class MongoSchemaSync {
         }
 
         // Build the merged set of desired indexes from all classes stored in this collection
+        const entityCollation = info.options?.collation as CollationOptions | undefined;
         const desired: Map<string, DesiredIndex> = new Map();
         for (const clazz of info.classes) {
             for (const index of getIndexMetadata(clazz)) {
                 const spec: DesiredIndex = this.toDesiredIndex(index);
+                // Indexes inherit the collection's collation when none is declared on the index itself.
+                // This means @Entity({ collation }) is the single source of truth for case-sensitivity.
+                if (!spec.collation && entityCollation) {
+                    spec.collation = entityCollation;
+                }
                 desired.set(JSON.stringify(spec.key), spec);
             }
         }
@@ -212,12 +218,20 @@ export class MongoSchemaSync {
     /**
      * Determines whether an existing index satisfies the desired index specification. The `background` option is
      * a build-time hint and is intentionally excluded from the comparison.
+     *
+     * Collation is compared by `locale` and `strength` only — MongoDB adds default values for all other fields
+     * when storing the index, which would cause spurious mismatches if we compared the full object.
      */
     private optionsMatch(spec: DesiredIndex, current: Document): boolean {
+        const collationMatches = spec.collation
+            ? spec.collation.locale === current.collation?.locale &&
+              (spec.collation.strength ?? 3) === (current.collation?.strength ?? 3)
+            : !current.collation;
         return (
             spec.unique === (current.unique ?? false) &&
             spec.sparse === (current.sparse ?? false) &&
-            spec.expireAfterSeconds === (current.expireAfterSeconds ?? undefined)
+            spec.expireAfterSeconds === (current.expireAfterSeconds ?? undefined) &&
+            collationMatches
         );
     }
 }
