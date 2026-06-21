@@ -135,7 +135,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     protected objectFactory?: ObjectFactory;
 
     /** The class of the RepoUtils to use when instantiating the utility. */
-    protected readonly abstract repoUtilsClass: any;
+    protected abstract readonly repoUtilsClass: any;
 
     /** The repository utility class to use for common operations. */
     protected repoUtils?: RepoUtils<T>;
@@ -152,7 +152,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     /**
      * The class type of the model this route is associated with.
      */
-    protected get modelClass(): any {
+    public get modelClass(): any {
         const clazz: any = Object.getPrototypeOf(this).constructor;
         return clazz.modelClass;
     }
@@ -184,7 +184,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
-    protected async doCount(options: FindRequestOptions): Promise<XResponse> {
+    public async doCount(options: FindRequestOptions): Promise<XResponse> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -220,7 +220,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object to store in the database.
      * @param options The options to process the request using.
      */
-    protected async doCreateObject(obj: Partial<T>, options: CreateRequestOptions): Promise<T> {
+    public async doCreateObject(obj: Partial<T>, options: CreateRequestOptions): Promise<T> {
         if (!this.repoUtils) {
             throw new Error("repoUtils not set!");
         }
@@ -250,7 +250,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param objs The object(s) to store in the database.
      * @param options The options to process the request using.
      */
-    protected async doBulkCreate(objs: Partial<T>[], options: CreateRequestOptions): Promise<T[]> {
+    public async doBulkCreate(objs: Partial<T>[], options: CreateRequestOptions): Promise<T[]> {
         let thrownError: boolean = false;
         const errors: (Error | null)[] = [];
         const results: T[] = [];
@@ -280,7 +280,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object(s) to store in the database.
      * @param options The options to process the request using.
      */
-    protected async doCreate(obj: Partial<T> | Partial<T>[], options: CreateRequestOptions): Promise<T | T[]> {
+    public async doCreate(obj: Partial<T> | Partial<T>[], options: CreateRequestOptions): Promise<T | T[]> {
         if (
             this.aclUtils?.enabled &&
             !(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.CREATE))
@@ -308,7 +308,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param id The unique identifier of the object to delete.
      * @param options The options to process the request using.
      */
-    protected async doDelete(id: string, options: DeleteRequestOptions): Promise<void> {
+    public async doDelete(id: string, options: DeleteRequestOptions): Promise<void> {
         if (!this.repoUtils || !this.repoUtils.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -321,7 +321,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 throw new ApiError(
                     ApiErrors.SEARCH_INVALID_ME_REFERENCE,
                     403,
-                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE
+                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                 );
             }
         }
@@ -353,7 +353,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param id The unique identifier of the object to verify exists.
      * @param options The options to process the request using.
      */
-    protected async doExists(id: string, options: FindRequestOptions): Promise<any> {
+    public async doExists(id: string, options: FindRequestOptions): Promise<any> {
         if (!this.repoUtils || !options.res) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -366,7 +366,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 throw new ApiError(
                     ApiErrors.SEARCH_INVALID_ME_REFERENCE,
                     403,
-                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE
+                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                 );
             }
         }
@@ -394,7 +394,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
-    protected async doFindAll(options: FindRequestOptions): Promise<T[]> {
+    public async doFindAll(options: FindRequestOptions): Promise<T[]> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -412,7 +412,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             options.params,
             options.query,
             true,
-            options.user
+            options.user,
         );
 
         return await this.repoUtils.find(searchQuery, {
@@ -428,7 +428,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
-    protected async doFindById(id: string, options: FindRequestOptions): Promise<T | null> {
+    public async doFindById(id: string, options: FindRequestOptions): Promise<T | null> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -441,7 +441,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 throw new ApiError(
                     ApiErrors.SEARCH_INVALID_ME_REFERENCE,
                     403,
-                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE
+                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                 );
             }
         }
@@ -469,7 +469,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
-    protected async doTruncate(options: TruncateRequestOptions): Promise<void> {
+    public async doTruncate(options: TruncateRequestOptions): Promise<void> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -480,7 +480,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             options.params,
             options.query,
             true,
-            options.user
+            options.user,
         );
 
         await this.repoUtils?.truncate(searchQuery, {
@@ -508,7 +508,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param objs The object(s) to bulk update in the database.
      * @param options The options to process the request using.
      */
-    protected async doBulkUpdate(objs: UpdateObject<T>[], options: UpdateRequestOptions<T>): Promise<T[]> {
+    public async doBulkUpdate(objs: UpdateObject<T>[], options: UpdateRequestOptions<T>): Promise<T[]> {
         let thrownError: boolean = false;
         const errors: (Error | null)[] = [];
         const result: T[] = [];
@@ -536,7 +536,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object to update in the database
      * @param options The options to process the request using.
      */
-    protected async doUpdate(id: string, obj: UpdateObject<T>, options: UpdateRequestOptions<T>): Promise<T> {
+    public async doUpdate(id: string, obj: UpdateObject<T>, options: UpdateRequestOptions<T>): Promise<T> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -549,7 +549,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 throw new ApiError(
                     ApiErrors.SEARCH_INVALID_ME_REFERENCE,
                     403,
-                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE
+                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                 );
             }
         }
@@ -586,11 +586,11 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param value The value of the property to set.
      * @param options The options to process the request using.
      */
-    protected async doUpdateProperty(
+    public async doUpdateProperty(
         id: string,
         propertyName: string,
         value: any,
-        options: UpdateRequestOptions<T>
+        options: UpdateRequestOptions<T>,
     ): Promise<T> {
         // When id === `me` this is a special keyword meaning the authenticated user
         if (id.toLowerCase() === "me") {
@@ -600,7 +600,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 throw new ApiError(
                     ApiErrors.SEARCH_INVALID_ME_REFERENCE,
                     403,
-                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE
+                    ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                 );
             }
         }
@@ -627,7 +627,10 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     /**
      * Calls `repoUtils.validate()` to validate the object(s) provided.
      */
-    protected async doValidate(objs: Partial<T> | Partial<T>[], options?: CreateRequestOptions | UpdateRequestOptions<T>): Promise<void> {
+    public async doValidate(
+        objs: Partial<T> | Partial<T>[],
+        options?: CreateRequestOptions | UpdateRequestOptions<T>,
+    ): Promise<void> {
         await this.repoUtils?.validate(objs, options);
     }
 }
