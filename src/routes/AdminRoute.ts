@@ -85,6 +85,12 @@ export class AdminRoute {
 
     @Init
     private async init(): Promise<void> {
+        if (this.cacheClient) {
+            this.logger.info("Cache is enabled and ready.");
+        } else {
+            this.logger.warn("Cache is disabled.");
+        }
+
         if (this.cacheConnConfig) {
             const adminChannel: string = this.serviceName || "service_admin";
             this.redisClient = new Redis(this.cacheConnConfig.url, this.cacheConnConfig.options);
