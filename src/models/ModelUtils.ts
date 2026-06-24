@@ -24,6 +24,7 @@ const logger = Logger();
 export class ModelUtils {
     /** The `typeorm` module containing the query operators used to build SQL queries. */
     private static typeOrm: any | undefined;
+    private static idPropertyCache: Map<any, string[]> = new Map();
 
     /**
      * Provides the `typeorm` module to use when building SQL queries. This is called automatically when a SQL
@@ -56,6 +57,10 @@ export class ModelUtils {
     public static getIdPropertyNames(modelClass: any): string[] {
         const results: string[] = [];
 
+        if (ModelUtils.idPropertyCache.has(modelClass)) {
+            return ModelUtils.idPropertyCache.get(modelClass) as string[];
+        }
+
         // The props don't show up correctly on the class def. So instantiate a dummy object that we can read the props
         // from and look for identifiers.
         let proto: any = Object.getPrototypeOf(new modelClass());
@@ -70,6 +75,9 @@ export class ModelUtils {
 
             proto = Object.getPrototypeOf(proto);
         }
+
+        // Cache the results so we're not always having to walk the class structure
+        ModelUtils.idPropertyCache.set(modelClass, results);
 
         return results;
     }

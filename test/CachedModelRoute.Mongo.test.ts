@@ -45,7 +45,7 @@ const createUsers = async (num: number): Promise<CacheUser[]> => {
  * @param query The query object to hash.
  */
 const getCacheKey = function (query: any): string {
-    return baseCacheKey + "." + crypto.createHash("sha512").update(JSON.stringify(query)).digest("hex");
+    return baseCacheKey + "." + crypto.createHash("md5").update(JSON.stringify(query)).digest("hex");
 };
 
 vi.setConfig({ testTimeout: 120000 });

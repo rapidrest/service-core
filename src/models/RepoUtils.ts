@@ -18,7 +18,6 @@ import { Redis } from "ioredis";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
-import { Admin } from "mongodb";
 import { AccessControlList, ACLAction } from "../security/index.js";
 import type { ACLUtils } from "../security/ACLUtils.js";
 import { ConnectionManager } from "../database/index.js";
@@ -396,8 +395,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        let results: T[] = [];
-
         // Check user permissions
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
             if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ))) {
@@ -407,6 +404,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         const limit: number = options?.limit ? Math.min(options?.limit, 1000) : 100;
         const page: number = options?.page ? Number(options?.page) : 0;
+        let results: T[] = [];
 
         // When we hash the seach query we need to ensure we're including the pagination information to preserve
         // like queries and results.
@@ -417,14 +415,22 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         });
 
         // Pull from the cache if available
-        if (this.cacheClient && this.modelClass.cacheTTL) {
+        if (!options?.skipCache && this.cacheClient && this.modelClass.cacheTTL) {
             const json: string | null = await this.cacheClient.get(`${this.baseCacheKey}.${searchQueryHash}`);
             if (json) {
                 try {
                     const uids: string[] = JSON.parse(json);
-                    for (const uid of uids) {
-                        // Retrieve the object from the cache or from database if not available
-                        const obj: T | undefined = await this.findOne(uid, options);
+                    // Attempt to retrieve as many objects from the cache simultaneously
+                    const keys: string[] = uids.map(
+                        (uid) => `${this.baseCacheKey}.${this.hashQuery(this.searchIdQuery(uid))}`,
+                    );
+                    const cresults: (string | null)[] = await this.cacheClient.mget(...keys);
+                    for (let i = 0; i < cresults.length; i++) {
+                        // If the item wasn't found in the cache, default to pulling from the database
+                        const obj: T | undefined =
+                            cresults[i] !== null
+                                ? JSON.parse(cresults[i] as string)
+                                : await this.findOne(uids[i], { skipCache: true });
                         if (obj) {
                             results.push(obj);
                         }
@@ -456,12 +462,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
             // Cache the results for future requests
             if (this.cacheClient && this.modelClass.cacheTTL) {
-                const uids: string[] = [];
-
-                for (const result of results) {
-                    uids.push(result.uid);
-                }
-
+                const uids: string[] = results.map((obj: T) => obj.uid);
                 void this.cacheClient.setex(
                     `${this.baseCacheKey}.${searchQueryHash}`,
                     this.modelClass.cacheTTL,
@@ -550,7 +551,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      */
     public hashQuery(query: any): string {
         const queryStr: string = JSON.stringify(query);
-        return crypto.createHash("sha512").update(queryStr).digest("hex");
+        return crypto.createHash("md5").update(queryStr).digest("hex");
     }
 
     /**
