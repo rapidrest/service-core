@@ -248,10 +248,7 @@ export class ACLUtils {
         // If the acl wasn't found in the cache look in the database
         if (!acl) {
             if (this.repo instanceof MongoRepository) {
-                acl = await this.repo
-                    .aggregate([{ $match: { uid: entityId } }])
-                    .limit(1)
-                    .next();
+                acl = await this.repo.findOne({ uid: entityId });
                 acl = acl ? new AccessControlListMongo(acl) : null;
             } else {
                 acl = await this.repo.findOne({ uid: entityId } as any);

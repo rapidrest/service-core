@@ -10,6 +10,10 @@ import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 
 const logger = Logger();
+const REGEX_QUERY_PARAM_VALUE: RegExp = new RegExp(/^([a-zA-Z]+)\((.*)\)$/, "i");
+const REGEX_RESERVED_QUERY_PARAMS: RegExp = new RegExp("(jwt_|oauth_|auth_|cache).*", "i");
+const REGEX_QUERY_LIMITS: RegExp = new RegExp("(limit|page|sort).*", "i");
+const REGEX_QUERY_SORT_STRING: RegExp = new RegExp(/^\{.*\}$/, "i");
 
 // Apparently calling JSON.stringify on RegExp returns an empty set. So the recommended way to
 // overcome this is by adding a `toJSON` method that uses the `toString` instead which will
@@ -186,7 +190,7 @@ export class ModelUtils {
             // The value of each param can optionally have the operation included. If no operator is included Eq is
             // always assumed.
             // e.g. ?param1=eq(value)&param2=not(value)&param3=gt(value)
-            const matches: RegExpMatchArray | null = param.match(new RegExp(/^([a-zA-Z]+)\((.*)\)$/, "i"));
+            const matches: RegExpMatchArray | null = param.match(REGEX_QUERY_PARAM_VALUE);
             if (matches) {
                 const opName: string = matches[1].toLowerCase();
                 let value: any = matches[2];
@@ -268,7 +272,7 @@ export class ModelUtils {
             // The value of each param can optionally have the operation included. If no operator is included Eq is
             // always assumed.
             // e.g. ?param1=eq(value)&param2=not(value)&param3=gt(value)
-            const matches: RegExpMatchArray | null = param.match(new RegExp(/^([a-zA-Z]+)\((.*)\)$/, "i"));
+            const matches: RegExpMatchArray | null = param.match(REGEX_QUERY_PARAM_VALUE);
             if (matches) {
                 const opName: string = matches[1].toLowerCase();
                 let value: any = matches[2];
@@ -461,12 +465,12 @@ export class ModelUtils {
         // add only one value to each query object.
         for (let key in queryParams) {
             // Ignore reserved query parameters
-            if (key.match(new RegExp("(jwt_|oauth_|auth_|cache).*", "i"))) {
+            if (key.match(REGEX_RESERVED_QUERY_PARAMS)) {
                 continue;
             }
 
             // Limit, page and sort are reserved for specifying query limits
-            if (key.match(new RegExp("(limit|page|sort).*", "i"))) {
+            if (key.match(REGEX_QUERY_LIMITS)) {
                 let value: any = queryParams[key];
 
                 if (key === "limit") {
@@ -478,7 +482,7 @@ export class ModelUtils {
                     key = "order";
 
                     if (typeof value === "string") {
-                        if (value.match(new RegExp(/^\{.*\}$/, "i"))) {
+                        if (value.match(REGEX_QUERY_SORT_STRING)) {
                             value = JSON.parse(value);
                         } else {
                             let newValue: any = value;
@@ -588,17 +592,17 @@ export class ModelUtils {
 
         for (const key in queryParams) {
             // Ignore reserved query parameters
-            if (key.match(new RegExp("(jwt_|oauth_|auth_).*", "i"))) {
+            if (key.match(REGEX_RESERVED_QUERY_PARAMS)) {
                 continue;
             }
 
             // Limit, page and sort are reserved for specifying query limits
-            if (key.match(new RegExp("(limit|page|sort).*", "i"))) {
+            if (key.match(REGEX_QUERY_LIMITS)) {
                 let value: any = queryParams[key];
 
                 if (key === "sort") {
                     if (typeof value === "string") {
-                        if (value.match(new RegExp(/^\{.*\}$/, "i"))) {
+                        if (value.match(REGEX_QUERY_SORT_STRING)) {
                             value = JSON.parse(value);
                         } else {
                             let newValue: any = value;
