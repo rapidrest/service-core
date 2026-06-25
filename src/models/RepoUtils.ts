@@ -433,7 +433,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     const missingUids: string[] = [];
                     for (let i = 0; i < cresults.length; i++) {
                         if (cresults[i] === null) {
-                            missingUids.push(cresults[i] as string);
+                            missingUids.push(uids[i] as string);
                         }
                     }
 
@@ -463,13 +463,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                             }
                         }
                     }
-
-                    // Populate the cache with all missing objects
-                    for (const obj of missing) {
-                        const query: any = this.searchIdQuery(obj.uid);
-                        const cacheKey: string = `${this.baseCacheKey}.${this.hashQuery(query)}`;
-                        void this.cacheClient.setex(cacheKey, this.modelClass.cacheTTL, JSON.stringify(obj));
-                    }
                 } catch (err) {
                     // It doesn't matter if this fails
                 }
@@ -497,12 +490,27 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
             // Cache the results for future requests. Don't bother if there were no results.
             if (results.length > 0 && this.cacheClient && this.modelClass.cacheTTL) {
+                const cmds: any[] = [];
+
+                // Add the query to the cache with only the list of uids. This ensures that changes to the underlying
+                // objects stays accurate.
                 const uids: string[] = results.map((obj: T) => obj.uid);
-                void this.cacheClient.setex(
+                cmds.push([
+                    "setex",
                     `${this.baseCacheKey}.${searchQueryHash}`,
                     this.modelClass.cacheTTL,
                     JSON.stringify(uids),
-                );
+                ]);
+
+                // Also seed individual object caches so the next request is fully cache-warm
+                for (const obj of results) {
+                    const query: any = this.searchIdQuery(obj.uid);
+                    const cacheKey: string = `${this.baseCacheKey}.${this.hashQuery(query)}`;
+                    cmds.push(["setex", cacheKey, this.modelClass.cacheTTL, JSON.stringify(obj)]);
+                }
+
+                // Now send all commands to redis at once
+                void this.cacheClient.multi(cmds);
             }
         }
 

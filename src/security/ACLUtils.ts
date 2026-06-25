@@ -257,7 +257,7 @@ export class ACLUtils {
 
             // Store a copy in the cache for faster retrieval next time
             if (acl && this.cacheClient) {
-                await this.cacheClient.setex(`${CACHE_BASE_KEY}.${entityId}`, this.cacheTTL, JSON.stringify(acl));
+                void this.cacheClient.setex(`${CACHE_BASE_KEY}.${entityId}`, this.cacheTTL, JSON.stringify(acl));
             }
         }
 
@@ -417,7 +417,7 @@ export class ACLUtils {
 
         // Store a copy in the cache for faster retrieval next time
         if (this.cacheClient && result) {
-            await this.cacheClient.setex(`${CACHE_BASE_KEY}.${result.uid}`, this.cacheTTL, JSON.stringify(result));
+            void this.cacheClient.setex(`${CACHE_BASE_KEY}.${result.uid}`, this.cacheTTL, JSON.stringify(result));
         }
 
         return result;
