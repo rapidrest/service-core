@@ -510,7 +510,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 }
 
                 // Now send all commands to redis at once
-                void this.cacheClient.multi(cmds);
+                void this.cacheClient.multi(cmds).exec();
             }
         }
 
