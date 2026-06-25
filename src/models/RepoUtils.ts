@@ -433,7 +433,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     const missingUids: string[] = [];
                     for (let i = 0; i < cresults.length; i++) {
                         if (cresults[i] === null) {
-                            missingUids.push(uids[i] as string);
+                            missingUids.push(uids[i]);
                         }
                     }
 
