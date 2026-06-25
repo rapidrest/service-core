@@ -424,16 +424,51 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     const keys: string[] = uids.map(
                         (uid) => `${this.baseCacheKey}.${this.hashQuery(this.searchIdQuery(uid))}`,
                     );
+
+                    // Retrieve all objects from the cache (if possible)
                     const cresults: (string | null)[] = await this.cacheClient.mget(...keys);
+
+                    // Check for any missing objects that weren't in the cache. Build a list of missing
+                    // items that we can retrieve from the database directly.
+                    const missingUids: string[] = [];
                     for (let i = 0; i < cresults.length; i++) {
-                        // If the item wasn't found in the cache, default to pulling from the database
-                        const obj: T | undefined =
-                            cresults[i] !== null
-                                ? JSON.parse(cresults[i] as string)
-                                : await this.findOne(uids[i], { skipCache: true });
-                        if (obj) {
-                            results.push(obj);
+                        if (cresults[i] === null) {
+                            missingUids.push(cresults[i] as string);
                         }
+                    }
+
+                    // Now pull all missing items from the database
+                    let missing: T[] = [];
+                    if (missingUids.length > 0) {
+                        if (this.repo instanceof MongoRepository) {
+                            missing = await this.repo.find({ uid: { $in: missingUids } } as any).toArray();
+                        } else {
+                            const { In } = ModelUtils.orm;
+                            missing = await this.repo.find({ where: { uid: In(missingUids) } });
+                        }
+                    }
+
+                    // Merge the results back into the results array. We iterate through cresults to preserve
+                    // the order of the original query.
+                    for (let i = 0; i < cresults.length; i++) {
+                        if (cresults[i] !== null) {
+                            results.push(JSON.parse(cresults[i] as string));
+                        } else {
+                            // Find the desired object in the missing array
+                            for (const obj of missing) {
+                                if (obj.uid === missingUids[i]) {
+                                    results.push(obj);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Populate the cache with all missing objects
+                    for (const obj of missing) {
+                        const query: any = this.searchIdQuery(obj.uid);
+                        const cacheKey: string = `${this.baseCacheKey}.${this.hashQuery(query)}`;
+                        void this.cacheClient.setex(cacheKey, this.modelClass.cacheTTL, JSON.stringify(obj));
                     }
                 } catch (err) {
                     // It doesn't matter if this fails
@@ -460,8 +495,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 results = await this.repo.find(query);
             }
 
-            // Cache the results for future requests
-            if (this.cacheClient && this.modelClass.cacheTTL) {
+            // Cache the results for future requests. Don't bother if there were no results.
+            if (results.length > 0 && this.cacheClient && this.modelClass.cacheTTL) {
                 const uids: string[] = results.map((obj: T) => obj.uid);
                 void this.cacheClient.setex(
                     `${this.baseCacheKey}.${searchQueryHash}`,

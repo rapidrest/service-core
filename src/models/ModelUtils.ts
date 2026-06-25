@@ -43,7 +43,7 @@ export class ModelUtils {
     /**
      * Returns the `typeorm` module, throwing an error if it has not been provided.
      */
-    private static get orm(): any {
+    public static get orm(): any {
         if (!ModelUtils.typeOrm) {
             throw new Error(
                 "SQL query construction requires the optional peer dependency 'typeorm' but no SQL datastore has been initialized.",
