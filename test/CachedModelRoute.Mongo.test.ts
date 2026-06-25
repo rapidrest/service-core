@@ -253,6 +253,19 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
                 expect(result.body[i].firstName).toBe(users[i].firstName);
                 expect(result.body[i].lastName).toBe(users[i].lastName);
                 expect(result.body[i].version).toBe(users[i].version);
+
+                // Verify the object also exists in the cache
+                const query: any = ModelUtils.buildIdSearchQueryMongo(CacheUser, result.body[i].uid);
+                const cacheKey: string = getCacheKey(query);
+                const json: string = await redis.get(cacheKey);
+                expect(json).toBeDefined();
+                const cachedObj: CacheUser = new CacheUser(JSON.parse(json));
+                expect(cachedObj).toBeDefined();
+                expect(cachedObj.uid).toEqual(result.body[i].uid);
+                expect(cachedObj.version).toEqual(result.body[i].version);
+                expect(cachedObj.firstName).toEqual(result.body[i].firstName);
+                expect(cachedObj.lastName).toEqual(result.body[i].lastName);
+                expect(cachedObj.age).toEqual(result.body[i].age);
             }
 
             const result2 = await request(server).get("/cachedusers");
@@ -268,6 +281,28 @@ describe("ModelRoute Tests [MongoDB with Caching]", () => {
             const result = await request(server).get("/cachedusers?lastName=Doctor");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(users.length);
+            for (let i = 0; i < result.body.length; i++) {
+                expect(result.body[i].uid).toBe(users[i].uid);
+                expect(result.body[i].age).toBe(users[i].age);
+                expect(new Date(result.body[i].dateCreated)).toEqual(users[i].dateCreated);
+                expect(new Date(result.body[i].dateModified)).toEqual(users[i].dateModified);
+                expect(result.body[i].firstName).toBe(users[i].firstName);
+                expect(result.body[i].lastName).toBe(users[i].lastName);
+                expect(result.body[i].version).toBe(users[i].version);
+
+                // Verify the object also exists in the cache
+                const query: any = ModelUtils.buildIdSearchQueryMongo(CacheUser, result.body[i].uid);
+                const cacheKey: string = getCacheKey(query);
+                const json: string = await redis.get(cacheKey);
+                expect(json).toBeDefined();
+                const cachedObj: CacheUser = new CacheUser(JSON.parse(json));
+                expect(cachedObj).toBeDefined();
+                expect(cachedObj.uid).toEqual(result.body[i].uid);
+                expect(cachedObj.version).toEqual(result.body[i].version);
+                expect(cachedObj.firstName).toEqual(result.body[i].firstName);
+                expect(cachedObj.lastName).toEqual(result.body[i].lastName);
+                expect(cachedObj.age).toEqual(result.body[i].age);
+            }
 
             const result2 = await request(server).get("/cachedusers?lastName=Doctor");
             expect(result2).toHaveProperty("body");

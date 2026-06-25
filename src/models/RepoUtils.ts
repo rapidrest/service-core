@@ -456,7 +456,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         } else {
                             // Find the desired object in the missing array
                             for (const obj of missing) {
-                                if (obj.uid === missingUids[i]) {
+                                if (obj.uid === uids[i]) {
                                     results.push(obj);
                                     break;
                                 }

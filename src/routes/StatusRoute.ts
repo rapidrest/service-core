@@ -15,12 +15,13 @@ const { Config, Inject } = ObjectDecorators;
  */
 @Route("/status")
 export class StatusRoute {
-    @Config()
-    private config: any;
+    @Config("service_name")
+    private serviceName: any;
+    @Config("version")
+    private serviceVersion: any;
 
     @Inject(StatusExtraData)
     private statusExtraData: StatusExtraData | undefined;
-
 
     @Summary("{{serviceName}} servrice and operational status")
     @Description("Returns information about the service and it's operational status.")
@@ -28,10 +29,10 @@ export class StatusRoute {
     @Returns([Object])
     private get(): any {
         return {
-            name: this.config.get("service_name"),
-            time: new Date().toISOString(),
-            version: this.config.get("version"),
-            ...this.statusExtraData?.data
+            name: this.serviceName,
+            time: Date.now(),
+            version: this.serviceVersion,
+            ...this.statusExtraData?.data,
         };
     }
 }
