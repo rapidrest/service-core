@@ -24,6 +24,8 @@ import { ConnectionManager } from "../database/index.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 const { RedisConnection } = DatabaseDecorators;
 
+const _hashCache = new Map();
+
 /**
  * The available options used for `RepoUtils` operations.
  */
@@ -594,7 +596,20 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      */
     public hashQuery(query: any): string {
         const queryStr: string = JSON.stringify(query);
-        return crypto.createHash("md5").update(queryStr).digest("hex");
+        let hash = _hashCache.get(queryStr);
+
+        if (hash === undefined) {
+            // Hash the query string
+            hash = crypto.createHash("md5").update(queryStr).digest("hex");
+            // Clear the hash cache if it grows too big to prevent runaway memory usage
+            if (_hashCache.size >= 10000) {
+                _hashCache.clear();
+            }
+            // Store the hashed query string for faster lookup next time
+            _hashCache.set(queryStr, hash);
+        }
+
+        return hash;
     }
 
     /**
