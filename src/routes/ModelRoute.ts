@@ -6,17 +6,31 @@ import { RepoOperationOptions, RepoUtils } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
 import { Redis } from "ioredis";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
-import type { HttpRequest as XRequest, HttpResponse as XResponse } from "../http/index.js";
+import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BulkError } from "../BulkError.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
-import { ApiError, Event, EventUtils, ObjectDecorators, ObjectUtils } from "@rapidrest/core";
+import { ApiError, Event, EventUtils, JWTUser, ObjectDecorators, ObjectUtils } from "@rapidrest/core";
 import { AccessControlList, ACLAction } from "../security/AccessControlList.js";
 import { ACLUtils } from "../security/ACLUtils.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { NetUtils } from "../NetUtils.js";
 import { ObjectFactory } from "../ObjectFactory.js";
-import { ConnectionManager } from "../database/index.js";
+import { Description, Returns, Summary, TypeInfo } from "../decorators/DocDecorators.js";
+import {
+    Auth,
+    Delete,
+    Get,
+    Head,
+    Param,
+    Post,
+    Put,
+    Query,
+    Request,
+    Response,
+    User,
+    Validate,
+} from "../decorators/RouteDecorators.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -24,9 +38,9 @@ const { Config, Init, Inject, Logger } = ObjectDecorators;
  */
 export interface RequestOptions extends RepoOperationOptions {
     /** The originating client request. */
-    req?: XRequest;
+    req?: HttpRequest;
     /** The outgoing client response. */
-    res?: XResponse;
+    res?: HttpResponse;
 }
 
 /**
@@ -135,7 +149,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     protected objectFactory?: ObjectFactory;
 
     /** The class of the RepoUtils to use when instantiating the utility. */
-    protected abstract readonly repoUtilsClass: any;
+    protected readonly repoUtilsClass: any = RepoUtils;
 
     /** The repository utility class to use for common operations. */
     protected repoUtils?: RepoUtils<T>;
@@ -184,7 +198,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
-    public async doCount(options: FindRequestOptions): Promise<XResponse> {
+    protected async doCount(options: FindRequestOptions): Promise<HttpResponse> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -212,6 +226,22 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         return options.res.status(200);
     }
 
+    @Summary("Count {{name}}s")
+    @Description(
+        "Returns the total count of {{name}}s in the datastore based on the given criteria " +
+            "in the header as `Content-Length`.",
+    )
+    @Returns([null])
+    @Head()
+    public async count(
+        @Param() params: any,
+        @Query() query: any,
+        @Response res: HttpResponse,
+        @User user?: JWTUser,
+    ): Promise<any> {
+        return this.doCount({ params, query, res, user });
+    }
+
     /**
      * Attempts to store an object provided in `options.req.body` into the datastore. Upon success, sets the newly persisted
      * object(s) to the `result` property of the `options.res` argument, otherwise sends a `400 BAD REQUEST` response to the
@@ -220,7 +250,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object to store in the database.
      * @param options The options to process the request using.
      */
-    public async doCreateObject(obj: Partial<T>, options: CreateRequestOptions): Promise<T> {
+    protected async doCreateObject(obj: Partial<T>, options: CreateRequestOptions): Promise<T> {
         if (!this.repoUtils) {
             throw new Error("repoUtils not set!");
         }
@@ -250,7 +280,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param objs The object(s) to store in the database.
      * @param options The options to process the request using.
      */
-    public async doBulkCreate(objs: Partial<T>[], options: CreateRequestOptions): Promise<T[]> {
+    protected async doBulkCreate(objs: Partial<T>[], options: CreateRequestOptions): Promise<T[]> {
         let thrownError: boolean = false;
         const errors: (Error | null)[] = [];
         const results: T[] = [];
@@ -280,7 +310,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object(s) to store in the database.
      * @param options The options to process the request using.
      */
-    public async doCreate(obj: Partial<T> | Partial<T>[], options: CreateRequestOptions): Promise<T | T[]> {
+    protected async doCreate(obj: Partial<T> | Partial<T>[], options: CreateRequestOptions): Promise<T | T[]> {
         if (
             this.aclUtils?.enabled &&
             !(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.CREATE))
@@ -301,6 +331,19 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
     }
 
+    protected validateCreate(obj: Partial<T> | Partial<T>[], @User user?: JWTUser) {
+        return this.validate(obj, { user });
+    }
+
+    @Summary("Create {{model}}(s)")
+    @Description("Create a new {{model}}.")
+    @Returns([Object])
+    @Post()
+    @Validate("validateCreate")
+    public create(obj: T | T[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T | Array<T>> {
+        return this.doCreate(obj, { req, user });
+    }
+
     /**
      * Attempts to delete an existing data model object with a given unique identifier encoded by the URI parameter
      * `id`.
@@ -308,7 +351,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param id The unique identifier of the object to delete.
      * @param options The options to process the request using.
      */
-    public async doDelete(id: string, options: DeleteRequestOptions): Promise<void> {
+    protected async doDelete(id: string, options: DeleteRequestOptions): Promise<void> {
         if (!this.repoUtils || !this.repoUtils.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -347,13 +390,21 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
     }
 
+    @Summary("Delete {{name}} by ID")
+    @Description("Deletes the {{name}} from the service.")
+    @Returns([null])
+    @Delete("/:id")
+    public async delete(@Param("id") id: string, @Request req: HttpRequest, @User user?: JWTUser): Promise<void> {
+        return this.doDelete(id, { user, req });
+    }
+
     /**
      * Attempts to determine if an existing object with the given unique identifier exists.
      *
      * @param id The unique identifier of the object to verify exists.
      * @param options The options to process the request using.
      */
-    public async doExists(id: string, options: FindRequestOptions): Promise<any> {
+    protected async doExists(id: string, options: FindRequestOptions): Promise<any> {
         if (!this.repoUtils || !options.res) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -387,6 +438,22 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
     }
 
+    @Summary("Exists")
+    @Description(
+        "Returns the total count of {{name}}s in the datastore based on the given criteria " +
+            "in the header as `Content-Length`.",
+    )
+    @Returns([null])
+    @Head("/:id")
+    public async exists(
+        @Param("id") id: string,
+        @Query() query: any,
+        @Response res: HttpResponse,
+        @User user?: JWTUser,
+    ): Promise<any> {
+        return this.doExists(id, { query, res, user });
+    }
+
     /**
      * Attempts to retrieve all data model objects matching the given set of criteria as specified in the request
      * `query`. Any results that have been found are set to the `result` property of the `res` argument. `result` is
@@ -394,7 +461,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
-    public async doFindAll(options: FindRequestOptions): Promise<T[]> {
+    protected async doFindAll(options: FindRequestOptions): Promise<T[]> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -423,12 +490,20 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         });
     }
 
+    @Summary("Find All {{model}}s")
+    @Description("Returns all {{model}}s from the system that the user has access to.")
+    @Returns([[Array, Object]])
+    @Get()
+    public async findAll(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<Array<T>> {
+        return this.doFindAll({ params, query, user });
+    }
+
     /**
      * Attempts to retrieve a single data model object as identified by the `id` parameter in the URI.
      *
      * @param options The options to process the request using.
      */
-    public async doFindById(id: string, options: FindRequestOptions): Promise<T | null> {
+    protected async doFindById(id: string, options: FindRequestOptions): Promise<T | null> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -463,13 +538,21 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         return result;
     }
 
+    @Summary("Find {{model}} by ID")
+    @Description("Returns a single {{model}} from the system that the user has access to.")
+    @Returns([Object])
+    @Get("/:id")
+    public async findById(@Param("id") id: string, @Query() query: any, @User user?: JWTUser): Promise<T | null> {
+        return this.doFindById(id, { query, user });
+    }
+
     /**
      * Attempts to remove all entries of the data model type from the datastore matching the given
      * parameters and query.
      *
      * @param options The options to process the request using.
      */
-    public async doTruncate(options: TruncateRequestOptions): Promise<void> {
+    protected async doTruncate(options: TruncateRequestOptions): Promise<void> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -502,13 +585,21 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
     }
 
+    @Summary("Truncate {{model}}s")
+    @Description("Deletes all {{model}}s from the datastore that the user has access to.")
+    @Returns([null])
+    @Delete()
+    public async truncate(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<void> {
+        return this.doTruncate({ params, query, user });
+    }
+
     /**
      * Attempts to modify a collection of existing data model objects.
      *
      * @param objs The object(s) to bulk update in the database.
      * @param options The options to process the request using.
      */
-    public async doBulkUpdate(objs: UpdateObject<T>[], options: UpdateRequestOptions<T>): Promise<T[]> {
+    protected async doBulkUpdate(objs: UpdateObject<T>[], options: UpdateRequestOptions<T>): Promise<T[]> {
         let thrownError: boolean = false;
         const errors: (Error | null)[] = [];
         const result: T[] = [];
@@ -536,7 +627,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object to update in the database
      * @param options The options to process the request using.
      */
-    public async doUpdate(id: string, obj: UpdateObject<T>, options: UpdateRequestOptions<T>): Promise<T> {
+    protected async doUpdate(id: string, obj: UpdateObject<T>, options: UpdateRequestOptions<T>): Promise<T> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -576,6 +667,24 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         return result;
     }
 
+    protected async validateUpdate(@Param("id") id: string, obj: UpdateObject<T>, @User user?: JWTUser) {
+        return this.validate(obj, { user });
+    }
+
+    @Summary("Update {{model}} by ID")
+    @Description("Updates a single {{model}}.")
+    @Returns([Object])
+    @Put("/:id")
+    @Validate("validateUpdate")
+    public async update(
+        @Param("id") id: string,
+        obj: UpdateObject<T>,
+        @Request req: HttpRequest,
+        @User user?: JWTUser,
+    ): Promise<T> {
+        return this.doUpdate(id, obj, { user });
+    }
+
     /**
      * Attempts to modify a single property of an existing data model object as identified by the `id` parameter in the URI.
      *
@@ -586,7 +695,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param value The value of the property to set.
      * @param options The options to process the request using.
      */
-    public async doUpdateProperty(
+    protected async doUpdateProperty(
         id: string,
         propertyName: string,
         value: any,
@@ -624,10 +733,24 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         );
     }
 
+    @Summary("Update {{model}} by ID and property")
+    @Put(":id/:property")
+    @Description("Updates a single property of an existing {{model}}.")
+    @TypeInfo([Object])
+    @Returns([Object])
+    public updateProperty(
+        @Param("id") id: string,
+        @Param("property") propertyName: string,
+        obj: any,
+        @User user?: JWTUser,
+    ): Promise<T> {
+        return this.doUpdateProperty(id, propertyName, obj, { user });
+    }
+
     /**
      * Calls `repoUtils.validate()` to validate the object(s) provided.
      */
-    public async doValidate(
+    public async validate(
         objs: Partial<T> | Partial<T>[],
         options?: CreateRequestOptions | UpdateRequestOptions<T>,
     ): Promise<void> {

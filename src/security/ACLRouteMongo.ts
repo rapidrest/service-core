@@ -1,178 +1,103 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import type { HttpRequest as XRequest, HttpResponse as XResponse } from "../http/index.js";
+import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { AccessControlListMongo } from "./AccessControlListMongo.js";
-import { MongoRepository as Repo } from "../database/MongoRepository.js";
 import { ACLAction } from "./AccessControlList.js";
 import { ApiError, JWTUser, UserUtils } from "@rapidrest/core";
-import { DatabaseDecorators, DocDecorators, RouteDecorators } from "../decorators/index.js";
-import { ModelRoute } from "../routes/ModelRoute.js";
-import { RepoUtils } from "../models/index.js";
+import { ModelRoute, UpdateObject } from "../routes/ModelRoute.js";
 import { ApiErrorMessages } from "../ApiErrors.js";
-const { MongoRepository } = DatabaseDecorators;
-const { Description, Returns, Summary, TypeInfo } = DocDecorators;
-const { Auth, Delete, Get, Head, Model, Param, Post, Put, Query, Request, Response, Route, User } = RouteDecorators;
+import { Before, Model, Param, Query, Request, Response, Route, User } from "../decorators/RouteDecorators.js";
 
 @Model(AccessControlListMongo)
 @Route("/acls")
 export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
-    @MongoRepository(AccessControlListMongo)
-    protected repo?: Repo<AccessControlListMongo>;
-
-    protected readonly repoUtilsClass: any = RepoUtils;
-
-    constructor() {
-        super();
-    }
-
-    /**
-     * The base key used to get or set data in the cache.
-     */
-    protected get baseCacheKey(): string {
-        return "db.cache.AccessControlList";
-    }
-
-    @Summary("Creates Access Control Lists.")
-    @Description("Creates one or more access control lists.")
-    @Auth(["jwt"])
-    @Post()
-    @TypeInfo([AccessControlListMongo, [Array, AccessControlListMongo]])
-    @Returns([AccessControlListMongo, [Array, AccessControlListMongo]])
-    private create(
-        objs: AccessControlListMongo | AccessControlListMongo[],
-        @Request req: XRequest,
-        @User user?: JWTUser,
-    ): Promise<AccessControlListMongo | AccessControlListMongo[]> {
-        if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
+    protected async checkPerms(@Param() params: any, @User user: JWTUser): Promise<void> {
+        if (!user) {
+            throw new ApiError(ApiErrorMessages.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
+        }
+        if (
+            !UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
+            !(params.id && (await this.aclUtils?.hasPermission(user, params.id, ACLAction.FULL)))
+        ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
-        return super.doCreate(objs, { user, recordEvent: true, req });
     }
 
-    @Summary("Bulk Update Access Control Lists.")
-    @Description("Saves modifications for the given collection of access control lists.")
-    @Auth(["jwt"])
-    @Put()
-    @TypeInfo([[Array, AccessControlListMongo]])
-    @Returns([[Array, AccessControlListMongo]])
-    private updateBulk(
-        objs: AccessControlListMongo[],
-        @Request req: XRequest,
-        @User user?: JWTUser,
-    ): Promise<AccessControlListMongo[]> {
-        if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
-        return super.doBulkUpdate(objs, { user, recordEvent: true, req });
-    }
-
-    @Summary("Count Access Control Lists.")
-    @Description("Returns the total number of access control lists matching the given search criteria.")
-    @Auth(["jwt"])
-    @Head()
-    @Returns([null])
-    private count(
+    @Before("checkPerms")
+    public count(
         @Param() params: any,
         @Query() query: any,
-        @Response res: XResponse,
+        @Response res: HttpResponse,
         @User user?: JWTUser,
     ): Promise<any> {
-        if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
-
-        return super.doCount({ params, query, res, user });
+        return super.count(params, query, res, user);
     }
 
-    @Summary("Find All Access Control Lists.")
-    @Description("Returns a collection of access control lists matching the given search criteria.")
-    @Auth(["jwt"])
-    @Get()
-    @Returns([[Array, AccessControlListMongo]])
-    private findAll(
+    @Before("checkPerms")
+    public create(
+        obj: AccessControlListMongo | AccessControlListMongo[],
+        @Request req: HttpRequest,
+        @User user?: JWTUser,
+    ): Promise<AccessControlListMongo | Array<AccessControlListMongo>> {
+        return super.create(obj, req, user);
+    }
+
+    @Before("checkPerms")
+    public delete(@Param("id") id: string, @Request req: HttpRequest, @User user?: JWTUser): Promise<void> {
+        return super.delete(id, req, user);
+    }
+
+    @Before("checkPerms")
+    public exists(
+        @Param("id") id: string,
+        @Query() query: any,
+        @Response res: HttpResponse,
+        @User user?: JWTUser,
+    ): Promise<any> {
+        return super.exists(id, query, res, user);
+    }
+
+    @Before("checkPerms")
+    public findAll(
         @Param() params: any,
         @Query() query: any,
         @User user?: JWTUser,
-    ): Promise<AccessControlListMongo[]> {
-        if (!user || !UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
-
-        return super.doFindAll({ params, query, user });
+    ): Promise<Array<AccessControlListMongo>> {
+        return super.findAll(params, query, user);
     }
 
-    @Summary("Delete Access Control Lists by Id.")
-    @Description("Deletes the access control list with the given unique identifier and optional version.")
-    @Auth(["jwt"])
-    @Delete("/:id")
-    @Returns([null])
-    private async delete(
+    @Before("checkPerms")
+    public async findById(
         @Param("id") id: string,
-        @Request req: XRequest,
-        @Query("version") version: string,
+        @Query() query: any,
         @User user?: JWTUser,
-    ): Promise<void> {
-        if (
-            !user ||
-            (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
-        ) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
-
-        if (id.startsWith("default_")) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
-
-        return super.doDelete(id, { version, user, recordEvent: true, req });
-    }
-
-    @Summary("Find Access Control Lists by Id.")
-    @Description("Returns the access control list with the given unique identifier.")
-    @Auth(["jwt"])
-    @Get("/:id")
-    @Returns([AccessControlListMongo])
-    private async findById(
-        @Param("id") id: string,
-        @Query() query?: any,
-        @User user?: any,
     ): Promise<AccessControlListMongo | null> {
-        if (
-            !user ||
-            (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
-        ) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
-
-        return super.doFindById(id, { query, user });
+        return super.findById(id, query, user);
     }
 
-    @Summary("Update Access Control Lists by Id.")
-    @Description("Saves modifications to existing access control list with the given unique identifier.")
-    @Auth(["jwt"])
-    @Put("/:id")
-    @Returns([AccessControlListMongo])
-    private async update(
+    @Before("checkPerms")
+    public truncate(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<void> {
+        return super.truncate(params, query, user);
+    }
+
+    @Before("checkPerms")
+    public update(
         @Param("id") id: string,
-        obj: AccessControlListMongo,
-        @Request req: XRequest,
+        obj: UpdateObject<AccessControlListMongo>,
+        @Request req: HttpRequest,
         @User user?: JWTUser,
     ): Promise<AccessControlListMongo> {
-        if (
-            !user ||
-            (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !(await this.aclUtils?.hasPermission(user, id, ACLAction.FULL)))
-        ) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
+        return super.update(id, obj, req, user);
+    }
 
-        if (id.startsWith("default_")) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
-
-        const acl: AccessControlListMongo = new AccessControlListMongo(obj);
-        return super.doUpdate(id, acl, { user, recordEvent: true, req });
+    @Before("checkPerms")
+    public updateProperty(
+        @Param("id") id: string,
+        @Param("property") propertyName: string,
+        obj: any,
+        @User user?: JWTUser,
+    ): Promise<AccessControlListMongo> {
+        return super.updateProperty(id, propertyName, obj, user);
     }
 }

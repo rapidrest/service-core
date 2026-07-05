@@ -5,6 +5,36 @@ import "reflect-metadata";
 import { AccessControlList } from "../security/AccessControlList.js";
 
 /**
+ * Retrieves a copy of the `rrst:route` metadata for the given target/propertyKey. `Reflect.getMetadata` walks the
+ * prototype chain, so when a subclass overrides a decorated method without having its own metadata yet, it would
+ * otherwise receive the *same* metadata object instance stored on the base class. Mutating that shared object (as
+ * the decorators below do) would corrupt the base class's metadata for every other subclass. Cloning here ensures
+ * each class's metadata is independent while still inheriting the base's values at decoration time.
+ *
+ * @param target The class prototype to retrieve metadata for.
+ * @param propertyKey The name of the method to retrieve metadata for.
+ */
+function getRouteMetadata(target: any, propertyKey: string): any {
+    const existing: any = Reflect.getMetadata("rrst:route", target, propertyKey);
+    return {
+        ...existing,
+        methods: existing?.methods ? new Map(existing.methods) : undefined,
+    };
+}
+
+/**
+ * Retrieves a copy of the `rrst:args` metadata for the given target/propertyKey, for the same reason described
+ * above for `getRouteMetadata`: overriding a decorated method requires re-declaring its parameter decorators, which
+ * would otherwise mutate the args metadata object inherited from the overridden ancestor method.
+ *
+ * @param target The class prototype to retrieve metadata for.
+ * @param propertyKey The name of the method to retrieve metadata for.
+ */
+function getArgsMetadata(target: any, propertyKey: string): any {
+    return { ...Reflect.getMetadata("rrst:args", target, propertyKey) };
+}
+
+/**
  * Indicates a provided function or list of functions to execute *after* the decorated function and before the response
  * is sent to a client. Note that the function must call `next()` in order for this decorator to work.
  *
@@ -12,7 +42,7 @@ import { AccessControlList } from "../security/AccessControlList.js";
  */
 export function After(func: Function | string | (Function | string)[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        let route: any = Reflect.getMetadata("rrst:route", target, propertyKey) || {};
+        let route: any = getRouteMetadata(target, propertyKey);
 
         // Ensure we always have an array of functions. Also, append the new list of functions to any existing list.
         let funcs: (Function | string)[] = Array.isArray(func) ? func : [func];
@@ -32,7 +62,7 @@ export function After(func: Function | string | (Function | string)[]) {
  */
 export function Auth(strategies: string | string[], require: boolean = true) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        let route: any = Reflect.getMetadata("rrst:route", target, propertyKey) || {};
+        let route: any = getRouteMetadata(target, propertyKey);
         route.authStrategies = strategies;
         route.authRequired = require;
         Reflect.defineMetadata("rrst:route", route, target, propertyKey);
@@ -43,7 +73,7 @@ export function Auth(strategies: string | string[], require: boolean = true) {
  * Injects the authenticated authentication result as the value of the decorated argument.
  */
 export function AuthResult(target: any, propertyKey: string, index: number) {
-    let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+    let args: any = getArgsMetadata(target, propertyKey);
     args[index] = ["authResult"];
     Reflect.defineMetadata("rrst:args", args, target, propertyKey);
 }
@@ -55,7 +85,7 @@ export function AuthResult(target: any, propertyKey: string, index: number) {
  */
 export function Before(func: Function | string | (Function | string)[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        let route: any = Reflect.getMetadata("rrst:route", target, propertyKey) || {};
+        let route: any = getRouteMetadata(target, propertyKey);
 
         // Ensure we always have an array of functions. Also, append the new list of functions to any existing list.
         let funcs: (Function | string)[] = Array.isArray(func) ? func : [func];
@@ -72,7 +102,7 @@ export function Before(func: Function | string | (Function | string)[]) {
  */
 export function ContentType(type: string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        const route: any = Reflect.getMetadata("rrst:route", target, propertyKey) || {};
+        const route: any = getRouteMetadata(target, propertyKey);
         route.contentType = type;
         Reflect.defineMetadata("rrst:route", route, target, propertyKey);
     };
@@ -112,7 +142,7 @@ export function Head(path?: string) {
  */
 export function Header(name: string) {
     return function (target: any, propertyKey: string, index: number) {
-        let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+        let args: any = getArgsMetadata(target, propertyKey);
         args[index] = ["header", name];
         Reflect.defineMetadata("rrst:args", args, target, propertyKey);
     };
@@ -126,7 +156,7 @@ export function Header(name: string) {
  */
 export function Method(method: string | string[], path?: string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        let route: any = Reflect.getMetadata("rrst:route", target, propertyKey) || {};
+        let route: any = getRouteMetadata(target, propertyKey);
         const pathFinal: string = path ? path : "";
 
         if (!route.methods) {
@@ -173,7 +203,7 @@ export function Options(path?: string) {
  */
 export function Param(name: string | undefined = undefined) {
     return function (target: any, propertyKey: string, index: number) {
-        let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+        let args: any = getArgsMetadata(target, propertyKey);
         args[index] = ["param", name];
         Reflect.defineMetadata("rrst:args", args, target, propertyKey);
     };
@@ -264,7 +294,7 @@ export function Protect(
  */
 export function Query(name: string | undefined = undefined) {
     return function (target: any, propertyKey: string, index: number) {
-        let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+        let args: any = getArgsMetadata(target, propertyKey);
         args[index] = ["query", name];
         Reflect.defineMetadata("rrst:args", args, target, propertyKey);
     };
@@ -274,7 +304,7 @@ export function Query(name: string | undefined = undefined) {
  * Injects the Express request object as the value of the decorated argument.
  */
 export function Request(target: any, propertyKey: string, index: number) {
-    let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+    let args: any = getArgsMetadata(target, propertyKey);
     args[index] = ["request"];
     Reflect.defineMetadata("rrst:args", args, target, propertyKey);
 }
@@ -283,7 +313,7 @@ export function Request(target: any, propertyKey: string, index: number) {
  * Injects the Express response object as the value of the decorated argument.
  */
 export function Response(target: any, propertyKey: string, index: number) {
-    let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+    let args: any = getArgsMetadata(target, propertyKey);
     args[index] = ["response"];
     Reflect.defineMetadata("rrst:args", args, target, propertyKey);
 }
@@ -296,7 +326,7 @@ export function Response(target: any, propertyKey: string, index: number) {
  */
 export function RequiresRole(roles: string | string[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        let route: any = Reflect.getMetadata("rrst:route", target, propertyKey) || {};
+        let route: any = getRouteMetadata(target, propertyKey);
         route.requiredRoles = Array.isArray(roles) ? roles : [roles];
         Reflect.defineMetadata("rrst:route", route, target, propertyKey);
     };
@@ -321,7 +351,7 @@ export function Route(paths: string | string[]) {
  * WebSocket connection.
  */
 export function Socket(target: any, propertyKey: string, index: number) {
-    let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+    let args: any = getArgsMetadata(target, propertyKey);
     args[index] = ["socket"];
     Reflect.defineMetadata("rrst:args", args, target, propertyKey);
 }
@@ -330,7 +360,7 @@ export function Socket(target: any, propertyKey: string, index: number) {
  * Injects the authenticated user object as the value of the decorated argument.
  */
 export function User(target: any, propertyKey: string, index: number) {
-    let args: any = Reflect.getMetadata("rrst:args", target, propertyKey) || {};
+    let args: any = getArgsMetadata(target, propertyKey);
     args[index] = ["user"];
     Reflect.defineMetadata("rrst:args", args, target, propertyKey);
 }
@@ -342,7 +372,7 @@ export function User(target: any, propertyKey: string, index: number) {
  */
 export function Validate(func: Function | string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        let route: any = Reflect.getMetadata("rrst:route", target, propertyKey) || {};
+        let route: any = getRouteMetadata(target, propertyKey);
         route.validator = func;
         Reflect.defineMetadata("rrst:route", route, target, propertyKey);
     };
