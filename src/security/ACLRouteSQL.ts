@@ -22,6 +22,35 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
         }
     }
 
+    /**
+     * The `default_<uid>` records are regenerated from code on every server startup (see
+     * `ACLUtils.saveDefaultACL`) and exist solely to seed the user-editable override record. They must never be
+     * deleted or modified directly, even by an administrator, since doing so would have no lasting effect and would
+     * only cause confusion.
+     */
+    protected checkNotDefault(@Param("id") id: string): void {
+        if (id && id.startsWith("default_")) {
+            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+        }
+    }
+
+    /**
+     * Bulk updates have no `:id` URI parameter to check a per-record permission against, so unlike `checkPerms`
+     * we can't fall back to a per-record `FULL` permission check here. Require a trusted role for every bulk
+     * update instead, and disallow touching any `default_<uid>` record (see `checkNotDefault`).
+     */
+    protected checkPermsBulk(objs: UpdateObject<AccessControlListSQL>[], @User user: JWTUser): void {
+        if (!user) {
+            throw new ApiError(ApiErrorMessages.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
+        }
+        if (!UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
+            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+        }
+        if (objs?.some((obj) => obj.uid && obj.uid.startsWith("default_"))) {
+            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+        }
+    }
+
     @Before("checkPerms")
     public count(
         @Param() params: any,
@@ -41,9 +70,15 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
         return super.create(obj, req, user);
     }
 
-    @Before("checkPerms")
-    public delete(@Param("id") id: string, @Request req: HttpRequest, @User user?: JWTUser): Promise<void> {
-        return super.delete(id, req, user);
+    @Before(["checkPerms", "checkNotDefault"])
+    public delete(
+        @Param("id") id: string,
+        @Query("version") version: string | undefined,
+        @Query("purge") purge: string | undefined,
+        @Request req: HttpRequest,
+        @User user?: JWTUser,
+    ): Promise<void> {
+        return super.delete(id, version, purge, req, user);
     }
 
     @Before("checkPerms")
@@ -79,7 +114,7 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
         return super.truncate(params, query, user);
     }
 
-    @Before("checkPerms")
+    @Before(["checkPerms", "checkNotDefault"])
     public update(
         @Param("id") id: string,
         obj: UpdateObject<AccessControlListSQL>,
@@ -97,5 +132,14 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
         @User user?: JWTUser,
     ): Promise<AccessControlListSQL> {
         return super.updateProperty(id, propertyName, obj, user);
+    }
+
+    @Before("checkPermsBulk")
+    public updateBulk(
+        obj: UpdateObject<AccessControlListSQL>[],
+        @Request req: HttpRequest,
+        @User user?: JWTUser,
+    ): Promise<AccessControlListSQL[]> {
+        return super.updateBulk(obj, req, user);
     }
 }

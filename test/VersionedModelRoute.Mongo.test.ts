@@ -89,6 +89,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
     describe("Single Document Tests [MongoDB]", () => {
         it("Can create document. [MongoDB]", async () => {
             const user: User = new User({
+                name: "david.tennant",
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,

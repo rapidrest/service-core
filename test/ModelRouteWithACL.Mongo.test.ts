@@ -25,6 +25,7 @@ let aclRepo: MongoRepository<AccessControlListMongo>;
 const createUser = async (obj: any, ownerUid?: string): Promise<ProtectedUser> => {
     const user: ProtectedUser = new ProtectedUser({
         ...obj,
+        name: obj.name || uuid.v4(),
     });
 
     const result: ProtectedUser = await repo.save(user);
@@ -144,6 +145,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
     describe("Single Document Tests [MongoDB]", () => {
         it("Can create document (anonymous). [MongoDB]", async () => {
             const user: ProtectedUser = new ProtectedUser({
+                name: "dtennant",
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,
@@ -177,6 +179,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Can create document (admin). [MongoDB]", async () => {
             const user: ProtectedUser = new ProtectedUser({
+                name: "dtennant",
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,
@@ -217,6 +220,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
 
         it("Cannot create document (user). [MongoDB]", async () => {
             const user: ProtectedUser = new ProtectedUser({
+                name: "dtennant",
                 firstName: "David",
                 lastName: "Tennant",
                 age: 47,

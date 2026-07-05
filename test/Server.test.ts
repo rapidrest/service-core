@@ -140,7 +140,7 @@ describe("Server Tests", () => {
         expect(result.body.info.termsOfService).toBe(config.get("termsOfService"));
         expect(result.body.info.license).toBe(config.get("license"));
         expect(result.body.info.version).toBe(config.get("version"));
-        expect(Object.keys(result.body.paths).length).toBe(35)
+        expect(Object.keys(result.body.paths).length).toBe(40)
         fs.writeFileSync("./openapi.json", JSON.stringify(result.body));
         const schemas = Object.keys(result.body.components.schemas);
         const parameters = Object.keys(result.body.components.parameters);

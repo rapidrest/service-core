@@ -394,8 +394,14 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     @Description("Deletes the {{name}} from the service.")
     @Returns([null])
     @Delete("/:id")
-    public async delete(@Param("id") id: string, @Request req: HttpRequest, @User user?: JWTUser): Promise<void> {
-        return this.doDelete(id, { user, req });
+    public async delete(
+        @Param("id") id: string,
+        @Query("version") version: string | undefined,
+        @Query("purge") purge: string | undefined,
+        @Request req: HttpRequest,
+        @User user?: JWTUser,
+    ): Promise<void> {
+        return this.doDelete(id, { user, req, version, purge: purge === "true" });
     }
 
     /**
@@ -683,6 +689,23 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         @User user?: JWTUser,
     ): Promise<T> {
         return this.doUpdate(id, obj, { user });
+    }
+
+    protected async validateUpdateBulk(objs: UpdateObject<T>[], @User user?: JWTUser) {
+        return this.validate(objs, { user });
+    }
+
+    @Summary("Update {{model}}s in bulk")
+    @Description("Updates a collection of existing {{model}}s.")
+    @Returns([[Array, Object]])
+    @Put()
+    @Validate("validateUpdateBulk")
+    public async updateBulk(
+        obj: UpdateObject<T>[],
+        @Request req: HttpRequest,
+        @User user?: JWTUser,
+    ): Promise<T[]> {
+        return this.doBulkUpdate(obj, { user, req });
     }
 
     /**
