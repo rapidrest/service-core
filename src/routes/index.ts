@@ -1,4 +1,5 @@
 export * from "./AdminRoute.js";
+export * from "./CRUDRoute.js";
 export * from "./MetricsRoute.js";
 export * from "./ModelRoute.js";
 export * from "./OpenAPIRoute.js";
