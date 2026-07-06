@@ -3,9 +3,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 import UserModel from "../models/ProtectedUser";
 import { RouteDecorators } from "../../../src/decorators";
-import { ModelRoute } from "../../../src/routes/ModelRoute";
+import { CRUDRoute } from "../../../src/routes/CRUDRoute";
 const { Route, Model } = RouteDecorators;
 
 @Model(UserModel)
 @Route("/userswithacl")
-export default class UserWithACLRoute extends ModelRoute<UserModel> {}
+export default class UserWithACLRoute extends CRUDRoute<UserModel> {}

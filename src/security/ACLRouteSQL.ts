@@ -5,13 +5,14 @@ import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
 import { ACLAction } from "./AccessControlList.js";
 import { ApiError, JWTUser, UserUtils } from "@rapidrest/core";
-import { ModelRoute, UpdateObject } from "../routes/ModelRoute.js";
+import { UpdateObject } from "../routes/ModelRoute.js";
 import { ApiErrorMessages } from "../ApiErrors.js";
 import { Before, Model, Param, Query, Request, Response, Route, User } from "../decorators/RouteDecorators.js";
+import { CRUDRoute } from "../routes/CRUDRoute.js";
 
 @Model(AccessControlListSQL)
 @Route("/acls")
-export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
+export class ACLRouteSQL extends CRUDRoute<AccessControlListSQL> {
     protected async checkPerms(@Param() params: any, @User user: JWTUser): Promise<void> {
         if (
             !user ||
@@ -92,12 +93,8 @@ export class ACLRouteSQL extends ModelRoute<AccessControlListSQL> {
     }
 
     @Before("checkPerms")
-    public findAll(
-        @Param() params: any,
-        @Query() query: any,
-        @User user?: JWTUser,
-    ): Promise<Array<AccessControlListSQL>> {
-        return super.findAll(params, query, user);
+    public find(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<Array<AccessControlListSQL>> {
+        return super.find(params, query, user);
     }
 
     @Before("checkPerms")

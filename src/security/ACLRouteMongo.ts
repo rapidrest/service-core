@@ -5,13 +5,14 @@ import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { AccessControlListMongo } from "./AccessControlListMongo.js";
 import { ACLAction } from "./AccessControlList.js";
 import { ApiError, JWTUser, UserUtils } from "@rapidrest/core";
-import { ModelRoute, UpdateObject } from "../routes/ModelRoute.js";
+import { UpdateObject } from "../routes/ModelRoute.js";
 import { ApiErrorMessages } from "../ApiErrors.js";
 import { Before, Model, Param, Query, Request, Response, Route, User } from "../decorators/RouteDecorators.js";
+import { CRUDRoute } from "../routes/CRUDRoute.js";
 
 @Model(AccessControlListMongo)
 @Route("/acls")
-export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
+export class ACLRouteMongo extends CRUDRoute<AccessControlListMongo> {
     protected async checkPerms(@Param() params: any, @User user: JWTUser): Promise<void> {
         if (!user) {
             throw new ApiError(ApiErrorMessages.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
@@ -94,12 +95,12 @@ export class ACLRouteMongo extends ModelRoute<AccessControlListMongo> {
     }
 
     @Before("checkPerms")
-    public findAll(
+    public find(
         @Param() params: any,
         @Query() query: any,
         @User user?: JWTUser,
     ): Promise<Array<AccessControlListMongo>> {
-        return super.findAll(params, query, user);
+        return super.find(params, query, user);
     }
 
     @Before("checkPerms")

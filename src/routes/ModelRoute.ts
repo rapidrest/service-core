@@ -1,4 +1,4 @@
-﻿///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { ModelUtils } from "../models/ModelUtils.js";
@@ -10,27 +10,12 @@ import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BulkError } from "../BulkError.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
-import { ApiError, Event, EventUtils, JWTUser, ObjectDecorators, ObjectUtils } from "@rapidrest/core";
+import { ApiError, Event, EventUtils, ObjectDecorators } from "@rapidrest/core";
 import { AccessControlList, ACLAction } from "../security/AccessControlList.js";
 import { ACLUtils } from "../security/ACLUtils.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { NetUtils } from "../NetUtils.js";
 import { ObjectFactory } from "../ObjectFactory.js";
-import { Description, Returns, Summary, TypeInfo } from "../decorators/DocDecorators.js";
-import {
-    Auth,
-    Delete,
-    Get,
-    Head,
-    Param,
-    Post,
-    Put,
-    Query,
-    Request,
-    Response,
-    User,
-    Validate,
-} from "../decorators/RouteDecorators.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -111,16 +96,23 @@ export interface UpdateRequestOptions<T extends BaseEntity | SimpleEntity> exten
 
 /**
  * The `ModelRoute` is an abstract base class that provides a set of built-in route behavior functions for handling
- * requests for a given data model that is managed by a persistent datastore.
+ * requests for a given data model that is managed by a persistent datastore. This class _does not_ provide route
+ * handlers for the defined behaviors. This class is intended to serve as a base class for you to extend and hook
+ * up your own route handlers that use the included functionality as desired so that you only expose the CRUD
+ * endpoints for your model that you desire. If you desire a fully functional set of route handlers that implements
+ * all of these behaviors you should extend the `CRUDRoute` class instead.
  *
  * Provided behaviors:
- * * `count` - Counts the number of objects matching the provided set of criteria in the request's query parameters.
- * * `create` - Adds a new object to the datastore.
- * * `delete` - Removes an existing object from the datastore.
- * * `find` - Finds all objects matching the provided set of criteria in the request's query parameters.
- * * `findById` - Finds a single object with a specified unique identifier.
- * * `truncate` - Removes all objects from the datastore.
- * * `update` - Modifies an existing object in the datastore.
+ * * `doCount`: Counts the number of objects matching the provided set of criteria in the request's query parameters. Returns the count as the value of the `Content-Length` header.
+ * * `doCreate`: Adds one or more new objects to the datastore.
+ * * `doDelete`: Removes an existing object from the datastore.
+ * * `doExists`: Checks if the object with the given ID exists in the datastore. Sets `Content-Length` header to `1` if the object exists, otherwise `0`.
+ * * `doFind`: Returns all objects matching the provided set of criteria in the request's query parameters.
+ * * `doFindById`: Returns a single object with a specified unique identifier.
+ * * `doTruncate`: Removes all objects from the datastore.
+ * * `doUpdate`: Modifies an existing object in the datastore.
+ * * `doUpdateBulk`: Modifies multiple existing objects in the datastore.
+ * * `doUpdateProperty`: Modifies an single property of the given name of an existing object in the datastore.
  *
  * @author Jean-Philippe Steinmetz
  */
@@ -149,7 +141,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     protected objectFactory?: ObjectFactory;
 
     /** The class of the RepoUtils to use when instantiating the utility. */
-    protected readonly repoUtilsClass: any = RepoUtils;
+    protected abstract readonly repoUtilsClass: any;
 
     /** The repository utility class to use for common operations. */
     protected repoUtils?: RepoUtils<T>;
@@ -224,22 +216,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         options.res.setHeader("content-length", result);
 
         return options.res.status(200);
-    }
-
-    @Summary("Count {{name}}s")
-    @Description(
-        "Returns the total count of {{name}}s in the datastore based on the given criteria " +
-            "in the header as `Content-Length`.",
-    )
-    @Returns([null])
-    @Head()
-    public async count(
-        @Param() params: any,
-        @Query() query: any,
-        @Response res: HttpResponse,
-        @User user?: JWTUser,
-    ): Promise<any> {
-        return this.doCount({ params, query, res, user });
     }
 
     /**
@@ -331,19 +307,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
     }
 
-    protected validateCreate(obj: Partial<T> | Partial<T>[], @User user?: JWTUser) {
-        return this.validate(obj, { user });
-    }
-
-    @Summary("Create {{model}}(s)")
-    @Description("Create a new {{model}}.")
-    @Returns([Object])
-    @Post()
-    @Validate("validateCreate")
-    public create(obj: T | T[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T | Array<T>> {
-        return this.doCreate(obj, { req, user });
-    }
-
     /**
      * Attempts to delete an existing data model object with a given unique identifier encoded by the URI parameter
      * `id`.
@@ -390,20 +353,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
     }
 
-    @Summary("Delete {{name}} by ID")
-    @Description("Deletes the {{name}} from the service.")
-    @Returns([null])
-    @Delete("/:id")
-    public async delete(
-        @Param("id") id: string,
-        @Query("version") version: string | undefined,
-        @Query("purge") purge: string | undefined,
-        @Request req: HttpRequest,
-        @User user?: JWTUser,
-    ): Promise<void> {
-        return this.doDelete(id, { user, req, version, purge: purge === "true" });
-    }
-
     /**
      * Attempts to determine if an existing object with the given unique identifier exists.
      *
@@ -444,22 +393,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
     }
 
-    @Summary("Exists")
-    @Description(
-        "Returns the total count of {{name}}s in the datastore based on the given criteria " +
-            "in the header as `Content-Length`.",
-    )
-    @Returns([null])
-    @Head("/:id")
-    public async exists(
-        @Param("id") id: string,
-        @Query() query: any,
-        @Response res: HttpResponse,
-        @User user?: JWTUser,
-    ): Promise<any> {
-        return this.doExists(id, { query, res, user });
-    }
-
     /**
      * Attempts to retrieve all data model objects matching the given set of criteria as specified in the request
      * `query`. Any results that have been found are set to the `result` property of the `res` argument. `result` is
@@ -467,7 +400,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
-    protected async doFindAll(options: FindRequestOptions): Promise<T[]> {
+    protected async doFind(options: FindRequestOptions): Promise<T[]> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
@@ -494,14 +427,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             version: options.params?.version || options.query?.version,
             user: options.user,
         });
-    }
-
-    @Summary("Find All {{model}}s")
-    @Description("Returns all {{model}}s from the system that the user has access to.")
-    @Returns([[Array, Object]])
-    @Get()
-    public async findAll(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<Array<T>> {
-        return this.doFindAll({ params, query, user });
     }
 
     /**
@@ -544,14 +469,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         return result;
     }
 
-    @Summary("Find {{model}} by ID")
-    @Description("Returns a single {{model}} from the system that the user has access to.")
-    @Returns([Object])
-    @Get("/:id")
-    public async findById(@Param("id") id: string, @Query() query: any, @User user?: JWTUser): Promise<T | null> {
-        return this.doFindById(id, { query, user });
-    }
-
     /**
      * Attempts to remove all entries of the data model type from the datastore matching the given
      * parameters and query.
@@ -589,14 +506,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             };
             void EventUtils.record(new Event(this.config, options.user ? options.user.uid : "anonymous", evt));
         }
-    }
-
-    @Summary("Truncate {{model}}s")
-    @Description("Deletes all {{model}}s from the datastore that the user has access to.")
-    @Returns([null])
-    @Delete()
-    public async truncate(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<void> {
-        return this.doTruncate({ params, query, user });
     }
 
     /**
@@ -673,41 +582,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         return result;
     }
 
-    protected async validateUpdate(@Param("id") id: string, obj: UpdateObject<T>, @User user?: JWTUser) {
-        return this.validate(obj, { user });
-    }
-
-    @Summary("Update {{model}} by ID")
-    @Description("Updates a single {{model}}.")
-    @Returns([Object])
-    @Put("/:id")
-    @Validate("validateUpdate")
-    public async update(
-        @Param("id") id: string,
-        obj: UpdateObject<T>,
-        @Request req: HttpRequest,
-        @User user?: JWTUser,
-    ): Promise<T> {
-        return this.doUpdate(id, obj, { user });
-    }
-
-    protected async validateUpdateBulk(objs: UpdateObject<T>[], @User user?: JWTUser) {
-        return this.validate(objs, { user });
-    }
-
-    @Summary("Update {{model}}s in bulk")
-    @Description("Updates a collection of existing {{model}}s.")
-    @Returns([[Array, Object]])
-    @Put()
-    @Validate("validateUpdateBulk")
-    public async updateBulk(
-        obj: UpdateObject<T>[],
-        @Request req: HttpRequest,
-        @User user?: JWTUser,
-    ): Promise<T[]> {
-        return this.doBulkUpdate(obj, { user, req });
-    }
-
     /**
      * Attempts to modify a single property of an existing data model object as identified by the `id` parameter in the URI.
      *
@@ -754,20 +628,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
                 existing,
             },
         );
-    }
-
-    @Summary("Update {{model}} by ID and property")
-    @Put(":id/:property")
-    @Description("Updates a single property of an existing {{model}}.")
-    @TypeInfo([Object])
-    @Returns([Object])
-    public updateProperty(
-        @Param("id") id: string,
-        @Param("property") propertyName: string,
-        obj: any,
-        @User user?: JWTUser,
-    ): Promise<T> {
-        return this.doUpdateProperty(id, propertyName, obj, { user });
     }
 
     /**

@@ -2,17 +2,17 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { After, Get, Route, Param, Query, Model, User } from "../../../src/decorators/RouteDecorators";
-import { ModelRoute } from "../../../src/routes/ModelRoute";
 import { Logger } from "@rapidrest/core";
 import UserModel from "../models/User";
 import { Description, Returns, Summary } from "../../../src/decorators/DocDecorators";
+import { CRUDRoute } from "../../../src/routes/CRUDRoute";
 
 const logger = Logger();
 
 @Model(UserModel)
 @Route("/users")
 @Description("Handles processing of all HTTP requests for the path `/users`.")
-export default class UserRoute extends ModelRoute<UserModel> {
+export default class UserRoute extends CRUDRoute<UserModel> {
     private cleanPII(obj: UserModel, @User user?: any): UserModel {
         if (!user) {
             obj.firstName = "";
