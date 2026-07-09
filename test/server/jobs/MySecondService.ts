@@ -8,8 +8,8 @@ export default class MySecondService extends BackgroundService {
     public started: boolean;
     public stopped: boolean;
 
-    constructor(config: any, logger: any) {
-        super(config, logger);
+    constructor() {
+        super();
 
         this.counter = -1;
         this.started = false;

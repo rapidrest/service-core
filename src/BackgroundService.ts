@@ -8,16 +8,6 @@
  * @author Jean-Philippe Steinmetz <rapidrests@gmail.com>
  */
 export abstract class BackgroundService {
-    /** The global application configuration that the service can reference. */
-    protected config: any;
-    /** The logging utility to use. */
-    protected logger: any;
-
-    constructor(config: any, logger: any) {
-        this.config = config;
-        this.logger = logger;
-    }
-
     /**
      * Returns the desired execution interval that this service should be scheduled with. If `undefined` is returned
      * the service is executed only once.
