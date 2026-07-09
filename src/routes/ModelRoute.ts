@@ -334,6 +334,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
 
         const existing: T | undefined = await this.repoUtils.findOne(id, {
             version: options.version,
+            user: options.user,
         });
         if (!existing) {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
@@ -440,6 +441,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
 
         const result: T | undefined = await this.repoUtils.findOne(id, {
             version: options.params?.version || options.query?.version,
+            user: options.user,
         });
         if (!result) {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
@@ -541,6 +543,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
 
         const existing: T | undefined = await this.repoUtils.findOne(id, {
             skipCache: true,
+            user: options.user,
         });
         if (!existing) {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
