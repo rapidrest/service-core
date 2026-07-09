@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+        "moduleResolution": "NodeNext",
+        "target": "ES2020",
+        "module": "NodeNext",
+        "strict": true,
+        "sourceMap": false,
+        "declaration": false,
+        "allowSyntheticDefaultImports": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "noImplicitAny": false,
+        "rootDir": "src",
+        "outDir": "dist"
+    },
+    "include": ["src"]
+}

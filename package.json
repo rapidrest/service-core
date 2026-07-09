@@ -119,11 +119,17 @@
         ".": {
             "import": "./dist/lib/index.js",
             "types": "./dist/types/index.d.ts"
-        }
+        },
+        "./test": {
+            "import": "./dist/lib/test/index.js",
+            "types": "./dist/types/test/index.d.ts"
+        },
+        "./tsconfig": "./tsconfig.export.json"
     },
     "typings": "dist/types/index.d.ts",
     "files": [
         "dist",
-        "docs"
+        "docs",
+        "tsconfig.export.json"
     ]
 }
