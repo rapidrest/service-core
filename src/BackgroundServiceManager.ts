@@ -4,6 +4,8 @@
 import { BackgroundService } from "./BackgroundService.js";
 import * as schedule from "node-schedule";
 import { ObjectFactory } from "./ObjectFactory.js";
+import { ObjectDecorators } from "@rapidrest/core";
+const { Config, Logger } = ObjectDecorators;
 
 /**
  * The `BackgroundServiceManager` manages all configured background services in the application. It is responsible for
@@ -33,17 +35,17 @@ import { ObjectFactory } from "./ObjectFactory.js";
  * @author Jean-Philippe Steinmetz <rapidrests@gmail.com>
  */
 export class BackgroundServiceManager {
+    @Config()
     private readonly config: any;
     private classes: {};
     private jobs: any = {};
+    @Logger
     private readonly logger: any;
     private objectFactory: ObjectFactory;
     private services: any = {};
 
-    constructor(objectFactory: ObjectFactory, classes: {}, config: any, logger: any) {
+    constructor(objectFactory: ObjectFactory, classes: {}) {
         this.classes = classes;
-        this.config = config;
-        this.logger = logger;
         this.objectFactory = objectFactory;
     }
 

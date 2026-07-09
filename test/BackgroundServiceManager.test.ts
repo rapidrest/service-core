@@ -30,7 +30,9 @@ describe("BackgroundServiceManager Tests", () => {
     })
 
     it("Can start/stop single background service.", async () => {
-        const manager: BackgroundServiceManager = new BackgroundServiceManager(objectFactory, serviceClasses, config, Logger());
+        const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {
+            args: [objectFactory, serviceClasses],
+        });
         await manager.start("jobs.MyFirstService");
         const service: MyFirstService = manager.getService("jobs.MyFirstService") as MyFirstService;
         expect(service).toBeDefined();
@@ -60,7 +62,9 @@ describe("BackgroundServiceManager Tests", () => {
     });
 
     it("Can start/stop multiple background services.", async () => {
-        const manager: BackgroundServiceManager = new BackgroundServiceManager(objectFactory, serviceClasses, config, Logger());
+        const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {
+            args: [objectFactory, serviceClasses],
+        });
         await manager.startAll();
         const service: MyFirstService = manager.getService("jobs.MyFirstService") as MyFirstService;
         expect(service).toBeDefined();

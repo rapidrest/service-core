@@ -17,12 +17,12 @@ const { Config, Destroy, Init, Logger } = ObjectDecorators;
  */
 export class EventListenerManager {
     @Config("events:channels", [])
-    private channels: string[] = [];
+    private readonly channels: string[] = [];
     @Logger
-    private logger: any;
-    private objectFactory: ObjectFactory;
+    private readonly logger: any;
+    private readonly objectFactory: ObjectFactory;
     private handlers: Map<string, Function[]> = new Map();
-    private redis: Redis;
+    private readonly redis: Redis;
 
     constructor(objectFactory: ObjectFactory, redis: Redis) {
         this.objectFactory = objectFactory;

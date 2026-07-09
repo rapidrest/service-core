@@ -452,7 +452,7 @@ export class Server {
                 this.serviceManager = await this.objectFactory.newInstance(BackgroundServiceManager, {
                     name: "default",
                     initialize: true,
-                    args: [this.objectFactory, serviceClasses, this.config, this.logger],
+                    args: [this.objectFactory, serviceClasses],
                 });
                 if (this.serviceManager) {
                     await this.serviceManager.startAll();
@@ -464,7 +464,7 @@ export class Server {
                     this.logger.info("Initializing event manager...");
                     this.eventListenerManager = await this.objectFactory.newInstance(EventListenerManager, {
                         name: "default",
-                        args: [this.config, this.logger, this.objectFactory, redis],
+                        args: [this.objectFactory, redis],
                     });
                     if (this.eventListenerManager) {
                         await this.eventListenerManager.init();
