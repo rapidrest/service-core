@@ -377,13 +377,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        // Check user permissions
-        if (this.aclUtils?.enabled && !options.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.READ))) {
-                throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-            }
-        }
-
         const query: any = this.repoUtils.searchIdQuery(id, options.query.version);
         const result: number = await this.repoUtils.count(query);
         if (result > 0) {
@@ -403,13 +396,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     protected async doFind(options: FindRequestOptions): Promise<T[]> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
-        }
-
-        // Check user permissions
-        if (this.aclUtils?.enabled && !options.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.READ))) {
-                throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-            }
         }
 
         const searchQuery: any = ModelUtils.buildSearchQuery(
@@ -457,13 +443,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         });
         if (!result) {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
-        }
-
-        if (this.aclUtils?.enabled && !options.ignoreACL) {
-            const acl: AccessControlList | null = await this.aclUtils.findACL(result.uid);
-            if (!(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.READ))) {
-                throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-            }
         }
 
         return result;

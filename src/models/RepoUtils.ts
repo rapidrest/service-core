@@ -531,40 +531,55 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
+        let existing: T | null = null;
         const query: any = this.searchIdQuery(id, options?.version);
         if (!options?.skipCache && this.cacheClient && this.modelClass.cacheTTL) {
             // First attempt to retrieve the object from the cache
             const json: string | null = await this.cacheClient.get(`${this.baseCacheKey}.${this.hashQuery(query)}`);
             if (json) {
                 try {
-                    const existing: T | null = JSON.parse(json);
-                    if (existing) {
-                        return existing;
-                    }
+                    existing = JSON.parse(json);
                 } catch (err) {
                     // It doesn't matter if this fails
                 }
             }
         }
 
-        let existing: T | null = null;
-        if (this.repo instanceof MongoRepository) {
-            existing = await this.repo
-                .find(query["$match"] ? query["$match"] : query, {
-                    sort: { version: -1 },
-                })
-                .next();
-        } else {
-            existing = await this.repo.findOne(query);
+        if (!existing) {
+            if (this.repo instanceof MongoRepository) {
+                existing = await this.repo
+                    .find(query["$match"] ? query["$match"] : query, {
+                        sort: { version: -1 },
+                    })
+                    .next();
+            } else {
+                existing = await this.repo.findOne(query);
+            }
         }
 
-        if (existing && this.cacheClient && this.modelClass.cacheTTL) {
-            // Cache the object for faster retrieval
-            void this.cacheClient.setex(
-                `${this.baseCacheKey}.${this.hashQuery(query)}`,
-                this.modelClass.cacheTTL,
-                JSON.stringify(existing),
-            );
+        if (existing) {
+            if (this.cacheClient && this.modelClass.cacheTTL) {
+                // Cache the object for faster retrieval
+                void this.cacheClient.setex(
+                    `${this.baseCacheKey}.${this.hashQuery(query)}`,
+                    this.modelClass.cacheTTL,
+                    JSON.stringify(existing),
+                );
+            }
+
+            // Check user permissions
+            if (this.aclUtils?.enabled && !options?.ignoreACL) {
+                const acl: AccessControlList | null = await this.aclUtils.findACL(existing.uid);
+                if (
+                    !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.READ))
+                ) {
+                    throw new ApiError(
+                        ApiErrors.AUTH_PERMISSION_FAILURE,
+                        403,
+                        ApiErrorMessages.AUTH_PERMISSION_FAILURE,
+                    );
+                }
+            }
         }
 
         // Make sure we return the correct data type
