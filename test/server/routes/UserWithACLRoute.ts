@@ -4,8 +4,8 @@
 import UserModel from "../models/ProtectedUser";
 import { RouteDecorators } from "../../../src/decorators";
 import { CRUDRoute } from "../../../src/routes/CRUDRoute";
-const { Route, Model } = RouteDecorators;
+const { ApiRoute, Model } = RouteDecorators;
 
 @Model(UserModel)
-@Route("/userswithacl")
+@ApiRoute("/userswithacl")
 export default class UserWithACLRoute extends CRUDRoute<UserModel> {}

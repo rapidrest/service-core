@@ -35,6 +35,17 @@ function getArgsMetadata(target: any, propertyKey: string): any {
 }
 
 /**
+ * Concatenates all the provided strings and joins them with `/`.
+ *
+ * @param paths The list of strings to join with `/`.
+ */
+function join(...paths: string[]): string {
+    let result = "";
+    paths.forEach((val) => (result += val.startsWith("/") ? val : `/${val}`));
+    return result;
+}
+
+/**
  * Indicates a provided function or list of functions to execute *after* the decorated function and before the response
  * is sent to a client. Note that the function must call `next()` in order for this decorator to work.
  *
@@ -53,10 +64,24 @@ export function After(func: Function | string | (Function | string)[]) {
 }
 
 /**
- * Applies PassportJS authentication to the decorated route or method for the provided strategy or list of strategies
+ * Indicates that the decorated class contains route definitions. This prepends `/api` or `/api/v{version}` to
+ * all provided path(s). e.g. `@ApiRoute('my-api')` results in `/api/my-api`. `@ApiRoute('my-api',2) results in
+ * `/api/v2/my-api`.
+ *
+ * @param paths The base path(s) that all route definitions will use.
+ * @param version The optional version number to prepend the path with. Prefixes the provided version with `v` in the path.
+ */
+export function ApiRoute(paths: string | string[], version?: string | number) {
+    let tPaths: string[] = Array.isArray(paths) ? paths : [paths];
+    tPaths = tPaths.map((path) => (version ? join("api", `v${version}`, path) : join("api", path)));
+    return Route(tPaths);
+}
+
+/**
+ * Applies authentication to the decorated route or method for the provided strategy or list of strategies
  * should be attempted before processing the route.
  *
- * @param strategies The PassportJS strategies that will be applied when incoming requests are processed.
+ * @param strategies The strategies that will be applied when incoming requests are processed.
  * @param require Set to `true` to indicate that at least one of the specified authentication strategies must pass to
  * proceed, otherwise set to `false`. Default is `true`.
  */
@@ -272,7 +297,7 @@ export function Protect(
                 full: false,
             },
         ],
-    }
+    },
 ) {
     return function (target: any, propertyKey?: string) {
         if (!acl.uid || acl.uid === "<UniqueName>") {
@@ -301,7 +326,7 @@ export function Query(name: string | undefined = undefined) {
 }
 
 /**
- * Injects the Express request object as the value of the decorated argument.
+ * Injects the HTTP request object as the value of the decorated argument.
  */
 export function Request(target: any, propertyKey: string, index: number) {
     let args: any = getArgsMetadata(target, propertyKey);
@@ -310,7 +335,7 @@ export function Request(target: any, propertyKey: string, index: number) {
 }
 
 /**
- * Injects the Express response object as the value of the decorated argument.
+ * Injects the HTTP response object as the value of the decorated argument.
  */
 export function Response(target: any, propertyKey: string, index: number) {
     let args: any = getArgsMetadata(target, propertyKey);
@@ -333,7 +358,7 @@ export function RequiresRole(roles: string | string[]) {
 }
 
 /**
- * Indicates that the decorated class contains Express route definitions.
+ * Indicates that the decorated class contains route definitions.
  *
  * @param paths The base path(s) that all route definitions will use.
  */

@@ -15,48 +15,48 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
         dbName: "mongomemory-rrst-test",
     },
 });
-let repo: MongoRepository<User>;
-const baseUrl: string = "/versionedusers";
-
-const createUser = async (
-    firstName: string,
-    lastName: string,
-    age: number = 100,
-    versions: number = 1,
-): Promise<User[]> => {
-    const results: User[] = [];
-
-    const uid: string = uuid.v4();
-    for (let version = 0; version < versions; version++) {
-        const user: User = new User({
-            uid,
-            name: `${firstName.toLowerCase()}.${lastName.toLowerCase()}`,
-            firstName,
-            lastName,
-            age,
-            version,
-        });
-
-        results.push(await repo.save(user));
-    }
-
-    return results;
-};
-
-const createUsers = async (num: number, versions: number = 1): Promise<User[]> => {
-    let results: User[] = [];
-
-    for (let i = 1; i <= num; i++) {
-        results = results.concat(await createUser(String(i), "Doctor", 100 * i, versions));
-    }
-
-    return results;
-};
 
 vi.setConfig({ testTimeout: 120000 });
 describe("VersionedModelRoute Tests [MongoDB]", () => {
+    const baseUrl: string = "/api/v2/versionedusers";
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server({ config, basePath: "./test/server", objectFactory });
+    let repo: MongoRepository<User>;
+
+    const createUser = async (
+        firstName: string,
+        lastName: string,
+        age: number = 100,
+        versions: number = 1,
+    ): Promise<User[]> => {
+        const results: User[] = [];
+
+        const uid: string = uuid.v4();
+        for (let version = 0; version < versions; version++) {
+            const user: User = new User({
+                uid,
+                name: `${firstName.toLowerCase()}.${lastName.toLowerCase()}`,
+                firstName,
+                lastName,
+                age,
+                version,
+            });
+
+            results.push(await repo.save(user));
+        }
+
+        return results;
+    };
+
+    const createUsers = async (num: number, versions: number = 1): Promise<User[]> => {
+        let results: User[] = [];
+
+        for (let i = 1; i <= num; i++) {
+            results = results.concat(await createUser(String(i), "Doctor", 100 * i, versions));
+        }
+
+        return results;
+    };
 
     beforeAll(async () => {
         await mongod.start();
