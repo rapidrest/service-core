@@ -1,11 +1,12 @@
-import { ObjectDecorators } from "@rapidrest/core";
+import { ApiError, ObjectDecorators } from "@rapidrest/core";
 import { Auth, Param, Post, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
 import { ACLUtils } from "../security/ACLUtils.js";
 import ws from "ws";
 import { Redis } from "ioredis";
 import { Description, Summary } from "../decorators/DocDecorators.js";
 import { ACLAction } from "../security/AccessControlList.js";
-const { Config, Inject, Logger } = ObjectDecorators;
+import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
+const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 /**
  * The `BasePushRoute` class provides a base set of endpoints for implement client push notifications.
@@ -46,6 +47,18 @@ export class BasePushRoute {
 
     @Config("datastores:events")
     private redisConfig: any;
+
+    /** A persistent redis client used to publish outgoing push messages. */
+    private redisPub?: Redis;
+
+    @Init
+    private init(): void {
+        if (this.redisConfig) {
+            this.redisPub = new Redis(this.redisConfig.url, this.redisConfig.options);
+        } else {
+            this.logger.warn("Could not initialize the push notification publisher. The `events` datastore is not configured.");
+        }
+    }
 
     @Summary("Push connect")
     @Description("Establishes a connection to the push notification system.")
@@ -142,7 +155,16 @@ export class BasePushRoute {
     @Description("Sends a push notification message to the channel with the given id.")
     @Auth(["jwt"])
     @Post("/:id")
-    public async send(@Param("id") id: string, msg: any, @User user: any) {
-        throw new Error("Unimplemented");
+    public async send(@Param("id") id: string, msg: any, @User user: any): Promise<void> {
+        if (!(await this.aclUtils?.hasPermission(user, id, ACLAction.CREATE))) {
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+        }
+
+        if (!this.redisPub) {
+            this.logger.error(`Failed to send push message to channel ${id}. The \`events\` datastore is not configured.`);
+            throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
+        }
+
+        await this.redisPub.publish(id, JSON.stringify({ type: "MESSAGE", channel: id, data: msg }));
     }
 }
