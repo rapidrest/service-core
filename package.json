@@ -12,8 +12,6 @@
     ],
     "scripts": {
         "build": "yarn lint && rimraf dist && tsc",
-        "deploy-docs": "ts-node tools/gh-pages-publish",
-        "docs": "typedoc --plugin typedoc-plugin-markdown --out docs/reference src",
         "lint": "eslint ./src ./test",
         "local-audit": "yarn install && yarn npm audit -A -R \"$@\"",
         "checkup": "yarn dlx @yarnpkg/doctor \"$@\"",
