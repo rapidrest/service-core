@@ -3,33 +3,36 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "../config";
 import { request } from "../../src/test/request.js";
-import { MongoMemoryServer } from "mongodb-memory-server";
-import { BaseACLRoute, MongoConnection, MongoRepository } from "../../src";
-import { AccessControlListMongo, ACLRecordMongo } from "../../src/security/AccessControlListMongo";
+import { BaseACLRoute } from "../../src";
+import { AccessControlListSQL, ACLRecordSQL } from "../../src/security/AccessControlListSQL";
 import { JWTUtils, Logger, EventUtils, ClassLoader } from "@rapidrest/core";
 import { ObjectFactory } from "../../src/ObjectFactory";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
 import { Server } from "../../src/Server";
+import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
 import { Model, Route } from "../../src/decorators/RouteDecorators";
+import { DataSource, In, Not, Repository } from "typeorm";
+import { MongoMemoryServer } from "mongodb-memory-server";
+
+@Model(AccessControlListSQL)
+@Route("/acls")
+class ACLRouteSQL extends BaseACLRoute<AccessControlListSQL> {}
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
-        dbName: "mongomemory-cjs-test",
+        dbName: "mongomemory-rrst-test",
     },
 });
-
-@Model(AccessControlListMongo)
-@Route("/acls")
-class ACLRouteMongo extends BaseACLRoute<AccessControlListMongo> {}
+const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 
 vi.setConfig({ testTimeout: 1200000 });
-describe("ACLRouteMongo Tests", () => {
+describe("ACLRouteSQL Tests", () => {
     const classLoader: ClassLoader = new ClassLoader("./test/server", true, true, config.get("class_loader:ignore"));
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
     const server: Server = new Server({ config, basePath: "./test/server", classLoader, objectFactory });
-    let repo: MongoRepository<AccessControlListMongo>;
+    let repo: Repository<AccessControlListSQL>;
 
     const admin: any = {
         uid: uuid.v4(),
@@ -42,10 +45,10 @@ describe("ACLRouteMongo Tests", () => {
     const userToken: string = JWTUtils.createTokenSync(config.get("auth"), user);
 
     const createACL = async (
-        records: ACLRecordMongo[] = [],
+        records: ACLRecordSQL[] = [],
         parentUid: string | undefined = undefined,
-    ): Promise<AccessControlListMongo> => {
-        const acl: AccessControlListMongo = new AccessControlListMongo({
+    ): Promise<AccessControlListSQL> => {
+        const acl: AccessControlListSQL = new AccessControlListSQL({
             records,
             parentUid,
         });
@@ -55,10 +58,10 @@ describe("ACLRouteMongo Tests", () => {
 
     const createACLs = async (
         num: number,
-        records: ACLRecordMongo[] = [],
+        records: ACLRecordSQL[] = [],
         parentUid: string | undefined = undefined,
-    ): Promise<AccessControlListMongo[]> => {
-        const results: AccessControlListMongo[] = [];
+    ): Promise<AccessControlListSQL[]> => {
+        const results: AccessControlListSQL[] = [];
 
         for (let i = 1; i <= num; i++) {
             results.push(await createACL(records, parentUid));
@@ -68,20 +71,27 @@ describe("ACLRouteMongo Tests", () => {
     };
 
     beforeAll(async () => {
+        config.set("datastores:acl", {
+            type: "sqlite",
+            host: "localhost",
+            database: "rrst-test",
+            synchronize: true,
+        });
+
         await EventUtils.init(config, Logger(), adminToken);
 
         // Register the test route class with the class loader
-        classLoader.getClasses().set("routes.ACLRouteMongo", ACLRouteMongo);
+        classLoader.getClasses().set("routes.ACLRouteSQL", ACLRouteSQL);
 
         await mongod.start();
         await server.start();
 
         const connMgr: ConnectionManager | undefined = objectFactory.getInstance(ConnectionManager);
         const conn: any = connMgr?.connections.get("acl");
-        if (conn instanceof MongoConnection) {
-            repo = conn.getRepository(AccessControlListMongo);
+        if (conn instanceof DataSource) {
+            repo = conn.getRepository(AccessControlListSQL.name);
         }
-        const results: any[] = await repo.find().toArray();
+        const results: any[] = await repo.find();
         console.log(results.length);
     });
 
@@ -89,30 +99,31 @@ describe("ACLRouteMongo Tests", () => {
         await server.stop();
         await objectFactory.destroy();
         await mongod.stop();
+        return await new Promise<void>((resolve) => {
+            sqlite.close((err) => {
+                if (err) {
+                    console.log(err);
+                }
+                resolve();
+            });
+        });
     });
 
     beforeEach(async () => {
-        try {
-            // Don't delete the default ACLs initialized by the server
-            await repo.deleteMany({
-                uid: { $nin: ["default_ProtectedUser", "ProtectedUser", "default_Script", "Script"] },
-            });
-        } catch (err) {
-            // The error "ns not found" occurs when the collection doesn't exist yet. We can ignore this error.
-            if (err.message !== "ns not found") {
-                throw err;
-            }
-        }
+        // Don't delete the default ACLs initialized by the server
+        await repo.delete({
+            uid: Not(In(["default_ProtectedUser", "ProtectedUser", "default_Script", "Script"])),
+        } as any);
     });
 
     it("Can create ACL document.", async () => {
-        const acl: AccessControlListMongo = new AccessControlListMongo({
+        const acl: AccessControlListSQL = new AccessControlListSQL({
             records: [
-                new ACLRecordMongo({
+                new ACLRecordSQL({
                     userOrRoleId: "admin",
                     full: true,
                 }),
-                new ACLRecordMongo({
+                new ACLRecordSQL({
                     userOrRoleId: ".*",
                     create: true,
                     read: true,
@@ -128,7 +139,7 @@ describe("ACLRouteMongo Tests", () => {
         expect(result).toHaveProperty("body");
         expect(result.status).toBeGreaterThanOrEqual(200);
         expect(result.status).toBeLessThan(300);
-        const resultACL: AccessControlListMongo = new AccessControlListMongo(result.body);
+        const resultACL: AccessControlListSQL = new AccessControlListSQL(result.body);
         expect(resultACL.uid).toEqual(acl.uid);
         expect(resultACL.version).toEqual(acl.version);
         expect(resultACL.records).toHaveLength(acl.records.length);
@@ -149,7 +160,7 @@ describe("ACLRouteMongo Tests", () => {
             expect(found).toBeTruthy();
         }
 
-        const stored: AccessControlListMongo | null = await repo.findOne({ uid: result.body.uid } as any);
+        const stored: AccessControlListSQL | null = await repo.findOne({ where: { uid: result.body.uid } } as any);
         expect(stored).toBeDefined();
         if (stored) {
             expect(stored.uid).toEqual(acl.uid);
@@ -175,13 +186,13 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Cannot create ACL document as non-admin.", async () => {
-        const acl: AccessControlListMongo = new AccessControlListMongo({
+        const acl: AccessControlListSQL = new AccessControlListSQL({
             records: [
-                new ACLRecordMongo({
+                new ACLRecordSQL({
                     userOrRoleId: "admin",
                     full: true,
                 }),
-                new ACLRecordMongo({
+                new ACLRecordSQL({
                     userOrRoleId: ".*",
                     create: true,
                     read: true,
@@ -196,18 +207,18 @@ describe("ACLRouteMongo Tests", () => {
             .set("Authorization", "jwt " + userToken);
         expect(result.status).toBe(403);
 
-        const stored: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
+        const stored: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } } as any);
         expect(stored).toBeNull();
     });
 
     it("Cannot create ACL document as anonymous.", async () => {
-        const acl: AccessControlListMongo = new AccessControlListMongo({
+        const acl: AccessControlListSQL = new AccessControlListSQL({
             records: [
-                new ACLRecordMongo({
+                new ACLRecordSQL({
                     userOrRoleId: "admin",
                     full: true,
                 }),
-                new ACLRecordMongo({
+                new ACLRecordSQL({
                     userOrRoleId: ".*",
                     create: true,
                     read: true,
@@ -219,23 +230,23 @@ describe("ACLRouteMongo Tests", () => {
         const result = await request(server).post("/acls").send(acl);
         expect(result.status).toBe(401);
 
-        const stored: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
+        const stored: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } } as any);
         expect(stored).toBeNull();
     });
 
     it("Can delete ACL document.", async () => {
-        const acl: AccessControlListMongo = await createACL();
+        const acl: AccessControlListSQL = await createACL();
         const result = await request(server)
             .delete("/acls/" + acl.uid)
             .set("Authorization", "jwt " + adminToken);
         expect(result.status).toBe(204);
 
-        const existing: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
+        const existing: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } } as any);
         expect(existing).toBeNull();
     });
 
     it("Cannot delete a default_ ACL document.", async () => {
-        let count: number = await repo.count({ uid: "default_ProtectedUser" });
+        let count: number = await repo.count({ where: { uid: "default_ProtectedUser" } });
         expect(count).toBe(1);
 
         const result = await request(server)
@@ -243,23 +254,23 @@ describe("ACLRouteMongo Tests", () => {
             .set("Authorization", "jwt " + adminToken);
         expect(result.status).toBe(403);
 
-        count = await repo.count({ uid: "default_ProtectedUser" });
+        count = await repo.count({ where: { uid: "default_ProtectedUser" } });
         expect(count).toBe(1);
     });
     it("Cannot delete ACL document as non-admin.", async () => {
-        const acl: AccessControlListMongo = await createACL([
-            new ACLRecordMongo({
+        const acl: AccessControlListSQL = await createACL([
+            new ACLRecordSQL({
                 userOrRoleId: "admin",
                 full: true,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: ".*",
                 create: false,
                 read: true,
                 update: false,
                 delete: false,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: "anonymous",
                 create: false,
                 read: true,
@@ -272,24 +283,24 @@ describe("ACLRouteMongo Tests", () => {
             .set("Authorization", "jwt " + userToken);
         expect(result.status).toBe(403);
 
-        const existing: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
+        const existing: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } } as any);
         expect(existing).toBeDefined();
     });
 
     it("Cannot delete ACL document as anonymous.", async () => {
-        const acl: AccessControlListMongo = await createACL([
-            new ACLRecordMongo({
+        const acl: AccessControlListSQL = await createACL([
+            new ACLRecordSQL({
                 userOrRoleId: "admin",
                 full: true,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: ".*",
                 create: false,
                 read: true,
                 update: false,
                 delete: false,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: "anonymous",
                 create: false,
                 read: true,
@@ -300,12 +311,12 @@ describe("ACLRouteMongo Tests", () => {
         const result = await request(server).delete("/acls/" + acl.uid);
         expect(result.status).toBe(401);
 
-        const existing: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
+        const existing: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } } as any);
         expect(existing).toBeDefined();
     });
 
     it("Can find ACL document by id.", async () => {
-        const acl: AccessControlListMongo = await createACL();
+        const acl: AccessControlListSQL = await createACL();
         const result = await request(server)
             .get("/acls/" + acl.uid)
             .send()
@@ -316,14 +327,14 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Can update ACL document.", async () => {
-        const acl: AccessControlListMongo = await createACL([
-            new ACLRecordMongo({
+        const acl: AccessControlListSQL = await createACL([
+            new ACLRecordSQL({
                 userOrRoleId: "admin",
                 full: true,
             }),
         ]);
         acl.records.push(
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: ".*",
                 create: true,
                 read: true,
@@ -336,7 +347,7 @@ describe("ACLRouteMongo Tests", () => {
             .send(acl)
             .set("Authorization", "jwt " + adminToken);
         expect(result).toHaveProperty("body");
-        const resultACL: AccessControlListMongo = new AccessControlListMongo(result.body);
+        const resultACL: AccessControlListSQL = new AccessControlListSQL(result.body);
         expect(resultACL.uid).toBe(acl.uid);
         expect(resultACL.version).toBeGreaterThan(acl.version);
         for (const record of acl.records) {
@@ -356,7 +367,7 @@ describe("ACLRouteMongo Tests", () => {
             expect(found).toBeTruthy();
         }
 
-        const existing: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
+        const existing: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } } as any);
         expect(existing).toBeDefined();
         if (existing) {
             expect(existing.uid).toBe(result.body.uid);
@@ -381,18 +392,18 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Can update ACL document as non-admin with permission.", async () => {
-        const acl: AccessControlListMongo = await createACL([
-            new ACLRecordMongo({
+        const acl: AccessControlListSQL = await createACL([
+            new ACLRecordSQL({
                 userOrRoleId: "admin",
                 full: true,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: ".*",
                 full: true,
             }),
         ]);
         acl.records.push(
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: "anonymous",
                 create: false,
                 read: true,
@@ -404,7 +415,7 @@ describe("ACLRouteMongo Tests", () => {
             .put("/acls/" + acl.uid)
             .send(acl)
             .set("Authorization", "jwt " + userToken);
-        const resultACL: AccessControlListMongo = new AccessControlListMongo(result.body);
+        const resultACL: AccessControlListSQL = new AccessControlListSQL(result.body);
         expect(resultACL.uid).toBe(acl.uid);
         expect(resultACL.version).toBeGreaterThan(acl.version);
         for (const record of acl.records) {
@@ -424,7 +435,7 @@ describe("ACLRouteMongo Tests", () => {
             expect(found).toBeTruthy();
         }
 
-        const existing: AccessControlListMongo | null = await repo.findOne({ uid: acl.uid } as any);
+        const existing: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } } as any);
         expect(existing).toBeDefined();
         if (existing) {
             expect(existing.uid).toBe(result.body.uid);
@@ -449,12 +460,12 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Cannot update ACL document as non-admin without permission.", async () => {
-        const acl: AccessControlListMongo = await createACL([
-            new ACLRecordMongo({
+        const acl: AccessControlListSQL = await createACL([
+            new ACLRecordSQL({
                 userOrRoleId: "admin",
                 full: true,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: ".*",
                 create: false,
                 read: true,
@@ -463,7 +474,7 @@ describe("ACLRouteMongo Tests", () => {
             }),
         ]);
         acl.records.push(
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: "anonymous",
                 create: false,
                 read: true,
@@ -479,19 +490,19 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Cannot update ACL document as anonymous.", async () => {
-        const acl: AccessControlListMongo = await createACL([
-            new ACLRecordMongo({
+        const acl: AccessControlListSQL = await createACL([
+            new ACLRecordSQL({
                 userOrRoleId: "admin",
                 full: true,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: ".*",
                 create: false,
                 read: true,
                 update: false,
                 delete: false,
             }),
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: "anonymous",
                 create: false,
                 read: true,
@@ -500,7 +511,7 @@ describe("ACLRouteMongo Tests", () => {
             }),
         ]);
         acl.records.push(
-            new ACLRecordMongo({
+            new ACLRecordSQL({
                 userOrRoleId: ".*",
                 create: true,
                 read: true,
@@ -515,7 +526,7 @@ describe("ACLRouteMongo Tests", () => {
     });
 
     it("Cannot update default_ ACL document.", async () => {
-        const acl: AccessControlListMongo | null = await repo.findOne({ uid: "default_ProtectedUser" } as any);
+        const acl: AccessControlListSQL | null = await repo.findOne({ where: { uid: "default_ProtectedUser" } } as any);
         expect(acl).toBeDefined();
         if (acl) {
             acl.records = [];
@@ -530,7 +541,7 @@ describe("ACLRouteMongo Tests", () => {
 
     it("Can count ACL documents.", async () => {
         const count: number = await repo.count();
-        const acls: AccessControlListMongo[] = await createACLs(5);
+        const acls: AccessControlListSQL[] = await createACLs(5);
         const result = await request(server)
             .head("/acls")
             .set("Authorization", "jwt " + adminToken);
@@ -541,7 +552,7 @@ describe("ACLRouteMongo Tests", () => {
 
     it("Can count ACL documents with criteria (eq).", async () => {
         const parentUid: string = uuid.v4();
-        const acls: AccessControlListMongo[] = await createACLs(5, [], parentUid);
+        const acls: AccessControlListSQL[] = await createACLs(5, [], parentUid);
         await createACLs(5, [], uuid.v4());
         await createACLs(5, [], uuid.v4());
         const result = await request(server)
@@ -553,7 +564,7 @@ describe("ACLRouteMongo Tests", () => {
 
     it("Can find all ACL documents.", async () => {
         const count: number = await repo.count();
-        const acls: AccessControlListMongo[] = await createACLs(5);
+        const acls: AccessControlListSQL[] = await createACLs(5);
         const result = await request(server)
             .get("/acls")
             .set("Authorization", "jwt " + adminToken);
@@ -564,7 +575,7 @@ describe("ACLRouteMongo Tests", () => {
 
     it("Can find ACL documents with criteria (eq).", async () => {
         const parentUid: string = uuid.v4();
-        const acls: AccessControlListMongo[] = await createACLs(5, [], parentUid);
+        const acls: AccessControlListSQL[] = await createACLs(5, [], parentUid);
         await createACLs(5, [], uuid.v4());
         await createACLs(5, [], uuid.v4());
         const result = await request(server)

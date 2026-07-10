@@ -1,11 +1,11 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { default as config } from "./config";
-import { request } from "../src/test/request.js";
-import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../src";
+import { default as config } from "../config";
+import { request } from "../../src/test/request.js";
+import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import User from "./server/models/VersionedUser";
+import User from "../server/models/VersionedUser";
 import { Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
 
@@ -22,7 +22,7 @@ const createUser = async (
     firstName: string,
     lastName: string,
     age: number = 100,
-    versions: number = 1
+    versions: number = 1,
 ): Promise<User[]> => {
     const results: User[] = [];
 
@@ -56,7 +56,7 @@ const createUsers = async (num: number, versions: number = 1): Promise<User[]> =
 vi.setConfig({ testTimeout: 120000 });
 describe("VersionedModelRoute Tests [MongoDB]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
-    const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
+    const server: Server = new Server({ config, basePath: "./test/server", objectFactory });
 
     beforeAll(async () => {
         await mongod.start();
@@ -218,9 +218,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can find document by id and version. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 5))[2];
-            const result = await request(server)
-                .get(`${baseUrl}/${user.uid}?version=${user.version}`)
-                .send();
+            const result = await request(server).get(`${baseUrl}/${user.uid}?version=${user.version}`).send();
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(user.uid);
             expect(result.body.version).toEqual(user.version);

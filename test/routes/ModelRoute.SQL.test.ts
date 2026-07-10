@@ -1,10 +1,10 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { default as config } from "./config";
-import { request } from "../src/test/request.js";
-import { Server, ConnectionManager, ObjectFactory } from "../src";
-import Item from "./server/models/Item";
+import { default as config } from "../config";
+import { request } from "../../src/test/request.js";
+import { Server, ConnectionManager, ObjectFactory } from "../../src";
+import Item from "../server/models/Item";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as sqlite3 from "sqlite3";
 import { Repository, DataSource } from "typeorm";
@@ -42,7 +42,7 @@ const createItems = async (num: number): Promise<Item[]> => {
 vi.setConfig({ testTimeout: 120000 });
 describe("ModelRoute Tests [SQL]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
-    const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
+    const server: Server = new Server({ config, basePath: "./test/server", objectFactory });
 
     beforeAll(async () => {
         await mongod.start();

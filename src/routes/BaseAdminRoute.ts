@@ -4,7 +4,7 @@
 import { ApiError, JWTUser, ObjectDecorators, UserUtils } from "@rapidrest/core";
 import { Redis, ScanStream } from "ioredis";
 import Transport from "winston-transport";
-import { Auth, ContentType, Get, Route, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
+import { Auth, ContentType, Get, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
 import { type UWSWebSocketShim } from "../http/WebSocket.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
@@ -35,56 +35,62 @@ export class RedisTransport extends Transport {
 }
 
 /**
- * The `AdminRoute` provides a default `/admin` endpoint that gives trusted users the following abilities:
+ * The `BaseAdminRoute` class provides a base set of endpoints that gives trusted users the ability to perform common adminstrative actions
+ * with the server.
  *
- * * Clear cache via `GET /admin/clear-cache`
- * * Live tail the service logs via `GET /admin/logs`
- * * Retrieve service dependencies via `GET /admin/dependencies`
- * * Retrieve service release notes via `GET /admin/release-notes`
- * * Restart the service via `GET /admin/restart`
+ * Exposed endpoints:
+ *
+ * | Name | HTTP Method | What it does |
+ * | --- | --- | --- |
+ * | `clearCache` | `GET /<base_path>/clear-cache` | Clears the Redis-based cache system. |
+ * | `logs` | `UPGRADE /<base_path>/logs` | Live tail the service logs |
+ * | `getReleaseNotes` | `GET /<base_path>/release-notes` | Retrieve the server release notes. |
+ * | `restart` | `GET /<base_path>/restart` | ` Restart the server |
+ *
+ * !!Note!! that the `BaseAdminRoute` is not automatically registered with a server by default. You must create
+ * your own class that extends `AdminRoute` and apply the desired base path with `@Route()`.
+ *
+ * @example
+ * ```ts
+ * import { BaseAdminRoute, RouteDecorators } from "@rapidrest/service-core";
+ * const { Route } = RouteDecorators;
+ *
+ * @Route("/admin")
+ * export class AdminRoute extends BaseAdminRoute {}
+ * ```
  *
  * @author Jean-Philippe Steinmetz
  */
 @Summary("Admin routes supporting cache-clearing, restarting, logs and release notes")
-@Route("/admin")
-export class AdminRoute {
+export class BaseAdminRoute {
     /** A map of user uid's to active sockets. */
-    private activeSockets: Map<string, any[]> = new Map();
+    protected activeSockets: Map<string, any[]> = new Map();
 
     @RedisConnection("cache")
     protected cacheClient?: Redis;
 
     @Config("datastores:cache", null)
-    private cacheConnConfig: any;
+    protected cacheConnConfig: any;
 
     @Logger
-    private logger: any;
+    protected logger: any;
 
     @Config("datastores:logs", null)
-    private logsConnConfig: any;
+    protected logsConnConfig: any;
 
-    private redisClient?: Redis;
+    protected redisClient?: Redis;
 
     /** The underlying ReleaseNotes specification. */
-    private releaseNotes: string;
+    protected releaseNotes?: string;
 
     @Config("service_name")
-    private serviceName?: string;
+    protected serviceName?: string;
 
     @Config("trusted_roles")
-    private trustedRoles: string[] = [];
-
-    /**
-     * Constructs a new `ReleaseNotesRoute` object with the specified defaults.
-     *
-     * @param releaseNotes The ReleaseNotes specification object to serve.
-     */
-    constructor(releaseNotes: string) {
-        this.releaseNotes = releaseNotes;
-    }
+    protected trustedRoles: string[] = [];
 
     @Init
-    private async init(): Promise<void> {
+    protected async init(): Promise<void> {
         if (this.cacheClient) {
             this.logger.info("Cache is enabled and ready.");
         } else {
@@ -107,13 +113,17 @@ export class AdminRoute {
 
         if (this.logsConnConfig) {
             const channelName: string = this.serviceName + "-logs";
-            this.logger.add(new RedisTransport({
-                channelName,
-                redis: new Redis(this.logsConnConfig.url, this.logsConnConfig.options)
-            }));
+            this.logger.add(
+                new RedisTransport({
+                    channelName,
+                    redis: new Redis(this.logsConnConfig.url, this.logsConnConfig.options),
+                }),
+            );
         } else {
             this.logger.warn("Could not initialize `/admin/logs` route. The `logs` datastore is not not configured.");
         }
+
+        // Discover the release notes file and load it (if available)
     }
 
     @Summary("{{serviceName}} flush second-level cache")
@@ -121,7 +131,7 @@ export class AdminRoute {
     @Auth(["jwt"])
     @Get("/clear-cache")
     @Returns([null])
-    private async clearCache(@User user?: JWTUser): Promise<void> {
+    public async clearCache(@User user?: JWTUser): Promise<void> {
         if (!user || !UserUtils.hasRoles(user, this.trustedRoles)) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -129,7 +139,10 @@ export class AdminRoute {
         if (this.cacheClient) {
             const task: Promise<void> = new Promise((resolve, reject) => {
                 const stream: ScanStream | undefined = this.cacheClient?.scanStream({ match: "db.cache.*" });
-                if (!stream) { resolve(); return; }
+                if (!stream) {
+                    resolve();
+                    return;
+                }
                 let keys: string[] = [];
                 stream.on("data", (k: string[]) => {
                     keys = keys.concat(k);
@@ -149,7 +162,7 @@ export class AdminRoute {
     @Description("Establishes a connection to the live log socket.")
     @Auth(["jwt"])
     @WebSocket("/logs")
-    private async logs(@Socket socket: UWSWebSocketShim, @User user: JWTUser): Promise<void> {
+    public async logs(@Socket socket: UWSWebSocketShim, @User user: JWTUser): Promise<void> {
         if (!UserUtils.hasRoles(user, this.trustedRoles)) {
             socket.close(1002, ApiErrors.AUTH_PERMISSION_FAILURE);
             return;
@@ -217,7 +230,7 @@ export class AdminRoute {
     @Get("/release-notes")
     @ContentType("text/x-rst")
     @Returns([String])
-    private get(@User user?: JWTUser): string {
+    public getReleaseNotes(@User user?: JWTUser): string | undefined {
         if (user && user.uid && UserUtils.hasRoles(user, this.trustedRoles)) {
             return this.releaseNotes;
         } else {
@@ -230,7 +243,7 @@ export class AdminRoute {
     @Auth(["jwt"])
     @Get("/restart")
     @Returns([null])
-    private restart(@User user?: JWTUser): void {
+    public restart(@User user?: JWTUser): void {
         if (!user || !UserUtils.hasRoles(user, this.trustedRoles)) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }

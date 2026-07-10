@@ -4,12 +4,12 @@
 const corsOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"];
 process.env[`cors__origins`] = JSON.stringify(corsOrigins);
 
-import { default as config } from "./config";
-import { Server, ObjectFactory, MongoRepository, ConnectionManager, MongoConnection } from "../src";
+import { default as config } from "../config";
+import { Server, ObjectFactory, MongoRepository, ConnectionManager, MongoConnection } from "../../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { request } from "../src/test/request.js";
+import { request } from "../../src/test/request.js";
 import { JWTUtils, Logger } from "@rapidrest/core";
-import User from "./server/models/User";
+import User from "../server/models/User";
 import * as uuid from "uuid";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
@@ -23,7 +23,7 @@ const regenOpenapiFile = process.env["XBE_REGEN"] || false;
 describe("Server Tests", () => {
     const logger = new Logger();
     const objectFactory: ObjectFactory = new ObjectFactory(config, logger);
-    const server: Server = new Server(config, "./test/server", logger, objectFactory);
+    const server: Server = new Server({ config, basePath: "./test/server", logger, objectFactory });
     let repo: MongoRepository<any>;
 
     const createUser = async (data?: any): Promise<User> => {

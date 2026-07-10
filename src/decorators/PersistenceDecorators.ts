@@ -32,6 +32,13 @@ export interface ColumnOptions {
     primary?: boolean;
     /** Set to `true` if the column stores a MongoDB `ObjectId` value. */
     isObjectId?: boolean;
+    /**
+     * Explicitly declares the SQL column type, overriding the type that would otherwise be inferred from
+     * TypeScript's reflected property type. Required whenever the design-time type cannot be reliably inferred,
+     * such as nullable/union-typed properties (which TypeScript reflects as `Object`) or properties whose value is
+     * a complex/nested structure that has no direct SQL column equivalent (e.g. `"simple-json"`).
+     */
+    type?: string | Function;
 }
 
 /**

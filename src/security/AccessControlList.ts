@@ -103,7 +103,7 @@ export interface AccessControlList {
     /**
      * The parent access control list that this instance inherits permissions from.
      */
-    parent?: AccessControlList | null;
+    parent?: AccessControlList;
 
     /**
      * The universally unique identifier of the parent `AccessControlList` that this object will inherit permissions

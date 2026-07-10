@@ -1,17 +1,17 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import config from "./config";
-import { request } from "../src/test/request.js";
+import config from "../config";
+import { request } from "../../src/test/request.js";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import ProtectedUser from "./server/models/ProtectedUser";
-import { MongoConnection, MongoRepository } from "../src";
+import ProtectedUser from "../server/models/ProtectedUser";
+import { MongoConnection, MongoRepository } from "../../src";
 import { JWTUtils, Logger, EventUtils } from "@rapidrest/core";
-import { AccessControlListMongo } from "../src/security/AccessControlListMongo";
-import { ACLRecord } from "../src/security";
-import { Server } from "../src/Server";
-import { ObjectFactory } from "../src/ObjectFactory";
-import { ConnectionManager } from "../src/database/ConnectionManager";
+import { AccessControlListMongo } from "../../src/security/AccessControlListMongo";
+import { ACLRecord } from "../../src/security";
+import { Server } from "../../src/Server";
+import { ObjectFactory } from "../../src/ObjectFactory";
+import { ConnectionManager } from "../../src/database/ConnectionManager";
 import * as uuid from "uuid";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
@@ -90,8 +90,8 @@ const createUsers = async (num: number, obj: any = {}, ownerUid?: string): Promi
                     lastName: obj.lastName || "Doctor",
                     age: obj.age || 100 * i,
                 },
-                ownerUid
-            )
+                ownerUid,
+            ),
         );
     }
 
@@ -101,7 +101,7 @@ const createUsers = async (num: number, obj: any = {}, ownerUid?: string): Promi
 vi.setConfig({ testTimeout: 120000 });
 describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
-    const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
+    const server: Server = new Server({ config, basePath: "./test/server", objectFactory });
 
     beforeAll(async () => {
         const authToken = JWTUtils.createTokenSync(config.get("auth"), {
@@ -188,10 +188,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 uid: uuid.v4(),
                 roles: config.get("trusted_roles"),
             } as any);
-            const result = await request(server)
-                .post("/userswithacl")
-                .send(user)
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).post("/userswithacl").send(user).set("Authorization", `jwt ${token}`);
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result).toHaveProperty("body");
@@ -228,10 +225,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
             } as any);
-            const result = await request(server)
-                .post("/userswithacl")
-                .send(user)
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).post("/userswithacl").send(user).set("Authorization", `jwt ${token}`);
             expect(result.status).toBe(403);
         });
 
@@ -261,9 +255,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 name: user.name,
                 roles: [],
             });
-            const result = await request(server)
-                .delete("/userswithacl/me")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).delete("/userswithacl/me").set("Authorization", `jwt ${token}`);
             expect(result.status).toBe(204);
 
             const existing: ProtectedUser | null = await repo.findOne({ uid: user.uid } as any);
@@ -350,9 +342,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 name: user.name,
                 roles: [],
             });
-            const result = await request(server)
-                .get("/userswithacl/me")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).get("/userswithacl/me").set("Authorization", `jwt ${token}`);
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result).toHaveProperty("body");
@@ -571,9 +561,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 roles: config.get("trusted_roles"),
                 name: "admin",
             });
-            const result = await request(server)
-                .head("/userswithacl")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).head("/userswithacl").set("Authorization", `jwt ${token}`);
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result.headers).toHaveProperty("content-length");
@@ -587,9 +575,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 name: "user",
                 roles: [],
             });
-            const result = await request(server)
-                .head("/userswithacl")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).head("/userswithacl").set("Authorization", `jwt ${token}`);
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result.headers).toHaveProperty("content-length");
@@ -653,9 +639,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 roles: config.get("trusted_roles"),
                 name: "admin",
             });
-            const result = await request(server)
-                .get("/userswithacl")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).get("/userswithacl").set("Authorization", `jwt ${token}`);
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result).toHaveProperty("body");
@@ -669,9 +653,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 name: "user",
                 roles: [],
             });
-            const result = await request(server)
-                .get("/userswithacl")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).get("/userswithacl").set("Authorization", `jwt ${token}`);
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result).toHaveProperty("body");
@@ -810,9 +792,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 roles: config.get("trusted_roles"),
                 name: "admin",
             });
-            const result = await request(server)
-                .delete("/userswithacl")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).delete("/userswithacl").set("Authorization", `jwt ${token}`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();
@@ -828,9 +808,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 name: "joe",
                 roles: [],
             });
-            const result = await request(server)
-                .delete("/userswithacl")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).delete("/userswithacl").set("Authorization", `jwt ${token}`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();
@@ -844,9 +822,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 roles: [],
                 name: "user",
             });
-            const result = await request(server)
-                .delete("/userswithacl")
-                .set("Authorization", `jwt ${token}`);
+            const result = await request(server).delete("/userswithacl").set("Authorization", `jwt ${token}`);
             expect(result.status).toBe(204);
 
             const count: number = await repo.count();

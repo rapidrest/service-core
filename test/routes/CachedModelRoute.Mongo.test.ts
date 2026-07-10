@@ -1,12 +1,12 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { default as config } from "./config";
+import { default as config } from "../config";
 import * as crypto from "crypto";
-import { request } from "../src/test/request.js";
-import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../src";
+import { request } from "../../src/test/request.js";
+import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, MongoRepository } from "../../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import CacheUser from "./server/models/CacheUser";
+import CacheUser from "../server/models/CacheUser";
 import { Logger } from "@rapidrest/core";
 import Redis from "ioredis-mock";
 
@@ -52,7 +52,7 @@ vi.setConfig({ testTimeout: 120000 });
 
 describe("ModelRoute Tests [MongoDB with Caching]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
-    const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
+    const server: Server = new Server({ config, basePath: "./test/server", objectFactory });
 
     beforeAll(async () => {
         const connMgr: ConnectionManager = await objectFactory.newInstance(ConnectionManager, {

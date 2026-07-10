@@ -1,12 +1,14 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
+import { ObjectDecorators } from "@rapidrest/core";
 import { DocDecorators, ModelDecorators } from "../decorators/index.js";
 import { BaseMongoEntity } from "../models/index.js";
 import { AccessControlList, ACLRecord } from "./AccessControlList.js";
 import { Column, Entity, Index } from "../decorators/PersistenceDecorators.js";
 const { Description, TypeInfo } = DocDecorators;
 const { Cache, DataStore } = ModelDecorators;
+const { Nullable } = ObjectDecorators;
 
 /**
  * Implementation of the `ACLRecord` interface for use with MongoDB databases.
@@ -24,7 +26,7 @@ Each permission can be one of the following actions:
  - \`Full\` - The user or role has total control over the record or object and supersedes any of the above.`)
 export class ACLRecordMongo implements ACLRecord {
     @Description(
-        "The unique identiifer of the user or role that the record will apply to. This can also be a regular expression to match multiple users or roles."
+        "The unique identiifer of the user or role that the record will apply to. This can also be a regular expression to match multiple users or roles.",
     )
     @Column()
     @Index("userOrRoleId")
@@ -106,12 +108,13 @@ export class AccessControlListMongo extends BaseMongoEntity implements AccessCon
     public parent?: AccessControlList;
 
     @Description(
-        "The universally unique identifier of the parent `AccessControlList` that this object will inherit permissions from."
+        "The universally unique identifier of the parent `AccessControlList` that this object will inherit permissions from.",
     )
     @Column()
     @Index("parentUid")
     @TypeInfo([String])
-    public parentUid?: string | undefined;
+    @Nullable
+    public parentUid?: string = undefined;
 
     @Description("The list of all permission records associated with this access control list.")
     @Column()

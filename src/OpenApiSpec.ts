@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { oas31 as oa } from "openapi3-ts";
-import { DocumentsData } from "./decorators/DocDecorators.js";
+import { DocumentsData, getTypeInfo } from "./decorators/DocDecorators.js";
 import merge from "deepmerge";
 import * as _ from "lodash-es";
 import { ObjectDecorators, StringUtils } from "@rapidrest/core";
@@ -324,7 +324,7 @@ export class OpenApiSpec {
         const mParams: (oa.ParameterObject | oa.ReferenceObject)[] = [];
         let aclInfo: any =
             Reflect.getMetadata("rrst:acl", routeClass) || Reflect.getMetadata("rrst:acl", routeClass, name);
-        let requestTypes: any = Reflect.getMetadata("design:type", routeClass, name);
+        let requestTypes: any = getTypeInfo(routeClass, name);
         let returnTypes: any = Reflect.getMetadata("design:returntype", routeClass, name);
         let security: oa.SecurityRequirementObject[] | undefined = authRequired ? [] : undefined;
         let requestSchemas: (oa.SchemaObject | oa.ReferenceObject)[] = [];
@@ -624,7 +624,7 @@ export class OpenApiSpec {
             const docs: any = Reflect.getMetadata("rrst:docs", defaults, member) || {};
             const { description, example, format } = docs;
             const identifier: boolean = Reflect.getMetadata("rrst:isIdentifier", defaults, member);
-            let typesInfo: any = Reflect.getMetadata("design:type", defaults, member);
+            let typesInfo: any = getTypeInfo(defaults, member);
 
             // Make sure type info is always expressed as an array
             if (!Array.isArray(typesInfo)) {

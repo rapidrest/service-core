@@ -22,7 +22,7 @@ const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 vi.setConfig({ testTimeout: 60000 });
 
 describe("Server WebSocket Tests", () => {
-    const server: Server = new Server(config, "./test/server");
+    const server: Server = new Server({ config, basePath: "./test/server" });
 
     beforeAll(async () => {
         await mongod.start();

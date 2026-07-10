@@ -58,6 +58,23 @@ export function registerFrameworkMetadata(entities: any[]): void {
             }
         }
 
+        // Primary key columns are already guaranteed unique by the database; an additional explicit index on the
+        // same single column is redundant and, for SQLite in particular, collides with the index that TypeORM
+        // generates automatically to enforce uniqueness of non-integer primary keys.
+        const primaryProperties: Set<string> = new Set();
+        for (
+            let proto = entity.prototype;
+            proto && proto !== Object.prototype;
+            proto = Object.getPrototypeOf(proto)
+        ) {
+            const columns: ColumnInfo[] = Reflect.getOwnMetadata("rrst:columns", proto) ?? [];
+            for (const column of columns) {
+                if (column.options.primary) {
+                    primaryProperties.add(column.propertyName);
+                }
+            }
+        }
+
         // Register columns and property-level indexes for every level of the prototype chain
         for (
             let proto = entity.prototype;
@@ -75,7 +92,8 @@ export function registerFrameworkMetadata(entities: any[]): void {
                 const exists: boolean = storage.columns.some(
                     (c) => c.target === target && c.propertyName === column.propertyName,
                 );
-                if (exists || !column.designType) {
+                const resolvedType: any = column.options.type ?? column.designType;
+                if (exists || !resolvedType) {
                     continue;
                 }
                 storage.columns.push({
@@ -83,7 +101,7 @@ export function registerFrameworkMetadata(entities: any[]): void {
                     propertyName: column.propertyName,
                     mode: "regular",
                     options: {
-                        type: column.designType,
+                        type: resolvedType,
                         ...(column.options.name !== undefined ? { name: column.options.name } : {}),
                         ...(column.options.nullable !== undefined ? { nullable: column.options.nullable } : {}),
                         ...(column.options.primary ? { primary: true } : {}),
@@ -93,6 +111,9 @@ export function registerFrameworkMetadata(entities: any[]): void {
 
             const indexes: IndexInfo[] = Reflect.getOwnMetadata("rrst:indexes", proto) ?? [];
             for (const index of indexes) {
+                if (index.columns.length === 1 && primaryProperties.has(index.columns[0])) {
+                    continue;
+                }
                 registerIndex(storage, target, index);
             }
         }

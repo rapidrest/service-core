@@ -118,6 +118,13 @@ export function Returns(types?: any | any[]) {
 }
 
 /**
+ * The metadata key that `@TypeInfo` stores its type information under. Kept distinct from `design:type` (the
+ * metadata TypeScript itself emits) so that other consumers of `design:type` — such as the `@Column` decorator's
+ * SQL type inference — are never affected by the richer, API-facing type description `@TypeInfo` provides.
+ */
+const TYPE_INFO_KEY = "rrst:typeInfo";
+
+/**
  * Stores runtime metadata about the typing information of a class property.
  *
  * @param types The optional primary type(s) of the property. Can represent a single type (e.g. `MyClass`) or a union
@@ -132,6 +139,19 @@ export function TypeInfo(types?: any | any[]) {
             // Make sure we always store an array
             types = Array.isArray(types) ? types : [types];
         }
-        Reflect.defineMetadata("design:type", types !== undefined ? types : [designInfo], target, propertyKey);
+        Reflect.defineMetadata(TYPE_INFO_KEY, types !== undefined ? types : [designInfo], target, propertyKey);
     };
+}
+
+/**
+ * Retrieves the typing information of a class property or function, preferring the richer description provided by
+ * `@TypeInfo` and falling back to TypeScript's own `design:type` reflection metadata when `@TypeInfo` was not
+ * applied.
+ *
+ * @param target The class prototype (or class, for static members) to retrieve type information for.
+ * @param propertyKey The name of the property or function to retrieve type information for.
+ */
+export function getTypeInfo(target: any, propertyKey: string): any {
+    const typeInfo: any = Reflect.getMetadata(TYPE_INFO_KEY, target, propertyKey);
+    return typeInfo !== undefined ? typeInfo : Reflect.getMetadata("design:type", target, propertyKey);
 }

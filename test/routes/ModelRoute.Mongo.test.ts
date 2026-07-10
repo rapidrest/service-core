@@ -1,15 +1,15 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { default as config } from "./config";
-import { request } from "../src/test/request.js";
-import { Server, ConnectionManager, ObjectFactory, MongoConnection, MongoRepository, isSqlDataSource } from "../src";
+import { default as config } from "../config";
+import { request } from "../../src/test/request.js";
+import { Server, ConnectionManager, ObjectFactory, MongoConnection, MongoRepository, isSqlDataSource } from "../../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import User from "./server/models/User";
+import User from "../server/models/User";
 import { Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
-import Player from "./server/models/Player";
-import Item from "./server/models/Item";
+import Player from "../server/models/Player";
+import Item from "../server/models/Item";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
@@ -20,7 +20,7 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
 vi.setConfig({ testTimeout: 60000 });
 describe("ModelRoute Tests [MongoDB]", () => {
     const objectFactory: ObjectFactory = new ObjectFactory(config, Logger());
-    const server: Server = new Server(config, "./test/server", Logger(), objectFactory);
+    const server: Server = new Server({ config, basePath: "./test/server", objectFactory });
     let repo: MongoRepository<any>;
     let itemRepo: any;
 

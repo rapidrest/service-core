@@ -654,7 +654,6 @@ __metadata:
     "@vitest/coverage-v8": "npm:^4.1.8"
     autocannon: "npm:^8.0.0"
     axios: "npm:^1.17.0"
-    bson: "npm:^7.2.0"
     coveralls: "npm:^3.1.1"
     dayjs: "npm:^1.11.21"
     deepmerge: "npm:^4.3.1"

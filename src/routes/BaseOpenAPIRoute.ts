@@ -4,7 +4,7 @@
 import { ObjectDecorators } from "@rapidrest/core";
 import { OpenApiSpec } from "../OpenApiSpec.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
-import { Get, Route, ContentType } from "../decorators/RouteDecorators.js";
+import { Get, ContentType } from "../decorators/RouteDecorators.js";
 const { Inject } = ObjectDecorators;
 
 /** Inline Swagger UI HTML page — loads swagger-ui-dist from CDN so there is no npm dependency. */
@@ -32,21 +32,36 @@ function swaggerHtml(specUrl: string): string {
 }
 
 /**
- * The `OpenAPIRoute` provides default routes to expose the service's OpenAPI specification.
+ * The `BaseOpenAPIRoute` class provides a base set of endpoints exposing the server's OpenAPI specification.
  *
- * - `GET /` — Swagger UI HTML (loads swagger-ui-dist from CDN)
- * - `GET /openapi.json` — raw OpenAPI specification as JSON
- * - `GET /openapi.yaml` — raw OpenAPI specification as YAML
+ * Exposed endpoints:
+ *
+ * | Name | HTTP Method | What it does |
+ * | --- | --- | --- |
+ * | `getHTML` | `GET /<base_path>` | Swagger UI HTML (loads swagger-ui-dist from CDN) |
+ * | `getJSON` | `GET /<base_path>/json` | raw OpenAPI specification as JSON |
+ * | `getYAML` | `GET /<base_path>/yaml` | raw OpenAPI specification as YAML |
+ *
+ * !!Note!! that the `BaseAdminRoute` is not automatically registered with a server by default. You must create
+ * your own class that extends `AdminRoute` and apply the desired base path with `@Route()`.
+ *
+ * @example
+ * ```ts
+ * import { BaseOpenAPIRoute, RouteDecorators } from "@rapidrest/service-core";
+ * const { Route } = RouteDecorators;
+ *
+ * @Route("/openapi")
+ * export class OpenAPIRoute extends BaseOpenAPIRoute {}
+ * ```
  *
  * @author Jean-Philippe Steinmetz
  */
-@Route("/")
-export class OpenAPIRoute {
+export class BaseOpenAPIRoute {
     /** The underlying OpenAPI specification. */
     @Inject(OpenApiSpec)
-    private apiSpec: OpenApiSpec = new OpenApiSpec();
+    protected apiSpec: OpenApiSpec = new OpenApiSpec();
 
-    @Summary("{{serviceName}} OpenAPI, HTLM format")
+    @Summary("{{serviceName}} API docs")
     @Description("Returns the OpenAPI specification for the service in HTML format.")
     @Get()
     @ContentType("text/html")
@@ -55,18 +70,9 @@ export class OpenAPIRoute {
         return swaggerHtml("/openapi.json");
     }
 
-    @Summary("{{serviceName}} API docs")
-    @Description("Returns the OpenAPI specification for the service in HTML format.")
-    @Get("api-docs")
-    @ContentType("text/html")
-    @Returns([String])
-    public getAPIDocs(): string {
-        return swaggerHtml("/openapi.json");
-    }
-
     @Summary("{{serviceName}} OpenAPI, JSON format")
     @Description("Returns the OpenAPI specification for the service in JSON format.")
-    @Get("openapi.json")
+    @Get("json")
     @Returns([String])
     public getJSON(): any {
         return this.apiSpec.getSpec();
@@ -74,7 +80,7 @@ export class OpenAPIRoute {
 
     @Summary("{{serviceName}} OpenAPI, YAML format")
     @Description("Returns the OpenAPI specification for the service in YAML format.")
-    @Get("openapi.yaml")
+    @Get("yaml")
     @ContentType("text/yaml")
     @Returns([String])
     public getYAML(): string {

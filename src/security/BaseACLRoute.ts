@@ -2,22 +2,55 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import type { HttpRequest, HttpResponse } from "../http/index.js";
-import { AccessControlListSQL } from "./AccessControlListSQL.js";
-import { ACLAction } from "./AccessControlList.js";
+import { AccessControlList, ACLAction } from "./AccessControlList.js";
 import { ApiError, JWTUser, UserUtils } from "@rapidrest/core";
 import { UpdateObject } from "../routes/ModelRoute.js";
 import { ApiErrorMessages } from "../ApiErrors.js";
-import { Before, Model, Param, Query, Request, Response, Route, User } from "../decorators/RouteDecorators.js";
+import { Before, Param, Query, Request, Response, User } from "../decorators/RouteDecorators.js";
 import { CRUDRoute } from "../routes/CRUDRoute.js";
 
-@Model(AccessControlListSQL)
-@Route("/acls")
-export class ACLRouteSQL extends CRUDRoute<AccessControlListSQL> {
+/**
+ * The `BaseACLRoute` class provides a base set of endpoints for managing Access Control List records.
+ *
+ * Exposed endpoints:
+ *
+ * | Name | HTTP Method | What it does |
+ * | --- | --- | --- |
+ * | `connect` | `UPGRADE /<base_path>/connect` | Establishes a connection to the push notification system. |
+ * | `send` | `POST /<base_path>/:id` | Sends a push notification message to the channel with the given id |
+ *
+ * !!Note!! that the `BaseACLRoute` is not automatically registered with a server by default. You must create
+ * your own class that extends `AdminRoute` and apply the desired base path with `@Route()`.
+ *
+ * @example
+ * ```ts
+ * import { AccessControlListMongo, BaseACLRoute, RouteDecorators } from "@rapidrest/service-core";
+ * const { Model, Route } = RouteDecorators;
+ *
+ * @Model(AccessControlListMongo)
+ * @Route("/acls")
+ * export class ACLRoute extends BaseACLRoute<AccessControlListMongo> {}
+ * ```
+ * @example
+ * ```ts
+ * import { AccessControlListSQL, BaseACLRoute, RouteDecorators } from "@rapidrest/service-core";
+ * const { Model, Route } = RouteDecorators;
+ *
+ * @Model(AccessControlListSQL)
+ * @Route("/acls")
+ * export class ACLRoute extends BaseACLRoute<AccessControlListSQL> {}
+ * ```
+ *
+ * @author Jean-Philippe Steinmetz
+ */
+export abstract class BaseACLRoute<T extends AccessControlList> extends CRUDRoute<T> {
     protected async checkPerms(@Param() params: any, @User user: JWTUser): Promise<void> {
+        if (!user) {
+            throw new ApiError(ApiErrorMessages.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
+        }
         if (
-            !user ||
-            (!UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
-                !(params.id && (await this.aclUtils?.hasPermission(user, params.id, ACLAction.FULL))))
+            !UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
+            !(params.id && (await this.aclUtils?.hasPermission(user, params.id, ACLAction.FULL)))
         ) {
             throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -40,7 +73,7 @@ export class ACLRouteSQL extends CRUDRoute<AccessControlListSQL> {
      * we can't fall back to a per-record `FULL` permission check here. Require a trusted role for every bulk
      * update instead, and disallow touching any `default_<uid>` record (see `checkNotDefault`).
      */
-    protected checkPermsBulk(objs: UpdateObject<AccessControlListSQL>[], @User user: JWTUser): void {
+    protected checkPermsBulk(objs: UpdateObject<T>[], @User user: JWTUser): void {
         if (!user) {
             throw new ApiError(ApiErrorMessages.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
         }
@@ -63,11 +96,7 @@ export class ACLRouteSQL extends CRUDRoute<AccessControlListSQL> {
     }
 
     @Before("checkPerms")
-    public create(
-        obj: AccessControlListSQL | AccessControlListSQL[],
-        @Request req: HttpRequest,
-        @User user?: JWTUser,
-    ): Promise<AccessControlListSQL | Array<AccessControlListSQL>> {
+    public create(obj: T | T[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T | Array<T>> {
         return super.create(obj, req, user);
     }
 
@@ -93,16 +122,12 @@ export class ACLRouteSQL extends CRUDRoute<AccessControlListSQL> {
     }
 
     @Before("checkPerms")
-    public find(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<Array<AccessControlListSQL>> {
+    public find(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<Array<T>> {
         return super.find(params, query, user);
     }
 
     @Before("checkPerms")
-    public async findById(
-        @Param("id") id: string,
-        @Query() query: any,
-        @User user?: JWTUser,
-    ): Promise<AccessControlListSQL | null> {
+    public async findById(@Param("id") id: string, @Query() query: any, @User user?: JWTUser): Promise<T | null> {
         return super.findById(id, query, user);
     }
 
@@ -114,10 +139,10 @@ export class ACLRouteSQL extends CRUDRoute<AccessControlListSQL> {
     @Before(["checkPerms", "checkNotDefault"])
     public update(
         @Param("id") id: string,
-        obj: UpdateObject<AccessControlListSQL>,
+        obj: UpdateObject<T>,
         @Request req: HttpRequest,
         @User user?: JWTUser,
-    ): Promise<AccessControlListSQL> {
+    ): Promise<T> {
         return super.update(id, obj, req, user);
     }
 
@@ -127,16 +152,12 @@ export class ACLRouteSQL extends CRUDRoute<AccessControlListSQL> {
         @Param("property") propertyName: string,
         obj: any,
         @User user?: JWTUser,
-    ): Promise<AccessControlListSQL> {
+    ): Promise<T> {
         return super.updateProperty(id, propertyName, obj, user);
     }
 
     @Before("checkPermsBulk")
-    public updateBulk(
-        obj: UpdateObject<AccessControlListSQL>[],
-        @Request req: HttpRequest,
-        @User user?: JWTUser,
-    ): Promise<AccessControlListSQL[]> {
+    public updateBulk(obj: UpdateObject<T>[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T[]> {
         return super.updateBulk(obj, req, user);
     }
 }

@@ -9,23 +9,40 @@ import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 const { Config } = ObjectDecorators;
 
 /**
- * Handles all REST API requests for the endpoint `/metrics'. This route handler produces Prometheus compatible metrics
- * for use with a Prometheus based server.
+ * The `BaseMetricsRoute` class provides a base set of endpoints for exposing Prometheus metrics.
+ *
+ * Exposed endpoints:
+ *
+ * | Name | HTTP Method | What it does |
+ * | --- | --- | --- |
+ * | `getMetrics` | `GET /<base_path>` | Returns all Prometheus metrics gathered by the system |
+ * | `getSingleMetric` | `GET /<base_path>/:metric` | Returns a single Prometheus metric with the given name |
  *
  * Services that wish to provide metrics to be exposed via this route can register them using the global registry
  * from the provided `prom-client` dependency. See the `prom-client` documentation for more details.
+ *
+ * !!Note!! that the `BaseMetricsRoute` is not automatically registered with a server by default. You must create
+ * your own class that extends `AdminRoute` and apply the desired base path with `@Route()`.
+ *
+ * @example
+ * ```ts
+ * import { BaseMetricsRoute, RouteDecorators } from "@rapidrest/service-core";
+ * const { Route } = RouteDecorators;
+ *
+ * @Route("/metrics")
+ * export class MetricsRoute extends BaseMetricsRoute {}
+ * ```
  */
-@Route("/metrics")
-export class MetricsRoute {
+export class BaseMetricsRoute {
     @Config("metrics", { authRequired: true })
-    private metricsConfig = {
+    protected metricsConfig = {
         authRequired: true,
     };
 
-    private registry: prom.Registry;
+    protected registry: prom.Registry;
 
     @Config("trusted_roles")
-    private trustedRoles: string[] = [];
+    protected trustedRoles: string[] = [];
 
     constructor() {
         this.registry = prom.register;
@@ -36,7 +53,7 @@ export class MetricsRoute {
     @Get()
     @ContentType(prom.register.contentType)
     @Returns([String])
-    private async getMetrics(@User user?: JWTUser): Promise<string> {
+    public async getMetrics(@User user?: JWTUser): Promise<string> {
         if (this.metricsConfig.authRequired && (!user || !UserUtils.hasRoles(user, this.trustedRoles))) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -48,7 +65,7 @@ export class MetricsRoute {
     @Get("/:metric")
     @ContentType(prom.register.contentType)
     @Returns([String])
-    private async getSingleMetric(@Param("metric") metric: any, @User user?: JWTUser): Promise<string> {
+    public async getSingleMetric(@Param("metric") metric: any, @User user?: JWTUser): Promise<string> {
         if (this.metricsConfig.authRequired && (!user || !UserUtils.hasRoles(user, this.trustedRoles))) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }

@@ -329,7 +329,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.aclUtils?.enabled && !options.ignoreACL) {
-            const acl: AccessControlList | null = await this.aclUtils.findACL(uid);
+            const acl: AccessControlList | undefined = await this.aclUtils.findACL(uid);
             if (!(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.DELETE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
@@ -569,7 +569,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
             // Check user permissions
             if (this.aclUtils?.enabled && !options?.ignoreACL) {
-                const acl: AccessControlList | null = await this.aclUtils.findACL(existing.uid);
+                const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid);
                 if (
                     !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.READ))
                 ) {
@@ -747,7 +747,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            const acl: AccessControlList | null = await this.aclUtils.findACL(existing.uid);
+            const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid);
             if (!(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.UPDATE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }

@@ -6,36 +6,36 @@ import * as path from "path";
 import * as prom from "prom-client";
 import "reflect-metadata";
 import { ConnectionManager } from "./database/ConnectionManager.js";
-import { StatusRoute } from "./routes/StatusRoute.js";
 import { ApiError, ClassLoader, Logger } from "@rapidrest/core";
-import { OpenAPIRoute } from "./routes/OpenAPIRoute.js";
-import { MetricsRoute } from "./routes/MetricsRoute.js";
 import { ObjectFactory } from "./ObjectFactory.js";
 import { BackgroundServiceManager } from "./BackgroundServiceManager.js";
 import { RouteUtils } from "./routes/RouteUtils.js";
 import { BulkError } from "./BulkError.js";
 import { BackgroundService } from "./BackgroundService.js";
-import { AdminRoute } from "./routes/index.js";
 import { OpenApiSpec } from "./OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "./ApiErrors.js";
 import { ACLUtils } from "./security/ACLUtils.js";
 import { NotificationUtils } from "./NotificationUtils.js";
-import { isSqlDataSource } from "./database/ConnectionKinds.js";
-import { MongoConnection } from "./database/MongoConnection.js";
-import { ACLRouteMongo } from "./security/ACLRouteMongo.js";
-import { ACLRouteSQL } from "./security/ACLRouteSQL.js";
 import { EventListenerManager } from "./EventListenerManager.js";
 import { AccessControlListMongo } from "./security/AccessControlListMongo.js";
 import { AccessControlListSQL } from "./security/AccessControlListSQL.js";
 import { HttpRouter } from "./http/Router.js";
 import type { HttpRequest, HttpResponse, NextFunction } from "./http/types.js";
 
-interface Entity {
-    storeName?: any;
-}
-
-interface Model {
-    modelClass?: any;
+/**
+ * The configuration options to use when constructing a new Server instance.
+ */
+export interface ServerOptions {
+    /** The nconf-compatible configuration object to initialize the server with. */
+    config: any;
+    /** The base file system path that models and routes will be searched from. Default is `.` */
+    basePath?: string;
+    /** The logging utility to use for outputing to console/file. Default is `Logger()` from `@rapidrest/core`. */
+    logger?: any;
+    /** The ClassLoader used to scan the source for all exported classes. */
+    classLoader?: ClassLoader;
+    /** The object factory to use for automatic dependency injection (IOC). */
+    objectFactory?: ObjectFactory;
 }
 
 /**
@@ -155,6 +155,8 @@ export class Server {
     protected readonly config?: any;
     /** The manager for handling database connections. */
     protected connectionManager?: ConnectionManager;
+    /** The ClassLoader used to scan the source for all exported classes. */
+    protected classLoader: ClassLoader;
     /** The manager for handling events. */
     protected eventListenerManager?: EventListenerManager;
     /** The logging utility to use when outputing to console/file. */
@@ -199,19 +201,18 @@ export class Server {
     });
 
     /**
-     * Creates a new instance of Server with the specified defaults.
+     * Creates a new instance of Server with the specified default options.
      *
-     * @param {any} config The nconf-compatible configuration object to initialize the server with.
-     * @param {string} basePath The base file system path that models and routes will be searched from.
-     * @param {Logger} logger The logging utility to use for outputing to console/file.
-     * @param objectFactory The object factory to use for automatic dependency injection (IOC).
+     * @param options The configuration options to apply for this server.
      */
-    constructor(config: any, basePath: string = ".", logger: any = Logger(), objectFactory?: ObjectFactory) {
-        this.config = config;
-        this.basePath = basePath;
-        this.logger = logger;
-        this.objectFactory = objectFactory ? objectFactory : new ObjectFactory(config, logger);
-        this.port = config.get("port") ? config.get("port") : 3000;
+    constructor(options: ServerOptions) {
+        this.config = options.config;
+        this.basePath = options.basePath ?? ".";
+        this.logger = options.logger ?? Logger();
+        this.classLoader =
+            options.classLoader ?? new ClassLoader(this.basePath, true, true, this.config.get("class_loader:ignore"));
+        this.objectFactory = options.objectFactory ?? new ObjectFactory(this.config, this.logger);
+        this.port = this.config.get("port") ?? 3000;
     }
 
     /**
@@ -260,26 +261,20 @@ export class Server {
                 const models: Map<string, any> = new Map();
 
                 this.logger.info("Loading all service classes...");
-                const classLoader: ClassLoader = new ClassLoader(
-                    this.basePath,
-                    true,
-                    true,
-                    this.config.get("class_loader:ignore"),
-                );
                 try {
-                    await classLoader.load();
+                    await this.classLoader.load();
                 } catch (e) {
                     reject(`[server-core|Server.ts]**ERR @ start, loading service classes: ${e}`);
                 }
 
                 // Register all found classes with the object factory
-                for (const [name, clazz] of classLoader.getClasses().entries()) {
+                for (const [name, clazz] of this.classLoader.getClasses().entries()) {
                     this.objectFactory.register(clazz, name);
                 }
 
                 // Load all models
                 this.logger.info("Scanning for data models...");
-                for (const [name, clazz] of classLoader.getClasses().entries()) {
+                for (const [name, clazz] of this.classLoader.getClasses().entries()) {
                     const datastore: string | undefined = Reflect.getMetadata("rrst:datastore", clazz) || undefined;
                     if (datastore) {
                         models.set(name, clazz);
@@ -341,7 +336,7 @@ export class Server {
                     "X-Requested-With",
                 ].join(", ");
                 this.app.use((req: HttpRequest, res: HttpResponse, next: NextFunction) => {
-                    const origin = req.headers["origin"] as string || "";
+                    const origin = (req.headers["origin"] as string) || "";
                     // When no allow-list is configured, permit all origins without credentials.
                     // Only reflect a specific origin (with credentials) when it matches the explicit list.
                     let allowOrigin = "";
@@ -393,58 +388,10 @@ export class Server {
                     return;
                 }
 
-                // Register the index route
-                const index: StatusRoute = await this.objectFactory.newInstance(StatusRoute, { name: "default" });
-                allRoutes.push(index);
-                await this.routeUtils.registerRoute(this.app, index);
-
-                // Register the admin route
-                const admin: AdminRoute = await this.objectFactory.newInstance(AdminRoute, { name: "default" });
-                allRoutes.push(admin);
-                await this.routeUtils.registerRoute(this.app, admin);
-
-                // Register the ACLs route if configured
-                const rbacEnabled = this.config.get("rbac:enabled");
-                if (rbacEnabled) {
-                    const aclConn: any = this.connectionManager?.connections.get("acl");
-                    if (aclConn instanceof MongoConnection) {
-                        const aclRoute: ACLRouteMongo = await this.objectFactory.newInstance(ACLRouteMongo, {
-                            name: "default",
-                        });
-                        await this.routeUtils.registerRoute(this.app, aclRoute);
-                        allRoutes.push(aclRoute);
-                    } else if (isSqlDataSource(aclConn)) {
-                        const aclRoute: ACLRouteSQL = await this.objectFactory.newInstance(ACLRouteSQL, {
-                            name: "default",
-                        });
-                        await this.routeUtils.registerRoute(this.app, aclRoute);
-                        allRoutes.push(aclRoute);
-                    } else {
-                        throw new Error("Failed to register ACL routes. Did you forget to configur the ACL datastore?");
-                    }
-                }
-
-                // Register the OpenAPI route if a spec has been provided
-                if (this.apiSpec) {
-                    const oasRoute: OpenAPIRoute = await this.objectFactory.newInstance(OpenAPIRoute, {
-                        name: "default",
-                        initialize: true,
-                        args: [this.apiSpec],
-                    });
-                    await this.routeUtils.registerRoute(this.app, oasRoute);
-                    allRoutes.push(oasRoute);
-                }
-
-                // Register the metrics route
-                const metricsRoute: MetricsRoute = await this.objectFactory.newInstance(MetricsRoute, {
-                    name: "default",
-                });
-                await this.routeUtils.registerRoute(this.app, metricsRoute);
-
                 // Initialize the background service manager
                 this.logger.info("Starting background services...");
                 const serviceClasses: any = {};
-                for (const [name, clazz] of classLoader.getClasses().entries()) {
+                for (const [name, clazz] of this.classLoader.getClasses().entries()) {
                     if (clazz.prototype instanceof BackgroundService) {
                         serviceClasses[name] = clazz;
                     }
@@ -480,7 +427,7 @@ export class Server {
                 // Perform automatic discovery of all other routes
                 this.logger.info("Scanning for routes...");
                 try {
-                    for (const [fqn, clazz] of classLoader.getClasses().entries()) {
+                    for (const [fqn, clazz] of this.classLoader.getClasses().entries()) {
                         const routePaths: string[] | undefined = clazz.prototype
                             ? Reflect.getMetadata("rrst:routePaths", clazz.prototype)
                             : Reflect.getMetadata("rrst:routePaths", clazz);
@@ -533,7 +480,7 @@ export class Server {
                                 const tmp: ApiError = new ApiError(
                                     ApiErrors.INTERNAL_ERROR,
                                     500,
-                                    ApiErrorMessages.INTERNAL_ERROR
+                                    ApiErrorMessages.INTERNAL_ERROR,
                                 );
                                 tmp.stack = err.stack;
                                 err = tmp;
@@ -549,7 +496,7 @@ export class Server {
                                 ...err,
                                 // https://stackoverflow.com/a/25245824
                                 level: err.level ? err.level.replace(/\[.*?m/g, "") : undefined, // eslint-disable-line no-control-regex
-                                message: err.message
+                                message: err.message,
                             };
                             res.json(formattedError);
                         }

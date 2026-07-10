@@ -1,4 +1,4 @@
-﻿///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { JWTUser, ObjectDecorators, UserUtils, sleep } from "@rapidrest/core";
@@ -100,9 +100,9 @@ export class ACLUtils {
         if (!(req as any)._aclCache) {
             (req as any)._aclCache = new Map<string, AccessControlList | null>();
         }
-        const reqCache: Map<string, AccessControlList | null> = (req as any)._aclCache;
+        const reqCache: Map<string, AccessControlList | undefined> = (req as any)._aclCache;
 
-        let acl: AccessControlList | null = await this.findACL(uid, [], reqCache);
+        let acl: AccessControlList | undefined = await this.findACL(uid, [], reqCache);
         if (acl) {
             // Make sure all parents are populated
             if (!acl.parent) {
@@ -168,7 +168,7 @@ export class ACLUtils {
 
         // If a uid has been given look up the ACL associated with it and then process
         if (typeof acl === "string") {
-            const entry: AccessControlList | null = await this.findACL(acl);
+            const entry: AccessControlList | undefined = await this.findACL(acl);
             return entry ? await this.hasPermission(user, entry, action) : false;
         }
 
@@ -219,19 +219,19 @@ export class ACLUtils {
     public async findACL(
         entityId: string,
         parentUids: string[] = [],
-        reqCache?: Map<string, AccessControlList | null>,
-    ): Promise<AccessControlList | null> {
+        reqCache?: Map<string, AccessControlList | undefined>,
+    ): Promise<AccessControlList | undefined> {
         if (!this.enabled || !this.repo) {
-            return null;
+            return undefined;
         }
 
         // Check request-scoped cache first — eliminates redundant Redis/DB round trips
         // when the same ACL uid is visited more than once within one request.
         if (reqCache?.has(entityId)) {
-            return reqCache.get(entityId) ?? null;
+            return reqCache.get(entityId) ?? undefined;
         }
 
-        let acl: AccessControlList | null = null;
+        let acl: AccessControlList | undefined = undefined;
 
         // Retrieve the ACL from the cache if present
         if (this.cacheClient) {
@@ -249,10 +249,10 @@ export class ACLUtils {
         if (!acl) {
             if (this.repo instanceof MongoRepository) {
                 acl = await this.repo.findOne({ uid: entityId });
-                acl = acl ? new AccessControlListMongo(acl) : null;
+                acl = acl ? new AccessControlListMongo(acl) : undefined;
             } else {
-                acl = await this.repo.findOne({ uid: entityId } as any);
-                acl = acl ? new AccessControlListSQL(acl) : null;
+                acl = await this.repo.findOne({ where: { uid: entityId } });
+                acl = acl ? new AccessControlListSQL(acl) : undefined;
             }
 
             // Store a copy in the cache for faster retrieval next time
@@ -396,7 +396,7 @@ export class ACLUtils {
             result = await this.repo.save(aclMongo);
         } else if (this.repo) {
             const sACL: AccessControlListSQL = new AccessControlListSQL(acl);
-            const existing: AccessControlListSQL | null = await this.repo.findOne({ uid: acl.uid } as any);
+            const existing: AccessControlListSQL | null = await this.repo.findOne({ where: { uid: acl.uid } });
             // If no changes have been made between versions ignore this request
             if (existing && this.diffACL(existing, acl) === 0) {
                 return existing;
@@ -456,7 +456,7 @@ export class ACLUtils {
                 // and another named `<NAME>`. The `<NAME>` record stores the user-defined
                 // overrides that overlay the `default_<NAME>` document. The `default_<NAME>` is
                 // therefore always updated with whatever is provided as the `defaultAcl` argument.
-                const existing: AccessControlList | null = await this.findACL(defaultAcl.uid);
+                const existing: AccessControlList | undefined = await this.findACL(defaultAcl.uid);
 
                 if (existing) {
                     // Copy over the new records from code

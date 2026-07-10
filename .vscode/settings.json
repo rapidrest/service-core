@@ -1,8 +1,7 @@
 {
     "editor.formatOnPaste": true,
-    "editor.formatOnType": true,
     "editor.formatOnSave": true,
-    "editor.formatOnSaveMode": "modificationsIfAvailable",
+    "editor.formatOnSaveMode": "file",
     "eslint.codeActionsOnSave.mode": "problems",
     "esbonio.sphinx.confDir": "",
     "jest.runMode": {
