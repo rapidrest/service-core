@@ -16,8 +16,16 @@ import { CRUDRoute } from "../routes/CRUDRoute.js";
  *
  * | Name | HTTP Method | What it does |
  * | --- | --- | --- |
- * | `connect` | `UPGRADE /<base_path>/connect` | Establishes a connection to the push notification system. |
- * | `send` | `POST /<base_path>/:id` | Sends a push notification message to the channel with the given id |
+ * | `count` | `HEAD /` | Counts the number of ACLs matching the provided set of criteria in the request's query parameters. Returns the count as the value of the `Content-Length` header. |
+ * | `create` | `POST /` | Adds one or more new ACLs to the datastore. |
+ * | `delete` | `DELETE /:id` | Removes an existing ACL from the datastore. |
+ * | `exists` | `HEAD /:id` | Checks if the ACL with the given ID exists in the datastore. Sets `Content-Length` header to `1` if the ACL exists, otherwise `0`. |
+ * | `find` | `GET /` | Returns all ACLs matching the provided set of criteria in the request's query parameters. |
+ * | `findById` | `GET /:id` | Returns a single ACL with a specified unique identifier. |
+ * | `truncate` | `DELETE /` | Removes all ACLs from the datastore. |
+ * | `update` | `PUT /:id` | Modifies an existing ACL in the datastore. |
+ * | `updateBulk` | `PUT /` | Modifies multiple existing ACLs in the datastore. |
+ * | `updateProperty` | `PUT /:id/:property` | Modifies an single property of the given name of an existing ACL in the datastore. |
  *
  * !!Note!! that the `BaseACLRoute` is not automatically registered with a server by default. You must create
  * your own class that extends `AdminRoute` and apply the desired base path with `@Route()`.

@@ -32,16 +32,19 @@ import { ModelRoute, UpdateObject } from "./ModelRoute.js";
  * is enabled these handlers will still validate permissions appropriately.
  *
  * Included Endpoints:
- * * `count` [`HEAD /`]: Counts the number of objects matching the provided set of criteria in the request's query parameters. Returns the count as the value of the `Content-Length` header.
- * * `create` [`POST /`]- Adds one or more new objects to the datastore.
- * * `delete` [`DELETE /:id`]: Removes an existing object from the datastore.
- * * `exists` [`HEAD /:id`]: Checks if the object with the given ID exists in the datastore. Sets `Content-Length` header to `1` if the object exists, otherwise `0`.
- * * `find` [`GET /`]: Returns all objects matching the provided set of criteria in the request's query parameters.
- * * `findById` [`GET /:id`]: Returns a single object with a specified unique identifier.
- * * `truncate` [`DELETE /`]: Removes all objects from the datastore.
- * * `update` [`PUT /:id`]: Modifies an existing object in the datastore.
- * * `updateBulk` [`PUT /`]: Modifies multiple existing objects in the datastore.
- * * `updateProperty` [`PUT /:id/:property`]: Modifies an single property of the given name of an existing object in the datastore.
+ *
+ * | Name | HTTP Method | What it does |
+ * | --- | --- | --- |
+ * | `count` | `HEAD /` | Counts the number of objects matching the provided set of criteria in the request's query parameters. Returns the count as the value of the `Content-Length` header. |
+ * | `create` | `POST /` | Adds one or more new objects to the datastore. |
+ * | `delete` | `DELETE /:id` | Removes an existing object from the datastore. |
+ * | `exists` | `HEAD /:id` | Checks if the object with the given ID exists in the datastore. Sets `Content-Length` header to `1` if the object exists, otherwise `0`. |
+ * | `find` | `GET /` | Returns all objects matching the provided set of criteria in the request's query parameters. |
+ * | `findById` | `GET /:id` | Returns a single object with a specified unique identifier. |
+ * | `truncate` | `DELETE /` | Removes all objects from the datastore. |
+ * | `update` | `PUT /:id` | Modifies an existing object in the datastore. |
+ * | `updateBulk` | `PUT /` | Modifies multiple existing objects in the datastore. |
+ * | `updateProperty` | `PUT /:id/:property` | Modifies an single property of the given name of an existing object in the datastore. |
  *
  * @author Jean-Philippe Steinmetz
  */
