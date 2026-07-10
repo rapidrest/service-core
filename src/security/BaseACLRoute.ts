@@ -28,7 +28,7 @@ import { CRUDRoute } from "../routes/CRUDRoute.js";
  * | `updateProperty` | `PUT /:id/:property` | Modifies an single property of the given name of an existing ACL in the datastore. |
  *
  * !!Note!! that the `BaseACLRoute` is not automatically registered with a server by default. You must create
- * your own class that extends `AdminRoute` and apply the desired base path with `@Route()`.
+ * your own class that extends `BaseACLRoute` and apply the desired base path with `@Route()`.
  *
  * @example
  * ```ts
