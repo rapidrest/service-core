@@ -389,7 +389,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
         });
 
         // Disabling this test because sending a primitive JSON value via supertest doesn't work as expected
-        it.skip("Can update document property. [MongoDB]", async () => {
+        it("Can update document property. [MongoDB]", async () => {
             const user: User = await createUser("dtennant", "David", "Tennant", 47);
             const diff: any = {
                 firstName: "Doctor",
@@ -418,7 +418,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(result.body.version).toBeGreaterThan(user.version);
             expect(result.body.firstName).toBe(diff.firstName);
             expect(result.body.lastName).toBe(user.lastName);
-            expect(result.body.age).toBe(user.age);
+            expect(result.body.age).toBe(diff.age);
 
             result = await request(server)
                 .put("/users/" + user.uid.toUpperCase() + "/lastName")
@@ -430,7 +430,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(result.body.version).toBeGreaterThan(user.version);
             expect(result.body.firstName).toBe(diff.firstName);
             expect(result.body.lastName).toBe(diff.lastName);
-            expect(result.body.age).toBe(user.age);
+            expect(result.body.age).toBe(diff.age);
 
             const existing: User | null = await repo.findOne({ uid: user.uid } as any);
             expect(existing).toBeDefined();

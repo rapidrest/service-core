@@ -55,8 +55,12 @@ export function request(app: any) {
                 return chain;
             },
             then(onFulfilled: any, onRejected?: any): Promise<TestResponse> {
-                // Auto-set Content-Type for JSON object bodies
-                if (body !== undefined && typeof body === "object" && !Buffer.isBuffer(body)) {
+                // Auto-set Content-Type for JSON bodies. Buffers are sent verbatim. Everything else (objects,
+                // numbers, booleans, and strings — which callers pre-encode as JSON, e.g. `.send('"foo"')`) is
+                // treated as JSON: axios's default transform only auto-serializes plain objects, leaves strings
+                // untouched but defaults their Content-Type to form-urlencoded, and hands numbers/booleans straight
+                // to the HTTP adapter, which rejects anything that isn't a string/Buffer/Stream.
+                if (body !== undefined && !Buffer.isBuffer(body)) {
                     hdrs["content-type"] = hdrs["content-type"] || "application/json";
                 }
                 return axios
