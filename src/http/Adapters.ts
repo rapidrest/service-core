@@ -112,6 +112,7 @@ export class UWSResponse implements HttpResponse {
     private _headers: Map<string, string> = new Map();
     private _headersSent: boolean = false;
     private _writableEnded: boolean = false;
+    private _streaming: boolean = false;
     private _aborted: boolean = false;
     private _abortHandlers: (() => void)[] = [];
     /** Set to true for HEAD requests — body bytes must not be sent. */
@@ -140,7 +141,7 @@ export class UWSResponse implements HttpResponse {
     }
 
     public get writableEnded(): boolean {
-        return this._writableEnded;
+        return this._writableEnded || this._streaming;
     }
 
     public status(code: number): this {
@@ -211,6 +212,7 @@ export class UWSResponse implements HttpResponse {
      */
     public flushHeaders(): void {
         if (this._aborted || this._headersSent) return;
+        this._streaming = true;
         this.uwsRes.cork(() => {
             this.uwsRes.writeStatus(this._statusToString(this._statusCode));
             for (const [key, value] of this._headers.entries()) {
