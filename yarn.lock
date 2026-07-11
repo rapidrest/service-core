@@ -613,9 +613,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rapidrest/core@npm:^1.3.2":
-  version: 1.3.2
-  resolution: "@rapidrest/core@npm:1.3.2"
+"@rapidrest/core@npm:^1.4.0":
+  version: 1.4.0
+  resolution: "@rapidrest/core@npm:1.4.0"
   dependencies:
     form-data: "npm:^4.0.5"
     handlebars: "npm:^4.7.9"
@@ -623,7 +623,6 @@ __metadata:
     jsonwebtoken: "npm:^9.0.3"
     jszip: "npm:^3.10.1"
     mkdirp: "npm:^3.0.1"
-    readline: "npm:^1.3.0"
     triple-beam: "npm:^1.4.1"
     uuid: "npm:^14.0.0"
     validator: "npm:^13.15.35"
@@ -632,7 +631,7 @@ __metadata:
     reflect-metadata: 0.2.x
     winston: 3.x
     winston-transport: 4.x
-  checksum: 10c0/ba38ba47385f36e96acb4bc6feff1f863fe560a4048bace5fc7abe7c9ab422099ca6c28dc4fb79b67daf901bf0c5f19f97c2af0a9a490283cbc86a7ba3d5657a
+  checksum: 10c0/f185a8f6162ed834f74235c104ff00b589dd139491d9ef6cf9884cb652e6a486d6ccbe980b4bbbf700ebf9011409a318f7c56dbf8d2d3e26216d4b73335a99ce
   languageName: node
   linkType: hard
 
@@ -640,7 +639,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@rapidrest/service-core@workspace:."
   dependencies:
-    "@rapidrest/core": "npm:^1.3.2"
+    "@rapidrest/core": "npm:^1.4.0"
     "@swc/core": "npm:^1.15.41"
     "@types/ioredis-mock": "npm:^8.2.7"
     "@types/node": "npm:^25.9.2"
@@ -5869,13 +5868,6 @@ __metadata:
   version: 1.4.10
   resolution: "readline-sync@npm:1.4.10"
   checksum: 10c0/0a4d0fe4ad501f8f005a3c9cbf3cc0ae6ca2ced93e9a1c7c46f226bdfcb6ef5d3f437ae7e9d2e1098ee13524a3739c830e4c8dbc7f543a693eecd293e41093a3
-  languageName: node
-  linkType: hard
-
-"readline@npm:^1.3.0":
-  version: 1.3.0
-  resolution: "readline@npm:1.3.0"
-  checksum: 10c0/7404c9edc3fd29430221ef1830867c8d87e50612e4ce70f84ecd55686f7db1c81d67c6a4dcb407839f4c459ad05dd34524a2c7a97681e91878367c68d0e38665
   languageName: node
   linkType: hard
 
