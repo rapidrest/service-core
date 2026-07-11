@@ -2,6 +2,7 @@ export * from "./BaseAdminRoute.js";
 export * from "./BaseMetricsRoute.js";
 export * from "./BaseOpenAPIRoute.js";
 export * from "./BasePushRoute.js";
+export * from "./BaseStaticRoute.js";
 export * from "./BaseStatusRoute.js";
 export * from "./CRUDRoute.js";
 export * from "./ModelRoute.js";

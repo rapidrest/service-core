@@ -83,9 +83,17 @@ export class BaseStaticRoute {
      * @returns The full path to the file on disk if exists, otherwise `null`.
      */
     private resolveFile(segment: string): string | null {
-        let file = path.resolve(process.cwd(), this.staticDir, segment.replace(/^\//, ""));
+        const root = path.resolve(process.cwd(), this.staticDir);
+        let file = path.resolve(root, segment.replace(/^\//, ""));
         if (file.endsWith("/")) {
             file += "index.html";
+        }
+
+        // Reject any path that escapes the configured static directory (e.g. via `../` segments).
+        // Without this check a request path is joined onto `root` and resolved as-is, so a raw
+        // (non-normalizing) HTTP client could read arbitrary files reachable from `root`.
+        if (file !== root && !file.startsWith(root + path.sep)) {
+            return null;
         }
 
         if (fs.existsSync(file)) {
