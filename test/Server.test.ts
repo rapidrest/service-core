@@ -109,4 +109,22 @@ describe("Server Tests", () => {
         expect(result.body.code).toBe(ApiErrors.INVALID_REQUEST);
         expect(result.body.message).toBe("This is a test.");
     });
+
+    it("Returns a JSON 404 for a path that matches no registered route.", async () => {
+        expect(server.isRunning()).toBe(true);
+        const result = await request(server).get("/this-path-does-not-exist");
+        expect(result.status).toBe(404);
+        expect(result.type).toBe("application/json");
+        expect(result.body.status).toBe(404);
+        expect(result.body.code).toBe(ApiErrors.NOT_FOUND);
+    });
+
+    it("Returns a JSON 404 for an unbound path regardless of HTTP method.", async () => {
+        expect(server.isRunning()).toBe(true);
+        const result = await request(server).post("/this-path-does-not-exist").send({});
+        expect(result.status).toBe(404);
+        expect(result.type).toBe("application/json");
+        expect(result.body.status).toBe(404);
+        expect(result.body.code).toBe(ApiErrors.NOT_FOUND);
+    });
 });

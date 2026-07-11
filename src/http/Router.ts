@@ -5,8 +5,10 @@ import uWS from "uWebSockets.js";
 import * as fs from "fs";
 import * as path from "path";
 import { UWSRequest, UWSResponse, readBody } from "./Adapters.js";
-import type { HttpRequest, HttpResponse, RequestHandler } from "./types.js";
+import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "./types.js";
 import { UWSWebSocketShim, type RequestWS } from "./WebSocket.js";
+import { ApiError } from "@rapidrest/core";
+import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 
 /**
  * Runs an ordered array of middleware handlers sequentially, Express-style.
@@ -205,6 +207,12 @@ export class HttpRouter {
     private preRouteCount: number = -1;
     /** The port the server is currently listening on (set after a successful `listen()` call). */
     public listenPort: number = 0;
+    /**
+     * HTTP verbs for which the application has already registered its own literal `/*` route
+     * (e.g. a `BaseStaticRoute` mounted at the site root via `@Route("/")`). Used by `listen()` to
+     * avoid clobbering an app-defined root catch-all with the default JSON 404 fallback.
+     */
+    private readonly rootWildcardVerbs: Set<string> = new Set();
 
     constructor(uwsApp: uWS.TemplatedApp) {
         this.uwsApp = uwsApp;
@@ -239,30 +247,35 @@ export class HttpRouter {
 
     public get(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
+        if (routePath === "/*") this.rootWildcardVerbs.add("get");
         this.uwsApp.get(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
         return this;
     }
 
     public post(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
+        if (routePath === "/*") this.rootWildcardVerbs.add("post");
         this.uwsApp.post(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
         return this;
     }
 
     public put(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
+        if (routePath === "/*") this.rootWildcardVerbs.add("put");
         this.uwsApp.put(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
         return this;
     }
 
     public delete(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
+        if (routePath === "/*") this.rootWildcardVerbs.add("delete");
         this.uwsApp.del(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
         return this;
     }
 
     public patch(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
+        if (routePath === "/*") this.rootWildcardVerbs.add("patch");
         this.uwsApp.patch(
             routePath,
             makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)),
@@ -272,6 +285,7 @@ export class HttpRouter {
 
     public head(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
+        if (routePath === "/*") this.rootWildcardVerbs.add("head");
         // uWS explicitly-registered HEAD routes do send body bytes — suppress them via isHead flag
         this.uwsApp.head(
             routePath,
@@ -430,6 +444,22 @@ export class HttpRouter {
         // preLength=0 places all globalMiddleware as "post-route" so they all execute sequentially;
         // the CORS middleware terminates the chain early for OPTIONS (sends 204 without calling next).
         this.uwsApp.options("/*", makeUWSHandler(this.globalMiddleware, [], 0, []));
+
+        // Register a JSON 404 fallback for any request that doesn't match a registered route, so
+        // clients get the framework's normal ApiError response shape instead of uWS's built-in HTML
+        // "File Not Found" page. Routed through `next()` so it flows through the same error-handling
+        // and metrics middleware as any other error. uWS matches by specificity, not registration
+        // order, so this never shadows a real route — except an app-defined literal `/*` route (e.g. a
+        // `BaseStaticRoute` mounted at the site root), which is deliberately left alone via
+        // `rootWildcardVerbs`.
+        const notFoundHandler: RequestHandler = (_req, _res, next: NextFunction) => {
+            next(new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND));
+        };
+        for (const verb of ["get", "post", "put", "delete", "patch", "head"] as const) {
+            if (!this.rootWildcardVerbs.has(verb)) {
+                this[verb]("/*", notFoundHandler);
+            }
+        }
 
         return new Promise((resolve, reject) => {
             this.uwsApp.listen(host, port, (socket) => {
