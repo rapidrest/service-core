@@ -319,10 +319,6 @@ export class Server {
 
                 this.app = new HttpRouter(uwsApp);
 
-                // Serve static files from the public directory
-                // (registered last so route handlers take precedence)
-                const publicPath = path.join(this.basePath, "public");
-
                 // cors
                 const corsConfig: any = this.config.get("cors") || {};
                 const corsOrigins: string | string[] | undefined = corsConfig.origins;
