@@ -208,10 +208,12 @@ export class BaseAdminRoute {
                 this.activeSockets.set(user.uid, socks);
             });
 
-            // Add the socket to our tracked list
-            const socks: any[] = this.activeSockets.get(user.uid) || [];
-            socks.push(socket);
-            this.activeSockets.set(user.uid, socks);
+            // Add the socket to our tracked list. Uses an atomic get-or-create so two concurrent connections
+            // for a brand-new uid can't clobber each other's tracked array.
+            if (!this.activeSockets.has(user.uid)) {
+                this.activeSockets.set(user.uid, []);
+            }
+            this.activeSockets.get(user.uid)!.push(socket);
         } catch (err: any) {
             this.logger.error(`User ${user.uid} failed to subscribe to logging channel.`);
             this.logger.debug(err);

@@ -153,8 +153,12 @@ export class RouteUtils {
             try {
                 defaultAcl = await this.aclUtils.saveDefaultACL(defaultAcl);
             } catch (err) {
-                this.logger.info(`Failed to save default ACL for: ${defaultAcl?.uid}`);
-                this.logger.debug(err);
+                // If the default ACL can't be persisted, `checkRequestPerms` will have nothing to find for this
+                // route's uid. Registration must not proceed in that case — continuing would silently register
+                // a `@Protect`-ed route with no permission enforcement at all.
+                this.logger?.error(`Failed to save default ACL for: ${defaultAcl?.uid}. Refusing to register this route.`);
+                this.logger?.debug(err);
+                throw err;
             }
         }
 

@@ -583,6 +583,16 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
         });
 
+        it("Denies request permission when no ACL record exists for the uid (fails closed, not open).", async () => {
+            const req: any = {
+                path: "/does/not/exist",
+                method: "GET",
+            };
+            const testUser: any = { uid: uuid.v4() };
+            expect(await aclUtils?.checkRequestPerms(uuid.v4(), testUser, req)).toBe(false);
+            expect(await aclUtils?.checkRequestPerms(uuid.v4(), undefined, req)).toBe(false);
+        });
+
         it("Can test request permissions.", async () => {
             let req: any = {
                 path: "/test/path",

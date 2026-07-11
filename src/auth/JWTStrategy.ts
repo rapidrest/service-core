@@ -6,7 +6,7 @@ import type { HttpRequest, HttpResponse } from "../http/types.js";
 import dayjs from "dayjs";
 import { createRequire } from "module";
 import { AuthResult } from "./AuthStrategy.js";
-const { Config } = ObjectDecorators;
+const { Config, Init } = ObjectDecorators;
 const _require = createRequire(process.cwd() + "/package.json");
 const duration = _require("dayjs/plugin/duration");
 dayjs.extend(duration);
@@ -73,6 +73,24 @@ export class JWTStrategy {
         this.options = options;
         this.options.headerKey = options.headerKey.toLowerCase();
         this._headerSchemeRegex = new RegExp("^" + this.options.headerScheme + "$", "i");
+    }
+
+    @Init
+    private init(): void {
+        // Defense-in-depth only: the underlying jsonwebtoken library already restricts verification to
+        // algorithms compatible with the configured key's type when `options.algorithms` is left unset, so
+        // this isn't currently exploitable. Pinning it explicitly for the common case of a plain symmetric
+        // secret removes any reliance on that library default. Left untouched for PEM/asymmetric keys —
+        // there's no reliable way to guess the intended algorithm family (RS/ES/PS, key size) from the key's
+        // runtime shape alone, and guessing wrong would break those apps' verification entirely.
+        if (
+            this.config &&
+            !this.config.options?.algorithms &&
+            typeof this.config.secret === "string" &&
+            !this.config.secret.includes("BEGIN")
+        ) {
+            this.config.options = { ...this.config.options, algorithms: ["HS256"] };
+        }
     }
 
     /**

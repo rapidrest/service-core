@@ -384,6 +384,103 @@ describe("ModelUtils Tests", () => {
             });
         });
 
+        it("Rejects a $-prefixed query parameter key.", () => {
+            const request: any = {};
+            request.query = {
+                $where: "function() { return true; }",
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Rejects a dot-notation query parameter key.", () => {
+            const request: any = {};
+            request.query = {
+                "profile.password": "eq(x)",
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Rejects a Mongo operator hidden inside an eq() value.", () => {
+            const request: any = {};
+            request.query = {
+                myParam: 'eq({"$ne":null})',
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Rejects a Mongo operator hidden inside a bare JSON value.", () => {
+            const request: any = {};
+            request.query = {
+                myParam: '{"$gt":0}',
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Rejects a Mongo operator hidden inside a range() value.", () => {
+            const request: any = {};
+            request.query = {
+                myParam: 'range({"$gt":0},5)',
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Still allows the framework's own $gt/$lt/$in/etc. operators built from op(value) syntax.", () => {
+            const request: any = {};
+            request.query = {
+                myParam: "gt(myValue)",
+            };
+
+            const query = ModelUtils.buildSearchQueryMongo(
+                undefined,
+                request.params,
+                request.query,
+                true,
+                request.user,
+            );
+            expect(query).toEqual({
+                $match: {
+                    myParam: { $gt: "myValue" },
+                },
+            });
+        });
+
+        it("Rejects a ReDoS-shaped like() pattern (nested quantifiers).", () => {
+            const request: any = {};
+            request.query = {
+                myParam: "like((a+)+$)",
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Rejects an overly long like() pattern.", () => {
+            const request: any = {};
+            request.query = {
+                myParam: `like(${"a".repeat(200)})`,
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
         it("Can build search query with single param (lt)", () => {
             const request: any = {};
             request.query = {

@@ -203,11 +203,36 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         let count: number = 0;
 
-        // Check user permissions
+        // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
+        // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
+        // on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
             if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
+        }
+
+        // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
+        // individually and counted rather than delegating the count to the database.
+        if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
+            let uids: string[] = [];
+            if (this.repo instanceof MongoRepository) {
+                if (Array.isArray(query)) {
+                    uids = await this.repo.distinct("uid", query[0].$match);
+                } else {
+                    uids = await this.repo.distinct("uid", query["$match"] ? query["$match"] : query);
+                }
+            } else {
+                (await this.repo.find(query)).forEach((obj: T) => uids.push(obj.uid));
+            }
+
+            for (const uid of uids) {
+                if (await this.aclUtils.hasPermission(options?.user, uid, ACLAction.READ)) {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         if (this.repo instanceof MongoRepository) {
@@ -248,6 +273,21 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // Instantiate the object if not already done
         const clazz: any = this.getClassType(obj);
+
+        // Reset any @ReadOnly property back to the class's own declared default, discarding whatever the client
+        // supplied. `obj` may already be a fully-constructed instance by this point (callers such as
+        // ModelRoute.doCreateObject() instantiate before calling create()), so simply deleting the incoming key
+        // wouldn't be enough — the constructor that would normally re-apply the default never runs again in
+        // that case. Setting the value directly works regardless of whether `obj` is a plain object or already
+        // an instance.
+        const readOnlyProps: string[] = ModelUtils.getReadOnlyPropertyNames(clazz);
+        if (readOnlyProps.length > 0) {
+            const defaults: any = new clazz();
+            for (const prop of readOnlyProps) {
+                (obj as any)[prop] = defaults[prop];
+            }
+        }
+
         const newObj: T = obj instanceof clazz ? (obj as T) : this.instantiateObject(obj, clazz);
 
         // Make sure an existing object doesn't already exist with the same identifiers
@@ -263,6 +303,21 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         const count: number = await this.repo.count(query);
         if (!this.modelClass.trackChanges && count > 0) {
             throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+        } else if (
+            this.modelClass.trackChanges &&
+            count > 0 &&
+            this.modelClass.recordACL &&
+            this.aclUtils?.enabled &&
+            !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE))
+        ) {
+            // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new version).
+            // That's only legitimate for someone who already has update rights on the existing record — generic
+            // class-level CREATE permission isn't enough, otherwise any creator could inject a new "latest
+            // version" of another user's record. Deliberately NOT gated on `options.ignoreACL`: that flag exists
+            // so ModelRoute.doCreate() can skip re-doing the class-level CREATE check it already performed
+            // upstream — it says nothing about this distinct, additional per-record check, which has no
+            // upstream equivalent and must always run.
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
 
         // Override the date and version fields with their defaults
@@ -289,8 +344,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-            // If ACLs are enabled but no ACL was given create one
-            const acl: AccessControlList = {
+            // Reuse an existing ACL (and its real version/records) if one already exists for this uid — e.g.
+            // when creating a new version of a trackChanges record — rather than building a fresh, version-less
+            // object from scratch. Building fresh here would let saveACL()'s optimistic-lock version check pass
+            // by coincidence (a never-updated ACL is also version 0), silently discarding the real records.
+            const existingAcl: AccessControlList | undefined = await this.aclUtils.findACL(result.uid);
+            const acl: AccessControlList = existingAcl || {
                 uid: result.uid,
                 parentUid: options?.acl?.parentUid || this.defaultACLUid,
                 records: options?.acl?.records || [],
@@ -397,7 +456,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        // Check user permissions
+        // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
+        // legitimate access to the resource type at all; per-record narrowing (below, right before the
+        // results are returned) is an additional layer on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
             if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -514,6 +575,18 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // Now send all commands to redis at once
                 void this.cacheClient.multi(cmds).exec();
             }
+        }
+
+        // Record-level ACLs aren't reflected in the query itself (nor in cached results, which are shared across
+        // users), so each matched record must be checked individually before it's returned to the caller.
+        if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
+            const filtered: T[] = [];
+            for (const obj of results) {
+                if (await this.aclUtils.hasPermission(options?.user, obj.uid, ACLAction.READ)) {
+                    filtered.push(obj);
+                }
+            }
+            results = filtered;
         }
 
         return results;
@@ -641,7 +714,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             if (className && typeof className === "string") {
                 const clazz: any =
                     this.objectFactory.classes.get(className) || this.objectFactory.classes.get(`models.${className}`);
-                return clazz;
+
+                // Only accept the resolved class if it's actually this route's model or a subtype of it (e.g. a
+                // @ChildEntity()). `objectFactory.classes` contains every registered model in the app, so without
+                // this check a client could point `_type`/`_fqn` at an unrelated model to have its payload
+                // instantiated/validated against that other model's (possibly much looser) rules while still
+                // being persisted through this route's own datastore/collection.
+                if (clazz && (clazz === this.modelClass || clazz.prototype instanceof this.modelClass)) {
+                    return clazz;
+                }
             }
         }
 
@@ -763,6 +844,16 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Make sure the object provided actually matches the id given
         if (existing.uid !== obj.uid) {
             throw new ApiError(ApiErrors.OBJECT_ID_MISMATCH, 400, ApiErrorMessages.OBJECT_ID_MISMATCH);
+        }
+
+        // Force system-managed fields back to their persisted value, discarding whatever the client sent (or
+        // didn't send) for them. `dateCreated` is always protected; `@ReadOnly`-decorated properties are an
+        // app-level opt-in for anything else (roles, ownership fields, etc.) that must never be client-settable.
+        if (existing instanceof BaseEntity) {
+            (obj as any).dateCreated = existing.dateCreated;
+        }
+        for (const prop of ModelUtils.getReadOnlyPropertyNames(this.modelClass)) {
+            (obj as any)[prop] = (existing as any)[prop];
         }
 
         // When using MongoDB we need to copy the _id property in order to prevent duplicate entries

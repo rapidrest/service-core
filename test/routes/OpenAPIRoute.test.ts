@@ -77,7 +77,7 @@ describe("OpenAPIRoute Tests", () => {
         expect(result.body.info.termsOfService).toBe(config.get("termsOfService"));
         expect(result.body.info.license).toBe(config.get("license"));
         expect(result.body.info.version).toBe(config.get("version"));
-        expect(Object.keys(result.body.paths).length).toBe(29);
+        expect(Object.keys(result.body.paths).length).toBe(32);
         const schemas = Object.keys(result.body.components.schemas);
         const parameters = Object.keys(result.body.components.parameters);
         expect(result.body.servers[0].url).toBe(config.get("cluster_url"));

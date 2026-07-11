@@ -88,6 +88,10 @@ describe("BasePushRoute Tests", () => {
 
     beforeAll(async () => {
         config.set("datastores:events", { type: "redis", url: "redis://localhost:6379" });
+        // Small caps make the limit tests fast and deterministic rather than needing to open dozens of
+        // real sockets/subscriptions to hit the (much larger) production defaults.
+        config.set("push:max_sockets_per_user", 2);
+        config.set("push:max_subscriptions_per_user", 2);
 
         // Register the test route class with the class loader
         classLoader.getClasses().set("routes.PushRoute", PushRoute);
@@ -153,6 +157,37 @@ describe("BasePushRoute Tests", () => {
                 .ws(basePath)
                 .expectClosed(1002, "Invalid or missing authentication token.");
         });
+
+        it("Closes a connection beyond the per-user concurrent socket cap.", async () => {
+            const user: any = { uid: uuid.v4(), name: "capuser1" };
+            const token = JWTUtils.createTokenSync(config.get("auth"), user);
+            const wsOptions = { headers: { Authorization: `jwt ${token}` } };
+
+            // The configured cap is 2 — the first two connections should succeed and stay open.
+            const sockA: WebSocket = new WebSocket(`ws://localhost:${server.port}${basePath}`, wsOptions);
+            await new Promise<void>((resolve, reject) => {
+                sockA.once("open", () => resolve());
+                sockA.once("error", reject);
+            });
+            const sockB: WebSocket = new WebSocket(`ws://localhost:${server.port}${basePath}`, wsOptions);
+            await new Promise<void>((resolve, reject) => {
+                sockB.once("open", () => resolve());
+                sockB.once("error", reject);
+            });
+
+            try {
+                // A third concurrent connection for the same user should be rejected immediately.
+                const sockC: WebSocket = new WebSocket(`ws://localhost:${server.port}${basePath}`, wsOptions);
+                const closeCode: number = await new Promise((resolve, reject) => {
+                    sockC.once("close", (code: number) => resolve(code));
+                    sockC.once("error", reject);
+                });
+                expect(closeCode).toBe(1008);
+            } finally {
+                sockA.close();
+                sockB.close();
+            }
+        });
     });
 
     describe("SUBSCRIBE / UNSUBSCRIBE", () => {
@@ -197,6 +232,25 @@ describe("BasePushRoute Tests", () => {
                 .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: [user.uid] })
                 .sendJson({ id: 1, type: "SUBSCRIBE", data: [allowed, denied] })
                 .expectJson({ id: 1, type: "SUBSCRIBED", success: true, data: [allowed] })
+                .close()
+                .expectClosed();
+        });
+
+        it("Caps the number of channels a single user may be subscribed to.", async () => {
+            const user: any = { uid: uuid.v4(), name: "subscriber5" };
+            const token = JWTUtils.createTokenSync(config.get("auth"), user);
+            const channelA: string = uuid.v4();
+            const channelB: string = uuid.v4();
+            await grantChannelRead(channelA, user.uid);
+            await grantChannelRead(channelB, user.uid);
+
+            // The cap is 2, and connect() already subscribes the user to their own uid channel, leaving
+            // budget for only 1 more — so of the 2 additionally-requested channels, only the first is approved.
+            await requestws(server)
+                .ws(basePath, { headers: { Authorization: `jwt ${token}` } })
+                .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: [user.uid] })
+                .sendJson({ id: 1, type: "SUBSCRIBE", data: [channelA, channelB] })
+                .expectJson({ id: 1, type: "SUBSCRIBED", success: true, data: [channelA] })
                 .close()
                 .expectClosed();
         });

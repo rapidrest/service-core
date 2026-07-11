@@ -3,6 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import type { HttpRequest, HttpResponse } from "./types.js";
 import type { HttpRequest as UWSHttpRequest, HttpResponse as UWSHttpResponse } from "uWebSockets.js";
+import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 
 /** Parses a `cookie` header string into a key/value map. */
 function parseCookies(cookieHeader: string): Record<string, string> {
@@ -257,19 +258,36 @@ export class UWSResponse implements HttpResponse {
     }
 }
 
+/** Default maximum accepted request body size (10 MiB) when no explicit limit is configured. */
+export const DEFAULT_MAX_BODY_SIZE = 10 * 1024 * 1024;
+
 /**
  * Reads the full request body from a uWS response object as a Buffer.
  * Body parsing (JSON / URL-encoded) is applied based on content-type and the result
  * is cached on `req.body` / `req.rawBody`.
+ *
+ * If the accumulated body exceeds `maxBodySize`, a `413 Payload Too Large` response is written
+ * directly and the connection is ended — the caller must check the resolved value and skip running
+ * any further middleware/routing for this request when it's `false`, since a response has already
+ * been sent.
+ *
+ * @returns `true` if the body was read normally (or there was none to read), `false` if the request
+ * was rejected for exceeding `maxBodySize`.
  */
-export function readBody(uwsRes: UWSHttpResponse, req: UWSRequest): Promise<void> {
-    return new Promise((resolve, reject) => {
+export function readBody(
+    uwsRes: UWSHttpResponse,
+    req: UWSRequest,
+    maxBodySize: number = DEFAULT_MAX_BODY_SIZE,
+): Promise<boolean> {
+    return new Promise((resolve) => {
         if (req.body !== undefined) {
-            resolve();
+            resolve(true);
             return;
         }
 
         let hasChunks = false;
+        let totalLength = 0;
+        let rejected = false;
         const chunks: Buffer[] = [];
 
         const parseBody = (raw: Buffer) => {
@@ -295,10 +313,31 @@ export function readBody(uwsRes: UWSHttpResponse, req: UWSRequest): Promise<void
         };
 
         uwsRes.onData((chunk, isLast) => {
+            // The response has already been ended below; ignore any further chunks uWS may deliver.
+            if (rejected) return;
+
+            totalLength += chunk.byteLength;
+            if (totalLength > maxBodySize) {
+                rejected = true;
+                uwsRes.cork(() => {
+                    uwsRes.writeStatus("413 Payload Too Large");
+                    uwsRes.writeHeader("content-type", "application/json");
+                    uwsRes.end(
+                        JSON.stringify({
+                            code: ApiErrors.PAYLOAD_TOO_LARGE,
+                            status: 413,
+                            message: ApiErrorMessages.PAYLOAD_TOO_LARGE,
+                        }),
+                    );
+                });
+                resolve(false);
+                return;
+            }
+
             if (isLast && !hasChunks) {
                 // Fast path: single-chunk body — skip the chunks array and Buffer.concat entirely.
                 parseBody(Buffer.from(chunk));
-                resolve();
+                resolve(true);
                 return;
             }
 
@@ -308,7 +347,7 @@ export function readBody(uwsRes: UWSHttpResponse, req: UWSRequest): Promise<void
 
             if (isLast) {
                 parseBody(Buffer.concat(chunks));
-                resolve();
+                resolve(true);
             }
         });
     });

@@ -4,7 +4,7 @@
 import uWS from "uWebSockets.js";
 import * as fs from "fs";
 import * as path from "path";
-import { UWSRequest, UWSResponse, readBody } from "./Adapters.js";
+import { DEFAULT_MAX_BODY_SIZE, UWSRequest, UWSResponse, readBody } from "./Adapters.js";
 import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "./types.js";
 import { UWSWebSocketShim, type RequestWS } from "./WebSocket.js";
 import { ApiError } from "@rapidrest/core";
@@ -142,6 +142,7 @@ function makeUWSHandler(
     preLength: number,
     paramNames: string[],
     isHead: boolean = false,
+    maxBodySize: number = DEFAULT_MAX_BODY_SIZE,
 ) {
     // Built lazily on the first request and reused thereafter. Safe because all use() calls
     // complete before listen() is invoked, and requests only arrive after listen().
@@ -161,11 +162,17 @@ function makeUWSHandler(
             req.params[paramNames[i]] = uwsReq.getParameter(i) || "";
         }
 
-        // Body must be read before any middleware runs
+        // Body must be read before any middleware runs. If it exceeds maxBodySize, readBody() has
+        // already written a 413 response and ended the connection — stop here without running any
+        // middleware/route logic against a truncated/oversized body.
+        let bodyOk = true;
         try {
-            await readBody(uwsRes, req);
+            bodyOk = await readBody(uwsRes, req, maxBodySize);
         } catch {
             // Non-fatal: body may not exist for GET/HEAD/OPTIONS
+        }
+        if (!bodyOk) {
+            return;
         }
 
         // Build the combined handler chain once; reuse on every subsequent request.
@@ -213,9 +220,12 @@ export class HttpRouter {
      * avoid clobbering an app-defined root catch-all with the default JSON 404 fallback.
      */
     private readonly rootWildcardVerbs: Set<string> = new Set();
+    /** Maximum accepted request body size, in bytes. */
+    private readonly maxBodySize: number;
 
-    constructor(uwsApp: uWS.TemplatedApp) {
+    constructor(uwsApp: uWS.TemplatedApp, maxBodySize: number = DEFAULT_MAX_BODY_SIZE) {
         this.uwsApp = uwsApp;
+        this.maxBodySize = maxBodySize;
     }
 
     /** Returns `true` if the server is currently listening. */
@@ -248,28 +258,40 @@ export class HttpRouter {
     public get(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("get");
-        this.uwsApp.get(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
+        this.uwsApp.get(
+            routePath,
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
+        );
         return this;
     }
 
     public post(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("post");
-        this.uwsApp.post(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
+        this.uwsApp.post(
+            routePath,
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
+        );
         return this;
     }
 
     public put(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("put");
-        this.uwsApp.put(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
+        this.uwsApp.put(
+            routePath,
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
+        );
         return this;
     }
 
     public delete(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("delete");
-        this.uwsApp.del(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
+        this.uwsApp.del(
+            routePath,
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
+        );
         return this;
     }
 
@@ -278,7 +300,7 @@ export class HttpRouter {
         if (routePath === "/*") this.rootWildcardVerbs.add("patch");
         this.uwsApp.patch(
             routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)),
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
         );
         return this;
     }
@@ -289,7 +311,7 @@ export class HttpRouter {
         // uWS explicitly-registered HEAD routes do send body bytes — suppress them via isHead flag
         this.uwsApp.head(
             routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), true),
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), true, this.maxBodySize),
         );
         return this;
     }
@@ -298,7 +320,7 @@ export class HttpRouter {
         const pre = this.capturePreRouteCount();
         this.uwsApp.options(
             routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)),
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
         );
         return this;
     }
@@ -443,7 +465,7 @@ export class HttpRouter {
         // This must happen before the uWS listen call so it is ready when the first request arrives.
         // preLength=0 places all globalMiddleware as "post-route" so they all execute sequentially;
         // the CORS middleware terminates the chain early for OPTIONS (sends 204 without calling next).
-        this.uwsApp.options("/*", makeUWSHandler(this.globalMiddleware, [], 0, []));
+        this.uwsApp.options("/*", makeUWSHandler(this.globalMiddleware, [], 0, [], false, this.maxBodySize));
 
         // Register a JSON 404 fallback for any request that doesn't match a registered route, so
         // clients get the framework's normal ApiError response shape instead of uWS's built-in HTML

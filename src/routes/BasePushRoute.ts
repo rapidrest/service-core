@@ -48,6 +48,14 @@ export class BasePushRoute {
     @Config("datastores:events")
     private redisConfig: any;
 
+    /** The maximum number of concurrent sockets a single user may hold open at once. */
+    @Config("push:max_sockets_per_user", 10)
+    private maxSocketsPerUser: number = 10;
+
+    /** The maximum number of channels a single user may be subscribed to at once. */
+    @Config("push:max_subscriptions_per_user", 50)
+    private maxSubscriptionsPerUser: number = 50;
+
     /** A persistent redis client used to publish outgoing push messages. */
     private redisPub?: Redis;
 
@@ -65,6 +73,14 @@ export class BasePushRoute {
     @Auth(["jwt"])
     @WebSocket()
     public async connect(@Socket sock: ws, @User user: any): Promise<void> {
+        // Cap the number of concurrent connections a single user may hold, to prevent an authenticated user
+        // from exhausting server resources by opening unbounded sockets.
+        if ((this.activeSocks.get(user.uid)?.length ?? 0) >= this.maxSocketsPerUser) {
+            this.logger.debug(`User ${user.uid} exceeded the maximum of ${this.maxSocketsPerUser} concurrent push connections.`);
+            sock.close(1008, "Too many concurrent connections.");
+            return;
+        }
+
         // Establish a new redis pub/sub client for this connection
         const redis: Redis = new Redis(this.redisConfig.url, this.redisConfig.options);
         const subs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
@@ -78,10 +94,12 @@ export class BasePushRoute {
             this.logger.debug(err);
         }
 
-        // Track the socket so it doesn't get automatically cleaned up
-        const socks: ws[] = this.activeSocks.get(user.uid) || [];
-        socks.push(sock);
-        this.activeSocks.set(user.uid, socks);
+        // Track the socket so it doesn't get automatically cleaned up. Uses an atomic get-or-create so two
+        // concurrent connect() calls for a brand-new uid can't clobber each other's tracked array.
+        if (!this.activeSocks.has(user.uid)) {
+            this.activeSocks.set(user.uid, []);
+        }
+        this.activeSocks.get(user.uid)!.push(sock);
 
         // Set up the outgoing message forwarding handler to the client
         redis.on("message", (channel: string, message: string) => {
@@ -104,10 +122,15 @@ export class BasePushRoute {
                     if (message.type === "SUBSCRIBE") {
                         const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
                         const subd: string[] = [];
-                        // Check that the user has permission for each requested channel
+                        // Check that the user has permission for each requested channel, up to the per-user
+                        // subscription cap — once the budget is exhausted further requested channels are
+                        // silently dropped from the approved set, same as a channel lacking ACL permission.
+                        let remaining: number = this.maxSubscriptionsPerUser - origSubs.length;
                         for (const channel of subs) {
+                            if (remaining <= 0) break;
                             if (await this.aclUtils?.hasPermission(user, channel, ACLAction.READ)) {
                                 subd.push(channel);
+                                remaining--;
                             }
                         }
 

@@ -671,6 +671,48 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(result.status).toBe(403);
         });
 
+        it("Excludes a record from find()/count() when its own per-record ACL denies the requester, even though the class-level ACL would allow it. [MongoDB]", async () => {
+            const publicUsers: ProtectedUser[] = await createUsers(3);
+            const privateUser: ProtectedUser = await createUser({ firstName: "Secret", lastName: "Holder", age: 99 });
+
+            // Narrow the private user's own record ACL so it no longer grants broad `.*` read — only its owner
+            // (and admins) can see it, regardless of what the class-level default ACL allows.
+            const privateAcl: AccessControlListMongo | null = await aclRepo.findOne({ uid: privateUser.uid } as any);
+            expect(privateAcl).toBeDefined();
+            if (privateAcl) {
+                const wildcard = privateAcl.records.find((r) => r.userOrRoleId === ".*");
+                expect(wildcard).toBeDefined();
+                if (wildcard) wildcard.read = false;
+                privateAcl.version++;
+                await aclRepo.save(privateAcl);
+            }
+
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
+                uid: uuid.v4(),
+                name: "other-user",
+                roles: [],
+            });
+
+            const listResult = await request(server).get(basePath).set("Authorization", `jwt ${token}`);
+            expect(listResult.status).toBe(200);
+            const listedUids: string[] = listResult.body.map((u: ProtectedUser) => u.uid);
+            expect(listedUids).toEqual(expect.arrayContaining(publicUsers.map((u) => u.uid)));
+            expect(listedUids).not.toContain(privateUser.uid);
+
+            const countResult = await request(server).head(basePath).set("Authorization", `jwt ${token}`);
+            expect(countResult.status).toBe(200);
+            expect(countResult.headers["content-length"]).toBe(publicUsers.length.toString());
+
+            // The owner can still see their own record.
+            const ownerToken = JWTUtils.createTokenSync(config.get("auth"), {
+                uid: privateUser.uid,
+                name: privateUser.name,
+                roles: [],
+            });
+            const ownerResult = await request(server).get(basePath).set("Authorization", `jwt ${ownerToken}`);
+            expect(ownerResult.body.map((u: ProtectedUser) => u.uid)).toContain(privateUser.uid);
+        });
+
         it("Can find documents with criteria (eq) (admin) [MongoDB].", async () => {
             const users: ProtectedUser[] = await createUsers(13);
             await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
@@ -866,7 +908,10 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result).toHaveProperty("body");
-            expect(result.body).toHaveLength(users.length);
+            // Overriding the class-level default ACL grants anonymous class-level READ (so the request succeeds
+            // instead of a 403), but each user's own per-record ACL still explicitly denies anonymous read —
+            // and per-record ACLs correctly take precedence over the class/default ACL for individual records.
+            expect(result.body).toHaveLength(0);
         });
     });
 });

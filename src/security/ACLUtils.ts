@@ -88,11 +88,9 @@ export class ACLUtils {
      * @param req The request whose URL path and method will be verified.
      */
     public async checkRequestPerms(uid: string, user: JWTUser | undefined, req: Request): Promise<boolean> {
-        let result: boolean = true;
-
         // If RBAC is disabled just return
         if (!this.enabled) {
-            return result;
+            return true;
         }
 
         // Request-scoped cache avoids duplicate Redis/DB fetches when the same ACL uid is
@@ -101,6 +99,10 @@ export class ACLUtils {
             (req as any)._aclCache = new Map<string, AccessControlList | null>();
         }
         const reqCache: Map<string, AccessControlList | undefined> = (req as any)._aclCache;
+
+        // Deny by default — if the ACL record can't be found (e.g. it failed to persist at
+        // registration time) a `@Protect`-ed route must not silently become open to everyone.
+        let result: boolean = false;
 
         let acl: AccessControlList | undefined = await this.findACL(uid, [], reqCache);
         if (acl) {

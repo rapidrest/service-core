@@ -29,6 +29,7 @@ export class ModelUtils {
     /** The `typeorm` module containing the query operators used to build SQL queries. */
     private static typeOrm: any | undefined;
     private static idPropertyCache: Map<any, string[]> = new Map();
+    private static readOnlyPropertyCache: Map<any, string[]> = new Map();
 
     /**
      * Provides the `typeorm` module to use when building SQL queries. This is called automatically when a SQL
@@ -82,6 +83,40 @@ export class ModelUtils {
 
         // Cache the results so we're not always having to walk the class structure
         ModelUtils.idPropertyCache.set(modelClass, results);
+
+        return results;
+    }
+
+    /**
+     * Retrieves a list of all of the specified class's properties that have the @ReadOnly decorator applied.
+     *
+     * @param modelClass The class definition to search for read-only properties from.
+     * @returns The list of all property names that have the @ReadOnly decorator applied.
+     */
+    public static getReadOnlyPropertyNames(modelClass: any): string[] {
+        const results: string[] = [];
+
+        if (ModelUtils.readOnlyPropertyCache.has(modelClass)) {
+            return ModelUtils.readOnlyPropertyCache.get(modelClass) as string[];
+        }
+
+        // The props don't show up correctly on the class def. So instantiate a dummy object that we can read the props
+        // from and look for read-only fields.
+        let proto: any = Object.getPrototypeOf(new modelClass());
+        while (proto) {
+            const props: string[] = Object.getOwnPropertyNames(proto);
+            for (const prop of props) {
+                const isReadOnly: boolean = Reflect.getMetadata("rrst:readOnly", proto, prop);
+                if (isReadOnly) {
+                    results.push(prop);
+                }
+            }
+
+            proto = Object.getPrototypeOf(proto);
+        }
+
+        // Cache the results so we're not always having to walk the class structure
+        ModelUtils.readOnlyPropertyCache.set(modelClass, results);
 
         return results;
     }
@@ -260,6 +295,49 @@ export class ModelUtils {
     }
 
     /**
+     * Recursively verifies that no key in the given value (at any depth, including keys of objects nested inside
+     * arrays) is a MongoDB operator (starts with `$`) or uses dot-notation field addressing (contains `.`). Client
+     * input is only ever meant to supply plain field values/comparison operands — never raw Mongo query operators —
+     * so any such key indicates an attempt to inject arbitrary query behavior (e.g. `$where`, `$expr`, or reaching
+     * into a field the API doesn't expose via dot-notation).
+     *
+     * @param value The value to check, typically a parsed query parameter.
+     * @throws {ApiError} If an operator-like or dotted key is found anywhere in `value`.
+     */
+    private static assertNoOperatorInjection(value: any): void {
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                ModelUtils.assertNoOperatorInjection(item);
+            }
+        } else if (value && typeof value === "object") {
+            for (const key of Object.keys(value)) {
+                if (key.startsWith("$") || key.includes(".")) {
+                    throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+                }
+                ModelUtils.assertNoOperatorInjection(value[key]);
+            }
+        }
+    }
+
+    /** Maximum accepted length of a client-supplied `like()` search pattern. */
+    private static readonly MAX_LIKE_PATTERN_LENGTH = 100;
+
+    /**
+     * Best-effort check for regex patterns vulnerable to catastrophic backtracking (ReDoS). Rejects patterns that
+     * are unreasonably long, or that contain a quantified group whose contents are themselves quantified (e.g.
+     * `(a+)+`, `(a*)*`) — the classic shape that causes exponential backtracking in JS's regex engine. This is not
+     * an exhaustive defense; it catches the common cases a client would realistically send.
+     *
+     * @param pattern The user-supplied `like()` pattern.
+     */
+    private static isUnsafeRegexPattern(pattern: string): boolean {
+        if (pattern.length > ModelUtils.MAX_LIKE_PATTERN_LENGTH) {
+            return true;
+        }
+        return /\([^()]*[+*]\)[+*{]/.test(pattern);
+    }
+
+    /**
      * Given a string containing a parameter value and/or a comparison operation return a MongoDB compatible find value.
      * e.g.
      * Given the string "myvalue" will return an `"myvalue"` object.
@@ -286,6 +364,13 @@ export class ModelUtils {
                         value = matches[2];
                     }
                 }
+
+                // `value` is the client-supplied comparison operand — reject any Mongo operator/dotted key hidden
+                // inside it, regardless of which (trusted, framework-constructed) operator wrapper it ends up
+                // under below. Must run *after* the parse fallback above, not inside its try/catch, so a
+                // rejection here isn't silently swallowed as a "not valid JSON" case.
+                ModelUtils.assertNoOperatorInjection(value);
+
                 switch (opName) {
                     case "eq":
                         return value;
@@ -301,8 +386,13 @@ export class ModelUtils {
                         const args: string[] = value.split(",");
                         return { $nin: args };
                     }
-                    case "like":
-                        return { $regex: value, $options: "i" };
+                    case "like": {
+                        const pattern: string = String(value);
+                        if (ModelUtils.isUnsafeRegexPattern(pattern)) {
+                            throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+                        }
+                        return { $regex: pattern, $options: "i" };
+                    }
                     case "lt":
                         return { $lt: value };
                     case "lte":
@@ -320,25 +410,33 @@ export class ModelUtils {
                             });
                             throw new ApiError(ApiErrors.SEARCH_INVALID_RANGE, 400, msg);
                         }
+                        // Attempt to parse the range values to native types, falling back to the raw strings
+                        let gte: any = args[0];
+                        let lte: any = args[1];
                         try {
-                            // Attempt to parse the range values to native types
-                            return { $gte: JSON.parse(args[0]), $lte: JSON.parse(args[1]) };
+                            gte = JSON.parse(args[0]);
+                            lte = JSON.parse(args[1]);
                         } catch (err) {
-                            return { $gte: args[0], $lte: args[1] };
+                            // Not valid JSON — fall back to the raw strings assigned above.
                         }
+                        ModelUtils.assertNoOperatorInjection(gte);
+                        ModelUtils.assertNoOperatorInjection(lte);
+                        return { $gte: gte, $lte: lte };
                     }
                     default:
                         return value;
                 }
             } else {
+                // Attempt to parse the value to a native type, falling back to a date/string if it's not valid JSON
+                let parsed: any;
                 try {
-                    // Attempt to parse the value to a native type
-                    return JSON.parse(param);
+                    parsed = JSON.parse(param);
                 } catch (err) {
-                    // If an error occurred it's because the value is a string or date, not another type.
                     const date: Date = new Date(param);
                     return !isNaN(date.valueOf()) ? date : param;
                 }
+                ModelUtils.assertNoOperatorInjection(parsed);
+                return parsed;
             }
         } else {
             return param;
@@ -638,6 +736,13 @@ export class ModelUtils {
                 continue;
             }
 
+            // Reject any other Mongo operator key or dot-notation field path outright — client input may only
+            // supply plain field names, never raw query operators (`$or` is the one deliberate exception, handled
+            // just below; its sub-queries are validated recursively when they're built).
+            if (key !== "$or" && (key.startsWith("$") || key.includes("."))) {
+                throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+            }
+
             if (key === "$or") {
                 // Array of OR queries
                 let orResults: any[] = [];
@@ -656,7 +761,8 @@ export class ModelUtils {
             }
 
             if (Array.isArray(queryParams[key])) {
-                // Add each value in the array to each corresponding query
+                // Add each value in the array to each corresponding query. Injection safety is already enforced
+                // inside getQueryParamValueMongo() itself, at the point the client-supplied value is parsed.
                 const conditions: any[] = [];
                 for (let i = 0; i < queryParams[key].length; i++) {
                     const value: any = ModelUtils.getQueryParamValueMongo(queryParams[key][i]);

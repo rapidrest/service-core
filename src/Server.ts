@@ -20,6 +20,7 @@ import { EventListenerManager } from "./EventListenerManager.js";
 import { AccessControlListMongo } from "./security/AccessControlListMongo.js";
 import { AccessControlListSQL } from "./security/AccessControlListSQL.js";
 import { HttpRouter } from "./http/Router.js";
+import { DEFAULT_MAX_BODY_SIZE } from "./http/Adapters.js";
 import type { HttpRequest, HttpResponse, NextFunction } from "./http/types.js";
 
 /**
@@ -317,7 +318,8 @@ export class Server {
                       })
                     : uWS.App();
 
-                this.app = new HttpRouter(uwsApp);
+                const maxBodySize: number = this.config.get("max_body_size") ?? DEFAULT_MAX_BODY_SIZE;
+                this.app = new HttpRouter(uwsApp, maxBodySize);
 
                 // cors
                 const corsConfig: any = this.config.get("cors") || {};

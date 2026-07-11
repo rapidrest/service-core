@@ -94,6 +94,24 @@ export function Identifier(target: any, propertyKey: string | symbol) {
     });
 }
 
+/**
+ * Apply this to a property that must never be settable by a client. `RepoUtils.create()`/`update()` strip any
+ * client-supplied value for a `@ReadOnly` property before persisting — the property's existing/declared-default
+ * value is kept instead, regardless of what the request body contains. Use this for fields that should only ever
+ * be changed by application/business logic (e.g. `roles`, ownership fields, computed/derived state).
+ */
+export function ReadOnly(target: any, propertyKey: string | symbol) {
+    Reflect.defineMetadata("rrst:readOnly", true, target, propertyKey);
+    // Class field initializers are compiled as own-instance assignments, so the property never otherwise
+    // appears on the prototype — forcing a placeholder onto the prototype (same technique @Identifier uses)
+    // is what makes it discoverable via Object.getOwnPropertyNames() in ModelUtils.getReadOnlyPropertyNames().
+    Object.defineProperty(target, propertyKey, {
+        enumerable: true,
+        writable: true,
+        value: undefined,
+    });
+}
+
 type PartialACL = Partial<AccessControlList> & Pick<AccessControlList, "records">;
 
 /**
