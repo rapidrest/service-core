@@ -113,6 +113,7 @@ export class UWSResponse implements HttpResponse {
     private _headersSent: boolean = false;
     private _writableEnded: boolean = false;
     private _aborted: boolean = false;
+    private _abortHandlers: (() => void)[] = [];
     /** Set to true for HEAD requests — body bytes must not be sent. */
     public isHead: boolean = false;
     /** Intermediate result passed between middleware. */
@@ -122,9 +123,11 @@ export class UWSResponse implements HttpResponse {
 
     constructor(uwsRes: UWSHttpResponse) {
         this.uwsRes = uwsRes;
-        // Track connection abort so we don't attempt writes on a closed socket
+        // Track connection abort so we don't attempt writes on a closed socket.
+        // uWS only allows one onAborted registration per response, so fan out here.
         uwsRes.onAborted(() => {
             this._aborted = true;
+            for (const handler of this._abortHandlers) handler();
         });
     }
 
@@ -199,6 +202,42 @@ export class UWSResponse implements HttpResponse {
                 this.uwsRes.end(data);
             }
         });
+    }
+
+    /**
+     * Flushes status and headers to the wire immediately without ending the response.
+     * Required before streaming data (e.g. SSE). Safe to call multiple times — only
+     * acts on the first call.
+     */
+    public flushHeaders(): void {
+        if (this._aborted || this._headersSent) return;
+        this.uwsRes.cork(() => {
+            this.uwsRes.writeStatus(this._statusToString(this._statusCode));
+            for (const [key, value] of this._headers.entries()) {
+                if (key === "content-length") continue;
+                this.uwsRes.writeHeader(key, value);
+            }
+            this._headersSent = true;
+        });
+    }
+
+    /**
+     * Writes a chunk to the response without ending it (streaming / SSE).
+     * Flushes headers on the first call if they haven't been sent yet.
+     */
+    public write(data: string | Buffer): void {
+        if (this._aborted || this._writableEnded) return;
+        if (!this._headersSent) this.flushHeaders();
+        this.uwsRes.write(data);
+    }
+
+    /**
+     * Registers a callback to run when the client aborts the connection.
+     * Safe to call multiple times — all registered callbacks are invoked on abort.
+     * Uses the single uWS `onAborted` slot registered in the constructor.
+     */
+    public onAbort(callback: () => void): void {
+        this._abortHandlers.push(callback);
     }
 
     /** Converts a numeric status code to the "200 OK" string format uWS expects. */

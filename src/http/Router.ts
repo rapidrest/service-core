@@ -8,26 +8,6 @@ import { UWSRequest, UWSResponse, readBody } from "./Adapters.js";
 import type { HttpRequest, HttpResponse, RequestHandler } from "./types.js";
 import { UWSWebSocketShim, type RequestWS } from "./WebSocket.js";
 
-/** MIME types for static file serving. */
-const MIME_TYPES: Record<string, string> = {
-    ".html": "text/html",
-    ".css": "text/css",
-    ".js": "application/javascript",
-    ".mjs": "application/javascript",
-    ".json": "application/json",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".svg": "image/svg+xml",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2",
-    ".ttf": "font/ttf",
-    ".txt": "text/plain",
-    ".map": "application/json",
-};
-
 /**
  * Runs an ordered array of middleware handlers sequentially, Express-style.
  * Supports both 3-param `(req, res, next)` handlers and 4-param `(err, req, res, next)`
@@ -40,11 +20,7 @@ const MIME_TYPES: Record<string, string> = {
  * setTimeout or socket.once. The chain terminates early when a handler ends the
  * response without calling next().
  */
-export async function runChain(
-    handlers: RequestHandler[],
-    req: HttpRequest,
-    res: HttpResponse
-): Promise<void> {
+export async function runChain(handlers: RequestHandler[], req: HttpRequest, res: HttpResponse): Promise<void> {
     let currentError: any = undefined;
 
     for (let i = 0; i < handlers.length; i++) {
@@ -163,7 +139,7 @@ function makeUWSHandler(
     routeHandlers: RequestHandler[],
     preLength: number,
     paramNames: string[],
-    isHead: boolean = false
+    isHead: boolean = false,
 ) {
     // Built lazily on the first request and reused thereafter. Safe because all use() calls
     // complete before listen() is invoked, and requests only arrive after listen().
@@ -216,7 +192,6 @@ function makeUWSHandler(
  *
  * Also supports:
  * - `ws(path, handlers)` — native uWS WebSocket routing
- * - `static(basePath)` — basic static file serving
  * - `listen(host, port)` / `close()` — server lifecycle
  */
 export class HttpRouter {
@@ -288,20 +263,29 @@ export class HttpRouter {
 
     public patch(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
-        this.uwsApp.patch(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
+        this.uwsApp.patch(
+            routePath,
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)),
+        );
         return this;
     }
 
     public head(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         // uWS explicitly-registered HEAD routes do send body bytes — suppress them via isHead flag
-        this.uwsApp.head(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), true));
+        this.uwsApp.head(
+            routePath,
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), true),
+        );
         return this;
     }
 
     public options(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
-        this.uwsApp.options(routePath, makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)));
+        this.uwsApp.options(
+            routePath,
+            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath)),
+        );
         return this;
     }
 
@@ -317,7 +301,12 @@ export class HttpRouter {
      *
      * Both `path` and `path + "/"` are registered to avoid trailing-slash mismatch.
      */
-    public ws(routePath: string, handlers: RequestHandler[], wsOptions?: Partial<uWS.WebSocketBehavior<any>>, upgradeAuth?: WsUpgradeAuth): this {
+    public ws(
+        routePath: string,
+        handlers: RequestHandler[],
+        wsOptions?: Partial<uWS.WebSocketBehavior<any>>,
+        upgradeAuth?: WsUpgradeAuth,
+    ): this {
         const behavior: uWS.WebSocketBehavior<any> = {
             ...wsOptions,
 
@@ -350,13 +339,7 @@ export class HttpRouter {
                     }
                 }
 
-                uwsRes.upgrade(
-                    { req },
-                    secWebSocketKey,
-                    secWebSocketProtocol,
-                    secWebSocketExtensions,
-                    context
-                );
+                uwsRes.upgrade({ req }, secWebSocketKey, secWebSocketProtocol, secWebSocketExtensions, context);
             },
 
             open: async (ws) => {
@@ -374,12 +357,24 @@ export class HttpRouter {
                     statusCode: 101,
                     headersSent: true,
                     writableEnded: false,
-                    status() { return this; },
-                    setHeader() { return this; },
-                    getHeader() { return undefined; },
-                    json() { return; },
-                    send() { return; },
-                    end() { this.writableEnded = true; },
+                    status() {
+                        return this;
+                    },
+                    setHeader() {
+                        return this;
+                    },
+                    getHeader() {
+                        return undefined;
+                    },
+                    json() {
+                        return;
+                    },
+                    send() {
+                        return;
+                    },
+                    end() {
+                        this.writableEnded = true;
+                    },
                 };
 
                 await runChain(handlers, req, stubRes);
@@ -402,7 +397,11 @@ export class HttpRouter {
             message: (ws, message, isBinary) => {
                 const userData = ws.getUserData() as { shim?: UWSWebSocketShim };
                 // Forward message events to the per-socket EventEmitter shim
-                userData.shim?.emit("message", isBinary ? Buffer.from(message) : Buffer.from(message).toString(), isBinary);
+                userData.shim?.emit(
+                    "message",
+                    isBinary ? Buffer.from(message) : Buffer.from(message).toString(),
+                    isBinary,
+                );
             },
 
             close: (ws, code, message) => {
@@ -418,36 +417,6 @@ export class HttpRouter {
             this.uwsApp.ws(routePath + "/", behavior);
         }
 
-        return this;
-    }
-
-    /**
-     * Serves static files from a directory via a wildcard GET route.
-     * Files not found on disk return 404.
-     */
-    public static(basePath: string): this {
-        this.uwsApp.get("/*", async (uwsRes, uwsReq) => {
-            const remoteAddress = Buffer.from(uwsRes.getRemoteAddressAsText()).toString();
-            const req = new UWSRequest(uwsReq, remoteAddress);
-            const res = new UWSResponse(uwsRes);
-
-            const safeBase = path.resolve(basePath);
-            const requestedPath = req.path === "/" ? "index.html" : req.path.replace(/^\/+/, "");
-            const filePath = path.resolve(safeBase, requestedPath);
-            if (!filePath.startsWith(safeBase + path.sep) && filePath !== safeBase) {
-                res.status(403).end();
-                return;
-            }
-            const ext = path.extname(filePath);
-
-            try {
-                const data = await fs.promises.readFile(filePath);
-                res.setHeader("content-type", MIME_TYPES[ext] || "application/octet-stream");
-                res.end(data);
-            } catch {
-                res.status(404).end();
-            }
-        });
         return this;
     }
 

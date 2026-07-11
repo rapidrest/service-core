@@ -523,9 +523,6 @@ export class Server {
                     }
                 });
 
-                // Serve static files — registered after route handlers so routes take precedence
-                this.app.static(publicPath);
-
                 await this.postStart();
 
                 // IPv6: set listen_host to "::" in config; default binds to all IPv4 interfaces
