@@ -1,0 +1,1 @@
+Hello from the Bun smoke test static fixture.

@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import { ModelUtils } from "../models/ModelUtils.js";
-import { RepoOperationOptions, RepoUtils } from "../models/RepoUtils.js";
+import { RepoUtils, type RepoOperationOptions } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
 import { Redis } from "ioredis";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
@@ -11,7 +11,7 @@ import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BulkError } from "../BulkError.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { ApiError, Event, EventUtils, ObjectDecorators } from "@rapidrest/core";
-import { AccessControlList, ACLAction } from "../security/AccessControlList.js";
+import { ACLAction, type AccessControlList } from "../security/AccessControlList.js";
 import { ACLUtils } from "../security/ACLUtils.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { NetUtils } from "../NetUtils.js";

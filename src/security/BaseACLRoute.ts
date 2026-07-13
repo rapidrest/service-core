@@ -2,9 +2,9 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import type { HttpRequest, HttpResponse } from "../http/index.js";
-import { AccessControlList, ACLAction } from "./AccessControlList.js";
-import { ApiError, JWTUser, UserUtils } from "@rapidrest/core";
-import { UpdateObject } from "../routes/ModelRoute.js";
+import { ACLAction, type AccessControlList } from "./AccessControlList.js";
+import { ApiError, UserUtils, type JWTUser } from "@rapidrest/core";
+import type { UpdateObject } from "../routes/ModelRoute.js";
 import { ApiErrorMessages } from "../ApiErrors.js";
 import { Before, Param, Query, Request, Response, User } from "../decorators/RouteDecorators.js";
 import { CRUDRoute } from "../routes/CRUDRoute.js";

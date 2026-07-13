@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import uWS from "uWebSockets.js";
+import type uWS from "uWebSockets.js";
 import * as path from "path";
 import * as prom from "prom-client";
 import "reflect-metadata";
@@ -19,9 +19,9 @@ import { NotificationUtils } from "./NotificationUtils.js";
 import { EventListenerManager } from "./EventListenerManager.js";
 import { AccessControlListMongo } from "./security/AccessControlListMongo.js";
 import { AccessControlListSQL } from "./security/AccessControlListSQL.js";
-import { HttpRouter } from "./http/Router.js";
-import { DEFAULT_MAX_BODY_SIZE } from "./http/Adapters.js";
-import type { HttpRequest, HttpResponse, NextFunction } from "./http/types.js";
+import { DEFAULT_MAX_BODY_SIZE } from "./http/uWS/Adapters.js";
+import type { HttpRequest, HttpResponse, IHttpRouter, NextFunction } from "./http/types.js";
+import { isBunRuntime } from "./http/RuntimeDetect.js";
 
 /**
  * The configuration options to use when constructing a new Server instance.
@@ -148,8 +148,8 @@ export interface ServerOptions {
 export class Server {
     /** The OpenAPI specification object to use to construct the server with. */
     protected apiSpec?: OpenApiSpec;
-    /** The underlying HTTP router (uWS-backed) that provides HTTP processing services. */
-    protected app!: HttpRouter;
+    /** The underlying HTTP router (uWS-backed on Node, Bun.serve()-backed under the Bun runtime) that provides HTTP processing services. */
+    protected app!: IHttpRouter;
     /** The base file system path that will be searched for models and routes. */
     protected readonly basePath: string;
     /** The global object containing configuration information to use. */
@@ -219,7 +219,7 @@ export class Server {
     /**
      * Returns the HTTP router instance.
      */
-    public getApplication(): HttpRouter {
+    public getApplication(): IHttpRouter {
         return this.app;
     }
 
@@ -307,19 +307,30 @@ export class Server {
                     await this.objectFactory.newInstance(NotificationUtils, { name: "default", args: [pushRedis] });
                 }
 
-                // Create the uWS app — SSLApp when ssl config is present, plain App otherwise
+                // Create the underlying HTTP router — Bun.serve()-backed under the Bun runtime,
+                // uWS-backed (SSLApp when ssl config is present, plain App otherwise) on Node.
+                // Both `uWebSockets.js` and `./http/uWS/Router.js` are dynamically imported here
+                // (never statically) so neither is ever evaluated when running under Bun, where
+                // uWebSockets.js's native binary does not load.
                 const sslConfig: any = this.config.get("ssl");
-                const uwsApp: uWS.TemplatedApp = sslConfig
-                    ? uWS.SSLApp({
-                          key_file_name: sslConfig.key,
-                          cert_file_name: sslConfig.cert,
-                          ca_file_name: sslConfig.ca,
-                          passphrase: sslConfig.passphrase,
-                      })
-                    : uWS.App();
-
                 const maxBodySize: number = this.config.get("max_body_size") ?? DEFAULT_MAX_BODY_SIZE;
-                this.app = new HttpRouter(uwsApp, maxBodySize);
+
+                if (isBunRuntime()) {
+                    const { BunRouter } = await import("./http/bun/BunRouter.js");
+                    this.app = new BunRouter(maxBodySize, sslConfig);
+                } else {
+                    const uWS = (await import("uWebSockets.js")).default;
+                    const { HttpRouter } = await import("./http/uWS/Router.js");
+                    const uwsApp: uWS.TemplatedApp = sslConfig
+                        ? uWS.SSLApp({
+                              key_file_name: sslConfig.key,
+                              cert_file_name: sslConfig.cert,
+                              ca_file_name: sslConfig.ca,
+                              passphrase: sslConfig.passphrase,
+                          })
+                        : uWS.App();
+                    this.app = new HttpRouter(uwsApp, maxBodySize);
+                }
 
                 // cors
                 const corsConfig: any = this.config.get("cors") || {};

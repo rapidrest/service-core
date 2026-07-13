@@ -1,12 +1,12 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { JWTUser, ObjectDecorators, UserUtils, sleep } from "@rapidrest/core";
+import { ObjectDecorators, UserUtils, sleep, type JWTUser } from "@rapidrest/core";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
 import { AccessControlListMongo } from "./AccessControlListMongo.js";
 import type { Repository } from "typeorm";
 import type { HttpRequest as Request } from "../http/index.js";
-import { AccessControlList, ACLAction, ACLRecord } from "./AccessControlList.js";
+import { ACLAction, type AccessControlList, type ACLRecord } from "./AccessControlList.js";
 import { Redis } from "ioredis";
 import { ConnectionManager } from "../database/ConnectionManager.js";
 import { isSqlDataSource } from "../database/ConnectionKinds.js";

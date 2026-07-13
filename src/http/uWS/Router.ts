@@ -2,131 +2,15 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import uWS from "uWebSockets.js";
-import * as fs from "fs";
-import * as path from "path";
 import { DEFAULT_MAX_BODY_SIZE, UWSRequest, UWSResponse, readBody } from "./Adapters.js";
-import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "./types.js";
+import type { HttpRequest, HttpResponse, IHttpRouter, NextFunction, RequestHandler } from "../types.js";
 import { UWSWebSocketShim, type RequestWS } from "./WebSocket.js";
+import { extractParamNames, makeWsStubResponse, runChain, type WsUpgradeAuth } from "../MiddlewareChain.js";
 import { ApiError } from "@rapidrest/core";
-import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
+import { ApiErrorMessages, ApiErrors } from "../../ApiErrors.js";
 
-/**
- * Runs an ordered array of middleware handlers sequentially, Express-style.
- * Supports both 3-param `(req, res, next)` handlers and 4-param `(err, req, res, next)`
- * error handlers. On error, execution skips to the next error handler.
- *
- * Each handler is awaited via a Promise that resolves when next() is called, not when
- * the handler's return value resolves. This correctly handles: (1) sync handlers that
- * call next() synchronously, (2) async handlers that return next() or await before
- * calling it, and (3) sync handlers that schedule next() via callbacks such as
- * setTimeout or socket.once. The chain terminates early when a handler ends the
- * response without calling next().
- */
-export async function runChain(handlers: RequestHandler[], req: HttpRequest, res: HttpResponse): Promise<void> {
-    let currentError: any = undefined;
-
-    for (let i = 0; i < handlers.length; i++) {
-        const handler = handlers[i];
-        const isErrorHandler = handler.length === 4;
-
-        if (currentError && !isErrorHandler) continue;
-        if (!currentError && isErrorHandler) continue;
-
-        const outcome = await new Promise<{ called: boolean; err?: any }>((resolve) => {
-            let settled = false;
-
-            const next = (err?: any): any => {
-                if (!settled) {
-                    settled = true;
-                    resolve({ called: true, err });
-                }
-            };
-
-            try {
-                const handlerResult = isErrorHandler
-                    ? (handler as any)(currentError, req, res, next)
-                    : handler(req, res, next);
-
-                if (handlerResult instanceof Promise) {
-                    // Async handler: wait for the Promise, but next() may have already been
-                    // called (or may be called later inside the Promise chain).
-                    handlerResult
-                        .then(() => {
-                            if (!settled) {
-                                settled = true;
-                                resolve({ called: false });
-                            }
-                        })
-                        .catch((err: any) => {
-                            if (!settled) {
-                                settled = true;
-                                resolve({ called: true, err });
-                            }
-                        });
-                } else {
-                    // Sync handler returned. Three sub-cases:
-                    //   a. next() was already called synchronously → already settled.
-                    //   b. Response was sent without next() → stop chain.
-                    //   c. Handler will call next() from an async callback (e.g. setTimeout)
-                    //      → leave the Promise pending; it resolves when next() fires.
-                    if (!settled && res.writableEnded) {
-                        settled = true;
-                        resolve({ called: false });
-                    }
-                    // else: wait for next() to be called asynchronously
-                }
-            } catch (err: any) {
-                if (!settled) {
-                    settled = true;
-                    resolve({ called: true, err });
-                }
-            }
-        });
-
-        if (!outcome.called) break; // handler terminated chain (sent response)
-
-        if (outcome.err !== undefined) {
-            currentError = outcome.err;
-        } else if (isErrorHandler) {
-            currentError = undefined; // error was handled
-        }
-    }
-
-    // End of chain with unhandled error
-    if (currentError && !res.writableEnded) {
-        res.status(500).json({
-            message: currentError?.message || "Internal Server Error",
-            status: 500,
-        });
-    }
-}
-
-/** Result returned by a pre-upgrade WebSocket auth function. */
-export type WsUpgradeAuthResult = {
-    user?: any;
-    authPayload?: any;
-    authToken?: string;
-    /** Set to `true` to reject the connection with HTTP 401 before the WebSocket handshake. */
-    reject?: boolean;
-};
-
-/**
- * Optional pre-upgrade auth function for WebSocket routes. Called synchronously inside the uWS
- * `upgrade` callback — before the WebSocket handshake completes. Returning `{ reject: true }`
- * sends an HTTP 401 and skips the upgrade entirely. Returning `{}` falls through to the
- * post-upgrade message-based LOGIN flow. Returning `{ user, ... }` pre-authenticates the
- * connection so clients that can send an Authorization header skip the LOGIN step.
- */
-export type WsUpgradeAuth = (req: HttpRequest) => WsUpgradeAuthResult;
-
-/** Parses `:param` names out of a uWS route pattern (e.g. `/users/:uid/:version` → `["uid","version"]`). */
-function extractParamNames(routePath: string): string[] {
-    const names: string[] = [];
-    for (const segment of routePath.split("/")) {
-        if (segment.startsWith(":")) names.push(segment.slice(1));
-    }
-    return names;
-}
+export { runChain, extractParamNames } from "../MiddlewareChain.js";
+export type { WsUpgradeAuth, WsUpgradeAuthResult } from "../MiddlewareChain.js";
 
 /**
  * Wraps a uWS route handler to convert uWS request/response objects into `HttpRequest`/`HttpResponse`
@@ -203,7 +87,7 @@ function makeUWSHandler(
  * - `ws(path, handlers)` — native uWS WebSocket routing
  * - `listen(host, port)` / `close()` — server lifecycle
  */
-export class HttpRouter {
+export class HttpRouter implements IHttpRouter {
     private readonly uwsApp: uWS.TemplatedApp;
     private readonly globalMiddleware: RequestHandler[] = [];
     private listenSocket: uWS.us_listen_socket | null = null;
@@ -389,29 +273,7 @@ export class HttpRouter {
                 req.wsHandled = false;
 
                 // Create a stub response (WebSocket responses don't use HTTP res)
-                const stubRes: HttpResponse = {
-                    statusCode: 101,
-                    headersSent: true,
-                    writableEnded: false,
-                    status() {
-                        return this;
-                    },
-                    setHeader() {
-                        return this;
-                    },
-                    getHeader() {
-                        return undefined;
-                    },
-                    json() {
-                        return;
-                    },
-                    send() {
-                        return;
-                    },
-                    end() {
-                        this.writableEnded = true;
-                    },
-                };
+                const stubRes: HttpResponse = makeWsStubResponse();
 
                 await runChain(handlers, req, stubRes);
 

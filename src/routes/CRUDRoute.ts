@@ -5,7 +5,7 @@ import { RepoUtils } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
 import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
-import { JWTUser } from "@rapidrest/core";
+import type { JWTUser } from "@rapidrest/core";
 import { Description, Returns, Summary, TypeInfo } from "../decorators/DocDecorators.js";
 import {
     Delete,
@@ -20,7 +20,7 @@ import {
     User,
     Validate,
 } from "../decorators/RouteDecorators.js";
-import { ModelRoute, UpdateObject } from "./ModelRoute.js";
+import { ModelRoute, type UpdateObject } from "./ModelRoute.js";
 
 /**
  * The `CRUDRoute` provides a base implementation of all CRUD endpoint behaviors that `ModelRoute` offers for a given

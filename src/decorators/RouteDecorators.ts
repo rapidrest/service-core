@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
-import { AccessControlList } from "../security/AccessControlList.js";
+import type { AccessControlList } from "../security/AccessControlList.js";
 
 /**
  * Retrieves a copy of the `rrst:route` metadata for the given target/propertyKey. `Reflect.getMetadata` walks the

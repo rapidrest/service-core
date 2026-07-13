@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
-import { AccessControlList } from "../security/AccessControlList.js";
+import type { AccessControlList } from "../security/AccessControlList.js";
 
 /**
  * Describes a column registration that must be bridged into TypeORM's metadata storage when (and only when) a SQL

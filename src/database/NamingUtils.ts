@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
-import { EntityOptions } from "../decorators/PersistenceDecorators.js";
+import type { EntityOptions } from "../decorators/PersistenceDecorators.js";
 
 /**
  * Converts a string into snake_case.

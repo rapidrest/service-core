@@ -1,12 +1,12 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import type { HttpRequest, HttpResponse } from "./types.js";
+import type { HttpRequest, HttpResponse } from "../types.js";
 import type { HttpRequest as UWSHttpRequest, HttpResponse as UWSHttpResponse } from "uWebSockets.js";
-import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
+import { ApiErrorMessages, ApiErrors } from "../../ApiErrors.js";
 
 /** Parses a `cookie` header string into a key/value map. */
-function parseCookies(cookieHeader: string): Record<string, string> {
+export function parseCookies(cookieHeader: string): Record<string, string> {
     const result: Record<string, string> = {};
     if (!cookieHeader) return result;
     for (const part of cookieHeader.split(";")) {
@@ -20,7 +20,7 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 }
 
 /** Parses a URL query string (without leading `?`) into a key/value map. */
-function parseQueryString(qs: string): Record<string, string | string[]> {
+export function parseQueryString(qs: string): Record<string, string | string[]> {
     const result: Record<string, string | string[]> = {};
     if (!qs) return result;
     for (const part of qs.split("&")) {
@@ -48,6 +48,29 @@ function parseQueryString(qs: string): Record<string, string | string[]> {
         }
     }
     return result;
+}
+
+/**
+ * Parses a raw request body Buffer according to its content-type header. Shared by both the
+ * uWS-backed and Bun-backed HTTP adapters so body-parsing rules stay in one place:
+ * `application/json` is parsed (falling back to the raw string on parse failure),
+ * `application/x-www-form-urlencoded` is parsed into a plain object, and anything else is
+ * returned as the raw Buffer. Returns `undefined` for an empty body.
+ */
+export function parseBodyByContentType(raw: Buffer, contentType: string): any {
+    if (raw.length === 0) return undefined;
+    const ct = contentType.toLowerCase();
+    if (ct.includes("application/json")) {
+        try {
+            return JSON.parse(raw.toString("utf8"));
+        } catch {
+            return raw.toString("utf8");
+        }
+    } else if (ct.includes("application/x-www-form-urlencoded")) {
+        return Object.fromEntries(new URLSearchParams(raw.toString("utf8")).entries());
+    } else {
+        return raw;
+    }
 }
 
 /**
@@ -292,24 +315,7 @@ export function readBody(
 
         const parseBody = (raw: Buffer) => {
             req.rawBody = raw;
-            if (raw.length > 0) {
-                const contentType: string = String(req.headers["content-type"] || "").toLowerCase();
-                if (contentType.includes("application/json")) {
-                    try {
-                        req.body = JSON.parse(raw.toString("utf8"));
-                    } catch {
-                        req.body = raw.toString("utf8");
-                    }
-                } else if (contentType.includes("application/x-www-form-urlencoded")) {
-                    req.body = Object.fromEntries(
-                        new URLSearchParams(raw.toString("utf8")).entries()
-                    );
-                } else {
-                    req.body = raw;
-                }
-            } else {
-                req.body = undefined;
-            }
+            req.body = parseBodyByContentType(raw, String(req.headers["content-type"] || ""));
         };
 
         uwsRes.onData((chunk, isLast) => {

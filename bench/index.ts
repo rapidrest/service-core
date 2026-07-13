@@ -9,7 +9,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import autocannon, { type Result } from "autocannon";
 import uWS from "uWebSockets.js";
-import { HttpRouter } from "../src/http/Router.js";
+import { HttpRouter } from "../src/http/uWS/Router.js";
 
 const PORT = 13337;
 const DURATION_SECONDS = 10;

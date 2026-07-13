@@ -1,12 +1,12 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { ApiError, JWTUser, ObjectDecorators, UserUtils } from "@rapidrest/core";
+import { ApiError, ObjectDecorators, UserUtils, type JWTUser } from "@rapidrest/core";
 import { Redis, ScanStream } from "ioredis";
 import Transport from "winston-transport";
 import { Auth, ContentType, Get, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
-import { type UWSWebSocketShim } from "../http/WebSocket.js";
+import { type IWebSocketShim } from "../http/IWebSocketShim.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 const { Config, Init, Logger } = ObjectDecorators;
@@ -162,7 +162,7 @@ export class BaseAdminRoute {
     @Description("Establishes a connection to the live log socket.")
     @Auth(["jwt"])
     @WebSocket("/logs")
-    public async logs(@Socket socket: UWSWebSocketShim, @User user: JWTUser): Promise<void> {
+    public async logs(@Socket socket: IWebSocketShim, @User user: JWTUser): Promise<void> {
         if (!UserUtils.hasRoles(user, this.trustedRoles)) {
             socket.close(1002, ApiErrors.AUTH_PERMISSION_FAILURE);
             return;

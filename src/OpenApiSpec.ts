@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { oas31 as oa } from "openapi3-ts";
-import { DocumentsData, getTypeInfo } from "./decorators/DocDecorators.js";
+import { getTypeInfo, type DocumentsData } from "./decorators/DocDecorators.js";
 import merge from "deepmerge";
 import * as _ from "lodash-es";
 import { ObjectDecorators, StringUtils } from "@rapidrest/core";

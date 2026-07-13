@@ -4,18 +4,19 @@
 import { EventEmitter } from "events";
 import { Duplex } from "stream";
 import type { WebSocket } from "uWebSockets.js";
-import type { HttpRequest } from "./types.js";
+import type { HttpRequest } from "../types.js";
+import type { IWebSocketShim } from "../IWebSocketShim.js";
 
 /**
  * HTTP request type for handling WebSocket upgrade requests.
  * Extends `HttpRequest` with WebSocket-specific properties set by the router
- * after the uWS WebSocket connection is opened.
+ * after the WebSocket connection is opened.
  */
 export interface RequestWS extends HttpRequest {
     /**
-     * The uWS WebSocket shim for this connection. Set on `open` after the upgrade.
+     * The WebSocket shim for this connection. Set on `open` after the upgrade.
      */
-    websocket: UWSWebSocketShim | undefined;
+    websocket: IWebSocketShim | undefined;
 
     /**
      * Indicates that the WebSocket handler has processed this connection and the
@@ -37,7 +38,7 @@ export interface RequestWS extends HttpRequest {
  * The Router's `ws()` implementation stores the shim in `ws.getUserData()` so that
  * behavior callbacks can call `shim.emit(...)`.
  */
-export class UWSWebSocketShim extends EventEmitter {
+export class UWSWebSocketShim extends EventEmitter implements IWebSocketShim {
     private readonly _ws: WebSocket<any>;
     public readyState: number = 1; // OPEN
 
