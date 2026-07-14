@@ -1,6 +1,6 @@
 {
     "name": "@rapidrest/service-core",
-    "version": "1.0.0-bun.1",
+    "version": "1.0.0-rc.23",
     "description": "Provides all core functionality for RapidREST based backend services.",
     "repository": "https://github.com/rapidrest/service-core.git",
     "author": "RapidREST <rapidrests@gmail.com>",
