@@ -3,15 +3,15 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, ObjectDecorators, UserUtils } from "@rapidrest/core";
 import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "../http/types.js";
-import type { WsUpgradeAuth } from "../http/Router.js";
-import type { RequestWS } from "../http/WebSocket.js";
+import type { WsUpgradeAuth } from "../http/MiddlewareChain.js";
+import type { RequestWS } from "../http/uWS/WebSocket.js";
 import { ServerResponse } from "http";
 import { OpenApiSpec } from "../OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
-import { AccessControlList, ACLUtils } from "../security/index.js";
+import { ACLUtils, type AccessControlList } from "../security/index.js";
 import _ from "lodash-es";
 import { AuthMiddleware } from "../auth/AuthMiddleware.js";
-import { AuthResult } from "../auth/AuthStrategy.js";
+import type { AuthResult } from "../auth/AuthStrategy.js";
 const { Config, Inject, Logger } = ObjectDecorators;
 
 /**

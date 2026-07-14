@@ -12,7 +12,8 @@
         "noImplicitAny": false,
         "rootDir": "src",
         "declarationDir": "dist/types",
-        "outDir": "dist/lib"
+        "outDir": "dist/lib",
+        "types": ["node"]
     },
     "include": ["src"]
 }

@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import * as prom from "prom-client";
-import { ApiError, JWTUser, UserUtils, ObjectDecorators } from "@rapidrest/core";
+import { ApiError, UserUtils, ObjectDecorators, type JWTUser } from "@rapidrest/core";
 import { Auth, Get, Param, Route, ContentType, User } from "../decorators/RouteDecorators.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";

@@ -58,3 +58,25 @@ export type RequestHandler = (req: HttpRequest, res: HttpResponse, next: NextFun
 
 /** Standard 4-param error-handling middleware function. */
 export type ErrorHandler = (err: any, req: HttpRequest, res: HttpResponse, next: NextFunction) => void | Promise<void>;
+
+/**
+ * Public surface shared by every HTTP router implementation (uWS-backed, Bun-backed, ...).
+ * `Server.ts` depends only on this interface, never on a concrete router class, so the
+ * underlying HTTP server can be swapped per-runtime without touching route registration.
+ */
+export interface IHttpRouter {
+    use(...handlers: RequestHandler[]): this;
+    get(path: string, ...handlers: RequestHandler[]): this;
+    post(path: string, ...handlers: RequestHandler[]): this;
+    put(path: string, ...handlers: RequestHandler[]): this;
+    delete(path: string, ...handlers: RequestHandler[]): this;
+    patch(path: string, ...handlers: RequestHandler[]): this;
+    head(path: string, ...handlers: RequestHandler[]): this;
+    options(path: string, ...handlers: RequestHandler[]): this;
+    ws(path: string, handlers: RequestHandler[], wsOptions?: any, upgradeAuth?: any): this;
+    listen(host: string, port: number): Promise<void>;
+    close(): void;
+    readonly isListening: boolean;
+    listenPort: number;
+    [key: string]: any;
+}

@@ -94,6 +94,33 @@ export class WsChain {
                 resolve();
             };
 
+            // Messages can arrive before the action that expects them is reached — e.g. a fast
+            // server response racing the client's send() callback, which can resolve after the
+            // response has already been delivered. Buffer every message as it arrives via a
+            // persistent listener rather than reactively registering a `once("message")` handler
+            // per action, so a message that arrives early is never silently dropped.
+            const messageQueue: string[] = [];
+            let pendingMessageHandler: ((raw: string) => void) | null = null;
+
+            ws.on("message", (raw: any) => {
+                const text = raw.toString();
+                if (pendingMessageHandler) {
+                    const handler = pendingMessageHandler;
+                    pendingMessageHandler = null;
+                    handler(text);
+                } else {
+                    messageQueue.push(text);
+                }
+            });
+
+            const nextMessage = (handler: (raw: string) => void) => {
+                if (messageQueue.length > 0) {
+                    handler(messageQueue.shift()!);
+                } else {
+                    pendingMessageHandler = handler;
+                }
+            };
+
             /** Execute the next action, or resolve if all done. */
             const next = () => {
                 if (actionIndex >= actions.length) {
@@ -138,10 +165,9 @@ export class WsChain {
                         ws.once("close", checkClose);
                     }
                 } else {
-                    // expectText / expectJson — wait for next message
-                    ws.once("message", (raw: any) => {
+                    // expectText / expectJson — consume the next buffered/incoming message
+                    nextMessage((text: string) => {
                         try {
-                            const text = raw.toString();
                             if (action.kind === "expectText") {
                                 if (text !== action.value) {
                                     fail(new Error(`Expected text "${action.value}" but got "${text}"`));

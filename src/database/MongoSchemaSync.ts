@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import type { CreateCollectionOptions, Db, Document } from "mongodb";
-import { CollationOptions, EntityOptions, getIndexMetadata, IndexInfo } from "../decorators/PersistenceDecorators.js";
+import { getIndexMetadata, type CollationOptions, type EntityOptions, type IndexInfo } from "../decorators/PersistenceDecorators.js";
 import { snakeCase } from "./NamingUtils.js";
 
 interface CollectionInfo {

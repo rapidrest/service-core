@@ -3,7 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { Get, Request, Response } from "../decorators/RouteDecorators.js";
 import { Summary } from "../decorators/DocDecorators.js";
-import { HttpRequest, HttpResponse } from "../http/types.js";
+import type { HttpRequest, HttpResponse } from "../http/types.js";
 import * as fs from "fs";
 import * as path from "path";
 import { ObjectDecorators } from "@rapidrest/core";

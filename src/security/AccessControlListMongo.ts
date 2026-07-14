@@ -4,7 +4,7 @@
 import { ObjectDecorators } from "@rapidrest/core";
 import { DocDecorators, ModelDecorators } from "../decorators/index.js";
 import { BaseMongoEntity } from "../models/index.js";
-import { AccessControlList, ACLRecord } from "./AccessControlList.js";
+import type { AccessControlList, ACLRecord } from "./AccessControlList.js";
 import { Column, Entity, Index } from "../decorators/PersistenceDecorators.js";
 const { Description, TypeInfo } = DocDecorators;
 const { Cache, DataStore } = ModelDecorators;

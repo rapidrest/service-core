@@ -1,9 +1,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ////////////////////////////////////////////////////////////////////////////////
-import { JWTUser } from "@rapidrest/core";
-import { HttpRequest, HttpResponse } from "../http/types.js";
-import { AuthResult, AuthStrategy } from "./AuthStrategy.js";
+import type { JWTUser } from "@rapidrest/core";
+import type { HttpRequest, HttpResponse } from "../http/types.js";
+import type { AuthResult, AuthStrategy } from "./AuthStrategy.js";
 
 /**
  * Describes the configuration options that can be used to initialize BasicStrategy.

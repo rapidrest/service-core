@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { JWTUser } from "@rapidrest/core";
-import { HttpRequest, HttpResponse } from "../http/types.js";
+import type { JWTUser } from "@rapidrest/core";
+import type { HttpRequest, HttpResponse } from "../http/types.js";
 
 /**
  * Result returned by `AuthStrategy.authenticate()`.

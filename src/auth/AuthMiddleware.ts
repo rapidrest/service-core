@@ -1,11 +1,11 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { JWTUser, ApiError, JWTPayload, JWTUtils, ObjectDecorators } from "@rapidrest/core";
-import { HttpRequest, HttpResponse, RequestHandler, NextFunction } from "../http/types.js";
+import { ApiError, JWTUtils, ObjectDecorators, type JWTUser, type JWTPayload } from "@rapidrest/core";
+import type { HttpRequest, HttpResponse, RequestHandler, NextFunction } from "../http/types.js";
 import { ApiErrors, ApiErrorMessages } from "../ApiErrors.js";
-import { RequestWS } from "../http/WebSocket.js";
-import { AuthResult, AuthStrategy } from "./AuthStrategy.js";
+import type { RequestWS } from "../http/uWS/WebSocket.js";
+import type { AuthResult, AuthStrategy } from "./AuthStrategy.js";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { JWTStrategy } from "./JWTStrategy.js";
 import { BasicStrategy } from "./BasicStrategy.js";
@@ -156,7 +156,8 @@ export class AuthMiddleware {
 
             const onClose = () => {
                 // Socket closed before auth completed — unblock runChain so the open handler can
-                // finish. The readyState === 3 guard in Router.ts will skip the final ws.close().
+                // finish. The readyState === 3 guard in the router's ws() open handler (uWS/Router.ts
+                // and bun/BunRouter.ts both implement it) will skip the final ws.close().
                 settle(() => next());
             };
 

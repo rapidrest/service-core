@@ -1,11 +1,11 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { JWTUtils, JWTUtilsConfig, JWTUser, JWTPayload, ObjectDecorators } from "@rapidrest/core";
+import { JWTUtils, ObjectDecorators, type JWTUtilsConfig, type JWTUser, type JWTPayload } from "@rapidrest/core";
 import type { HttpRequest, HttpResponse } from "../http/types.js";
 import dayjs from "dayjs";
 import { createRequire } from "module";
-import { AuthResult } from "./AuthStrategy.js";
+import type { AuthResult } from "./AuthStrategy.js";
 const { Config, Init } = ObjectDecorators;
 const _require = createRequire(process.cwd() + "/package.json");
 const duration = _require("dayjs/plugin/duration");
