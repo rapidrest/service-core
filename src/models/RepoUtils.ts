@@ -1,4 +1,4 @@
-﻿///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ////////////////////////////////////////////////////////////////////////////////
 import * as crypto from "crypto";
@@ -456,11 +456,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
+        const reqCache: Map<string, AccessControlList | undefined> = new Map();
+
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below, right before the
         // results are returned) is an additional layer on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ))) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ, reqCache))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -578,15 +580,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         // Record-level ACLs aren't reflected in the query itself (nor in cached results, which are shared across
-        // users), so each matched record must be checked individually before it's returned to the caller.
+        // users), so each matched record must be checked individually before it's returned to the caller. The
+        // checks are run concurrently, and share a request-scoped ACL cache, so that a page of N results costs
+        // at most one round trip per *distinct* ACL uid (typically just the shared parent, since per-record
+        // ACLs are rarely warm in Redis) instead of N sequential round trips.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
-            const filtered: T[] = [];
-            for (const obj of results) {
-                if (await this.aclUtils.hasPermission(options?.user, obj.uid, ACLAction.READ)) {
-                    filtered.push(obj);
-                }
-            }
-            results = filtered;
+            const permitted: boolean[] = await Promise.all(
+                results.map((obj) => this.aclUtils!.hasPermission(options?.user, obj.uid, ACLAction.READ, reqCache)),
+            );
+            results = results.filter((_obj, i) => permitted[i]);
         }
 
         return results;

@@ -148,12 +148,16 @@ export class ACLUtils {
      * @param user The user to validate permissions of.
      * @param acl The ACL or uid of an ACL to validate permissions against.
      * @param action The action that the user desires permission for.
+     * @param reqCache Optional request-scoped cache (see `findACL`) to avoid redundant Redis/DB round trips
+     * when the same ACL uid — typically a shared parent — is checked repeatedly within one request, such as
+     * once per record when filtering a page of search results.
      * @returns `true` if the user has at least one of the permissions granted for the given entity, otherwise `false`.
      */
     public async hasPermission(
         user: JWTUser | undefined,
         acl: AccessControlList | string,
         action: ACLAction,
+        reqCache?: Map<string, AccessControlList | undefined>,
     ): Promise<boolean> {
         let result: boolean | null = null;
 
@@ -170,8 +174,8 @@ export class ACLUtils {
 
         // If a uid has been given look up the ACL associated with it and then process
         if (typeof acl === "string") {
-            const entry: AccessControlList | undefined = await this.findACL(acl);
-            return entry ? await this.hasPermission(user, entry, action) : false;
+            const entry: AccessControlList | undefined = await this.findACL(acl, [], reqCache);
+            return entry ? await this.hasPermission(user, entry, action, reqCache) : false;
         }
 
         // Look for the first available record for the given user
