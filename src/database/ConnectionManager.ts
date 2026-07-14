@@ -141,7 +141,13 @@ export class ConnectionManager {
                         await conn.close();
                     }
                 } else if (conn instanceof Redis) {
-                    if (conn.status === "ready") {
+                    // Disconnect regardless of whether the connection ever reached "ready" — one
+                    // stuck retrying against an unreachable server (status stays "connecting" /
+                    // "reconnecting" forever) must still be torn down here, or it leaks an
+                    // endlessly-retrying client with active reconnect timers past this
+                    // ConnectionManager's lifetime. "end" is the only state where disconnect()
+                    // would be a redundant no-op.
+                    if (conn.status !== "end") {
                         conn.disconnect();
                     }
                 } else if (isSqlDataSource(conn) && conn.isInitialized) {

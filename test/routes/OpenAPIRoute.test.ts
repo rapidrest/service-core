@@ -25,11 +25,6 @@ describe("OpenAPIRoute Tests", () => {
     const server: Server = new Server({ config, basePath: "./test/server", classLoader, objectFactory });
 
     beforeAll(async () => {
-        config.set("datastores:logs", {
-            type: "redis",
-            url: "redis://localhost:6379",
-        });
-
         // Register the test route class with the class loader
         classLoader.getClasses().set("routes.OpenAPIRoute", OpenAPIRoute);
 
