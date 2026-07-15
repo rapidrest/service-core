@@ -603,6 +603,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             results = results.filter((_obj, i) => permitted[i]);
         }
 
+        // Process the results to remove any properties that have been scoped with @RequiresScope that the user
+        // does not have access to.
+        ObjectUtils.deleteScopedProps(results, options?.user, this.modelClass);
+
         return results;
     }
 
@@ -668,8 +672,16 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
+        const result = existing ? this.instantiateObject(existing) : undefined;
+
+        // Process the result to remove any properties that have been scoped with @RequiresScope that the user
+        // does not have access to.
+        if (result) {
+            ObjectUtils.deleteScopedProps(result, options?.user, this.modelClass);
+        }
+
         // Make sure we return the correct data type
-        return existing ? this.instantiateObject(existing) : undefined;
+        return result;
     }
 
     /**
