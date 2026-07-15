@@ -4,6 +4,7 @@
 import { Logger } from "@rapidrest/core";
 import { RouteDecorators } from "../../../src/decorators";
 import { Description, Summary } from "../../../src/decorators/DocDecorators";
+import { ACLAction } from "../../../src/security/AccessControlList";
 const { Auth, Get, Protect, RequiresRole, Route, User } = RouteDecorators;
 
 const logger = Logger();
@@ -13,21 +14,11 @@ const logger = Logger();
     records: [
         {
             userOrRoleId: "anonymous",
-            create: false,
-            read: false,
-            update: false,
-            delete: false,
-            special: false,
-            full: false,
+            actions: [],
         },
         {
             userOrRoleId: ".*",
-            create: true,
-            read: true,
-            update: true,
-            delete: true,
-            special: false,
-            full: false,
+            actions: [ACLAction.CREATE, ACLAction.READ, ACLAction.UPDATE, ACLAction.DELETE],
         },
     ],
 })
@@ -40,21 +31,11 @@ class ProtectedDefaultRoute {
         records: [
             {
                 userOrRoleId: "anonymous",
-                create: true,
-                read: true,
-                update: true,
-                delete: true,
-                special: true,
-                full: true,
+                actions: [ACLAction.FULL],
             },
             {
                 userOrRoleId: ".*",
-                create: true,
-                read: true,
-                update: true,
-                delete: true,
-                special: false,
-                full: false,
+                actions: [ACLAction.CREATE, ACLAction.READ, ACLAction.UPDATE, ACLAction.DELETE],
             },
         ],
     })

@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
-import type { AccessControlList } from "../security/AccessControlList.js";
+import { ACLAction, type AccessControlList } from "../security/AccessControlList.js";
 
 /**
  * Retrieves a copy of the `rrst:route` metadata for the given target/propertyKey. `Reflect.getMetadata` walks the
@@ -280,21 +280,20 @@ export function Protect(
         records: [
             {
                 userOrRoleId: "anonymous",
-                create: false,
-                read: false,
-                update: false,
-                delete: false,
-                special: false,
-                full: false,
+                actions: [],
             },
             {
                 userOrRoleId: ".*",
-                create: true,
-                read: true,
-                update: true,
-                delete: true,
-                special: false,
-                full: false,
+                actions: [
+                    ACLAction.COUNT,
+                    ACLAction.CREATE,
+                    ACLAction.DELETE,
+                    ACLAction.EXISTS,
+                    ACLAction.READ,
+                    ACLAction.LIST,
+                    ACLAction.TRUNCATE,
+                    ACLAction.UPDATE,
+                ],
             },
         ],
     },
@@ -353,6 +352,23 @@ export function RequiresRole(roles: string | string[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         let route: any = getRouteMetadata(target, propertyKey);
         route.requiredRoles = Array.isArray(roles) ? roles : [roles];
+        Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+    };
+}
+
+/**
+ * Indicates that the client's token must carry at least one of the specified OAuth-style scope(s) to process the
+ * request. This is a coarse, token-level pre-check performed before the per-resource `AccessControlList` check —
+ * it answers "can this token ever perform this class of action" rather than "can this user perform this action on
+ * this specific resource".
+ *
+ * @param scopes The scope(s) that the authenticated user's token must carry to make the request. The sentinel
+ * value `ACLAction.FULL` (`"*"`) also satisfies any required scope.
+ */
+export function RequiresScope(scopes: string | string[]) {
+    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+        let route: any = getRouteMetadata(target, propertyKey);
+        route.requiredScopes = Array.isArray(scopes) ? scopes : [scopes];
         Reflect.defineMetadata("rrst:route", route, target, propertyKey);
     };
 }

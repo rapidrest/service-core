@@ -8,7 +8,7 @@ import type { RequestWS } from "../http/uWS/WebSocket.js";
 import { ServerResponse } from "http";
 import { OpenApiSpec } from "../OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
-import { ACLUtils, type AccessControlList } from "../security/index.js";
+import { ACLAction, ACLUtils, type AccessControlList } from "../security/index.js";
 import _ from "lodash-es";
 import { AuthMiddleware } from "../auth/AuthMiddleware.js";
 import type { AuthResult } from "../auth/AuthStrategy.js";
@@ -68,6 +68,32 @@ export class RouteUtils {
             let foundRole: boolean = UserUtils.hasRoles(req.user, requiredRoles);
 
             if (foundRole) {
+                return next();
+            } else {
+                const err: ApiError = new ApiError(
+                    ApiErrors.AUTH_PERMISSION_FAILURE,
+                    403,
+                    ApiErrorMessages.AUTH_PERMISSION_FAILURE,
+                );
+                return next(err);
+            }
+        };
+    }
+
+    /**
+     * Creates a middleware function that verifies the incoming request's token carries at least one of the
+     * specified scopes. This is a coarse, token-level pre-check that runs before the per-resource ACL check —
+     * see `RequiresScope`.
+     *
+     * @param requiredScopes The list of scopes of which the authenticated user's token must carry at least one.
+     */
+    public checkRequiredScopes(requiredScopes: string[]): RequestHandler {
+        return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+            const userScopes: string[] = req.user?.scopes ?? [];
+            const hasScope: boolean =
+                userScopes.includes(ACLAction.FULL) || requiredScopes.some((scope) => userScopes.includes(scope));
+
+            if (hasScope) {
                 return next();
             } else {
                 const err: ApiError = new ApiError(
@@ -156,7 +182,9 @@ export class RouteUtils {
                 // If the default ACL can't be persisted, `checkRequestPerms` will have nothing to find for this
                 // route's uid. Registration must not proceed in that case — continuing would silently register
                 // a `@Protect`-ed route with no permission enforcement at all.
-                this.logger?.error(`Failed to save default ACL for: ${defaultAcl?.uid}. Refusing to register this route.`);
+                this.logger?.error(
+                    `Failed to save default ACL for: ${defaultAcl?.uid}. Refusing to register this route.`,
+                );
                 this.logger?.debug(err);
                 throw err;
             }
@@ -175,7 +203,7 @@ export class RouteUtils {
             let metadata: any = Reflect.getMetadata("rrst:route", route, key) || {};
             if (value && metadata) {
                 let { authRequired } = metadata;
-                const { after, before, methods, requiredRoles, validator } = metadata;
+                const { after, before, methods, requiredRoles, requiredScopes, validator } = metadata;
                 let { authStrategies } = metadata;
                 let verbMap: Map<string, string> = methods as Map<string, string>;
 
@@ -197,14 +225,18 @@ export class RouteUtils {
                 // The order of operations for middleware is:
                 // 1. Auth Strategies
                 // 2. Required Roles
-                // 3. Required Permissions (Path Matching)
-                // 4. Validator Function
-                // 5. Before Functions
-                // 6. Decorated Function
-                // 7. After Functions
+                // 3. Required Scopes
+                // 4. Required Permissions (Path Matching)
+                // 5. Validator Function
+                // 6. Before Functions
+                // 7. Decorated Function
+                // 8. After Functions
                 let middleware: Array<RequestHandler> = new Array();
                 if (requiredRoles) {
                     middleware.push(this.checkRequiredRoles(requiredRoles));
+                }
+                if (requiredScopes) {
+                    middleware.push(this.checkRequiredScopes(requiredScopes));
                 }
                 if (this.aclUtils?.enabled) {
                     const aclUid: string | undefined = acl?.uid || defaultAcl?.uid;
