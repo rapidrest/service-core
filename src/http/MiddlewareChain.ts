@@ -129,6 +129,19 @@ export function extractParamNames(routePath: string): string[] {
  * no-ops other than tracking `writableEnded`.
  */
 export function makeWsStubResponse(): HttpResponse {
+    const finishHandlers: Array<() => void | Promise<void>> = [];
+    let finished = false;
+    const fireFinish = () => {
+        if (finished) return;
+        finished = true;
+        for (const handler of finishHandlers) {
+            Promise.resolve()
+                .then(() => handler())
+                .catch(() => {
+                    // WS routes have no real HttpResponse to report errors through; swallow.
+                });
+        }
+    };
     return {
         statusCode: 101,
         headersSent: true,
@@ -150,6 +163,14 @@ export function makeWsStubResponse(): HttpResponse {
         },
         end() {
             this.writableEnded = true;
+            fireFinish();
+        },
+        onFinish(handler: () => void | Promise<void>) {
+            if (finished) {
+                void handler();
+            } else {
+                finishHandlers.push(handler);
+            }
         },
     };
 }

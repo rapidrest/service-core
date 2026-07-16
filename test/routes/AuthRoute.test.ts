@@ -92,7 +92,6 @@ describe("Server Tests", () => {
 
         const result = await request(server)
             .get("/auth/basic")
-            .send(user)
             .set("Authorization", `basic ${Buffer.from(`${user.uid}:${user.password}`).toString("base64")}`);
         expect(result).toHaveProperty("body");
         expect(result.body.uid).toEqual(user.uid);
@@ -123,7 +122,6 @@ describe("Server Tests", () => {
 
         const result = await request(server)
             .get("/auth/basic")
-            .send(user)
             .set("Authorization", `basic ${Buffer.from(`${user.uid}:bogus`).toString("base64")}`);
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(401);

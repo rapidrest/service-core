@@ -18,6 +18,11 @@ export interface HttpRequest {
     rawBody?: Buffer;
     cookies: Record<string, string>;
     signedCookies: Record<string, string>;
+    /**
+     * Populated by the optional session middleware (see SessionManager). Undefined when no
+     * session middleware is registered (i.e. the `session` config block is absent).
+     */
+    session?: Record<string, any>;
     /** Minimal socket interface; populated with remote address for IP extraction. */
     socket: { remoteAddress?: string };
     /** Set by JWT auth middleware after successful token verification. */
@@ -46,6 +51,12 @@ export interface HttpResponse {
     json(data: any): void;
     send(data?: any): void;
     end(data?: any): void;
+    /**
+     * Registers a callback fired exactly once when the response actually completes — either a
+     * normal end() or client/stream abort. Does not delay or await end(). Used to persist
+     * request-scoped state (e.g. session data) after downstream handlers finish mutating it.
+     */
+    onFinish(handler: () => void | Promise<void>): void;
     /** Allow arbitrary per-response properties. */
     [key: string]: any;
 }

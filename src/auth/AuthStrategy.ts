@@ -9,7 +9,7 @@ import type { HttpRequest, HttpResponse } from "../http/types.js";
  */
 export interface AuthResult {
     /** The raw auth data that was verified. */
-    data?: string;
+    data?: any;
     /** The name of the auth strategy that produced this result. */
     method: string;
     /** The fully decoded payload from the auth data. */

@@ -139,6 +139,8 @@ export class UWSResponse implements HttpResponse {
     private _streaming: boolean = false;
     private _aborted: boolean = false;
     private _abortHandlers: (() => void)[] = [];
+    private _finished: boolean = false;
+    private _finishHandlers: (() => void | Promise<void>)[] = [];
     /** Set to true for HEAD requests — body bytes must not be sent. */
     public isHead: boolean = false;
     /** Intermediate result passed between middleware. */
@@ -153,6 +155,7 @@ export class UWSResponse implements HttpResponse {
         uwsRes.onAborted(() => {
             this._aborted = true;
             for (const handler of this._abortHandlers) handler();
+            this._fireFinish();
         });
     }
 
@@ -200,6 +203,7 @@ export class UWSResponse implements HttpResponse {
     public end(data?: any): void {
         if (this._aborted || this._writableEnded) return;
         this._writableEnded = true;
+        this._fireFinish();
 
         this.uwsRes.cork(() => {
             // Write status line (uWS expects "200 OK" format)
@@ -264,6 +268,33 @@ export class UWSResponse implements HttpResponse {
      */
     public onAbort(callback: () => void): void {
         this._abortHandlers.push(callback);
+    }
+
+    /**
+     * Registers a callback fired exactly once when the response lifecycle ends — either a normal
+     * end() or a client abort. Fires immediately if the response has already finished. Handlers run
+     * fire-and-forget (via a resolved microtask) so slow/async work (e.g. a Redis write) never
+     * delays or blocks the actual response flush.
+     */
+    public onFinish(handler: () => void | Promise<void>): void {
+        if (this._finished) {
+            void handler();
+        } else {
+            this._finishHandlers.push(handler);
+        }
+    }
+
+    private _fireFinish(): void {
+        if (this._finished) return;
+        this._finished = true;
+        for (const handler of this._finishHandlers) {
+            Promise.resolve()
+                .then(() => handler())
+                .catch(() => {
+                    // Persistence errors are the middleware's responsibility to log; never let
+                    // them surface as an unhandled rejection from the adapter.
+                });
+        }
     }
 
     /** Converts a numeric status code to the "200 OK" string format uWS expects. */

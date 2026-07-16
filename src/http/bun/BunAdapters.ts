@@ -87,6 +87,8 @@ export class BunResponse implements HttpResponse {
     private _streaming: boolean = false;
     private _aborted: boolean = false;
     private _abortHandlers: (() => void)[] = [];
+    private _finished: boolean = false;
+    private _finishHandlers: (() => void | Promise<void>)[] = [];
     /** Set to true for HEAD requests — body bytes must not be sent. */
     public isHead: boolean = false;
     /** Intermediate result passed between middleware. */
@@ -109,6 +111,7 @@ export class BunResponse implements HttpResponse {
         rawRequest.signal?.addEventListener("abort", () => {
             this._aborted = true;
             for (const handler of this._abortHandlers) handler();
+            this._fireFinish();
         });
     }
 
@@ -161,6 +164,7 @@ export class BunResponse implements HttpResponse {
     public end(data?: any): void {
         if (this._aborted || this._writableEnded) return;
         this._writableEnded = true;
+        this._fireFinish();
 
         if (this._streaming) {
             if (data !== undefined && data !== null) this._enqueue(data);
@@ -198,6 +202,7 @@ export class BunResponse implements HttpResponse {
             cancel: () => {
                 this._aborted = true;
                 for (const handler of this._abortHandlers) handler();
+                this._fireFinish();
             },
         });
         this._resolveReady(this._buildStreamingResponse());
@@ -223,6 +228,33 @@ export class BunResponse implements HttpResponse {
     }
 
     /**
+     * Registers a callback fired exactly once when the response lifecycle ends — a normal end(),
+     * a client abort, or a streaming abort. Fires immediately if the response has already finished.
+     * Handlers run fire-and-forget (via a resolved microtask) so slow/async work (e.g. a Redis
+     * write) never delays or blocks the actual response flush.
+     */
+    public onFinish(handler: () => void | Promise<void>): void {
+        if (this._finished) {
+            void handler();
+        } else {
+            this._finishHandlers.push(handler);
+        }
+    }
+
+    private _fireFinish(): void {
+        if (this._finished) return;
+        this._finished = true;
+        for (const handler of this._finishHandlers) {
+            Promise.resolve()
+                .then(() => handler())
+                .catch(() => {
+                    // Persistence errors are the middleware's responsibility to log; never let
+                    // them surface as an unhandled rejection from the adapter.
+                });
+        }
+    }
+
+    /**
      * Errors the underlying stream if it's still open. Used when a middleware chain throws after
      * streaming has already started and the `Response` has already been handed back to the client.
      */
@@ -234,6 +266,7 @@ export class BunResponse implements HttpResponse {
                 // already closed
             }
             this._writableEnded = true;
+            this._fireFinish();
         }
     }
 

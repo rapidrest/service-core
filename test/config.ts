@@ -2,13 +2,11 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import nconf from "nconf";
-const conf = nconf
-    .argv()
-    .env({
+const conf = nconf.argv().env({
     separator: "__",
     lowerCase: true,
     parseValues: true,
-    });
+});
 
 conf.use("memory");
 
@@ -55,11 +53,17 @@ conf.defaults({
             issuer: "api.mydomain.com",
         },
     },
+    oauth_provider: {
+        name: "oauth_test",
+        /** STUB: Will be filled out by test. */
+    },
     rbac: {
         enabled: true,
     },
     session: {
         secret: "SessionsHaveSecrets",
+        cookieName: "rrst.sid",
+        ttl: 300,
     },
     cluster_url: "http://localhost",
     metrics: {

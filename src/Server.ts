@@ -22,6 +22,8 @@ import { AccessControlListSQL } from "./security/AccessControlListSQL.js";
 import { DEFAULT_MAX_BODY_SIZE } from "./http/uWS/Adapters.js";
 import type { HttpRequest, HttpResponse, IHttpRouter, NextFunction } from "./http/types.js";
 import { isBunRuntime } from "./http/RuntimeDetect.js";
+import { SessionManager } from "./http/session/SessionManager.js";
+import { createSessionMiddleware } from "./http/session/sessionMiddleware.js";
 
 /**
  * The configuration options to use when constructing a new Server instance.
@@ -168,6 +170,8 @@ export class Server {
     public readonly port: number;
     protected routeUtils?: RouteUtils;
     protected serviceManager?: BackgroundServiceManager;
+    /** Manages cross-request session support. Only set when a `session` config block is present. */
+    protected sessionManager?: SessionManager;
 
     ///////////////////////////////////////////////////////////////////////////
     // METRICS VARIABLES
@@ -388,6 +392,15 @@ export class Server {
                     (req as any)._metricsStart = Date.now();
                     return next();
                 });
+
+                // Initialize session support if configured. Global-but-cheap: only registered when
+                // a `session` config block is present, so apps that don't configure sessions pay
+                // zero per-request cost (mirrors the NotificationUtils conditional-feature pattern).
+                const sessionConfig: any = this.config.get("session");
+                if (sessionConfig) {
+                    this.sessionManager = await this.objectFactory.newInstance(SessionManager, { name: "default" });
+                    this.app.use(createSessionMiddleware(this.sessionManager));
+                }
 
                 const allRoutes: Array<any> = [];
 

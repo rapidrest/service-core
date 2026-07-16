@@ -93,7 +93,6 @@ describe("TOTPRoute Tests", () => {
 
         let result = await request(server)
             .get("/auth/totp")
-            .send(user)
             .set("Authorization", `totp ${Buffer.from(`${user.uid}`).toString("base64")}`);
         expect(result.status).toBe(200);
 
@@ -101,7 +100,6 @@ describe("TOTPRoute Tests", () => {
         expect(route).toBeDefined();
         result = await request(server)
             .get("/auth/totp")
-            .send(user)
             .set(
                 "Authorization",
                 `totp ${Buffer.from(`${user.uid}:${route.totpCodes.get(user.uid)}`).toString("base64")}`,
@@ -135,13 +133,11 @@ describe("TOTPRoute Tests", () => {
 
         let result = await request(server)
             .get("/auth/totp")
-            .send(user)
             .set("Authorization", `totp ${Buffer.from(`${user.uid}`).toString("base64")}`);
         expect(result.status).toBe(200);
 
         result = await request(server)
             .get("/auth/totp")
-            .send(user)
             .set("Authorization", `totp ${Buffer.from(`${user.uid}:bogus`).toString("base64")}`);
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(401);
