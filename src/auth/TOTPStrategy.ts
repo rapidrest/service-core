@@ -104,17 +104,14 @@ export class TOTPStrategy implements AuthStrategy {
             );
         }
 
-        const { base32, otpauth_url } = speakeasy.generateSecret(this.options.totpConfig);
+        const { base32, otpauth_url: otpauthUrl } = speakeasy.generateSecret(this.options.totpConfig);
         const totp: string = speakeasy.totp({
             secret: base32,
             encoding: "base32",
         });
         // Store the TOTP data in the session for verification during phase 2
-        req.session.secret = {
-            enrolled: true,
-            secret: base32,
-            otp: otpauth_url,
-        };
+        req.session.secret = base32;
+        req.session.otp = otpauthUrl;
         req.session.totp = totp;
 
         return totp;
