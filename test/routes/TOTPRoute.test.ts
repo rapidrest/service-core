@@ -7,7 +7,7 @@ process.env[`cors__origins`] = JSON.stringify(corsOrigins);
 import { default as config } from "../config";
 import { Server, ObjectFactory, MongoRepository, ConnectionManager, MongoConnection } from "../../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { request } from "../../src/test/request.js";
+import { agent, request } from "../../src/test/request.js";
 import { JWTUtils, Logger } from "@rapidrest/core";
 import User from "../server/models/User";
 import * as uuid from "uuid";
@@ -91,14 +91,15 @@ describe("TOTPRoute Tests", () => {
             password: "MyP@ssw0rd1sS3cuR3!",
         });
 
-        let result = await request(server)
+        const client = agent(server);
+        let result = await client
             .get("/auth/totp")
             .set("Authorization", `totp ${Buffer.from(`${user.uid}`).toString("base64")}`);
         expect(result.status).toBe(200);
 
         const route: TOTPRoute = objectFactory.getInstance("routes.TOTPRoute:default");
         expect(route).toBeDefined();
-        result = await request(server)
+        result = await client
             .get("/auth/totp")
             .set(
                 "Authorization",
@@ -131,12 +132,13 @@ describe("TOTPRoute Tests", () => {
             password: "MyP@ssw0rd1sS3cuR3!",
         });
 
-        let result = await request(server)
+        const client = agent(server);
+        let result = await client
             .get("/auth/totp")
             .set("Authorization", `totp ${Buffer.from(`${user.uid}`).toString("base64")}`);
         expect(result.status).toBe(200);
 
-        result = await request(server)
+        result = await client
             .get("/auth/totp")
             .set("Authorization", `totp ${Buffer.from(`${user.uid}:bogus`).toString("base64")}`);
         expect(result).toHaveProperty("status");
@@ -157,7 +159,8 @@ describe("TOTPRoute Tests", () => {
             roles: config.get("trusted_roles"),
         } as any);
 
-        const result = await request(server).get("/auth/totp").send(user).set("Authorization", `jwt ${token}`);
+        const client = agent(server);
+        const result = await client.get("/auth/totp").send(user).set("Authorization", `jwt ${token}`);
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(401);
     });

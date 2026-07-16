@@ -4,7 +4,7 @@
 import { Route, Get, User, Auth } from "../../../src/decorators/RouteDecorators";
 import { JWTUser, ObjectDecorators } from "@rapidrest/core";
 import { Description, Returns, Summary } from "../../../src/decorators/DocDecorators";
-import { AuthMiddleware, TOTPStrategy, TOTPStrategyOptions, ObjectFactory, RepoUtils } from "../../../src";
+import { AuthMiddleware, TOTPStrategy, TOTPStrategyOptions, ObjectFactory, RepoUtils, TOTPOptions } from "../../../src";
 import UserModel from "../models/User";
 const { Init, Inject } = ObjectDecorators;
 
@@ -35,30 +35,31 @@ class TOTPRoute {
             throw new Error("objectFactory is not set.");
         }
 
-        const options: TOTPStrategyOptions = new TOTPStrategyOptions();
-        options.notify = async (uid: string): Promise<void> => {
+        const totpConfig: TOTPOptions = {
+            issuer: "rapidrest",
+            name: "rapidrest",
+            length: 64,
+        };
+        const options: TOTPStrategyOptions = new TOTPStrategyOptions(totpConfig);
+        options.notify = async (uid: string, totp: string): Promise<void> => {
             const repoUtils: RepoUtils<UserModel> | undefined =
                 this.objectFactory?.getInstance<RepoUtils<UserModel>>("RepoUtils:User");
             if (repoUtils) {
                 const user = await repoUtils.findOne(uid);
                 if (user) {
-                    const totp = String(Math.random() * 100000);
                     this.totpCodes.set(user.uid, totp);
                 } else {
                     throw new Error("User not found");
                 }
             }
         };
-        options.verify = async (uid: string, totp: string): Promise<JWTUser | undefined> => {
+        options.verify = async (uid: string): Promise<JWTUser | undefined> => {
             const repoUtils: RepoUtils<UserModel> | undefined =
                 this.objectFactory?.getInstance<RepoUtils<UserModel>>("RepoUtils:User");
             if (repoUtils) {
                 const user = await repoUtils.findOne(uid);
                 if (user) {
-                    const code = this.totpCodes.get(user.uid);
-                    if (totp === code) {
-                        return user as any;
-                    }
+                    return user as any;
                 } else {
                     throw new Error("User not found");
                 }
