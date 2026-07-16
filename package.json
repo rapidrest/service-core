@@ -38,6 +38,7 @@
     },
     "peerDependencies": {
         "@rapidrest/core": "1.x",
+        "@simplewebauthn/server": "13.x",
         "ioredis": "5.x",
         "jwks-rsa": "4.x",
         "lodash-es": "4.x",
@@ -50,6 +51,9 @@
         "winston": "3.x"
     },
     "peerDependenciesMeta": {
+        "@simplewebauthn/server": {
+            "optional": true
+        },
         "ioredis": {
             "optional": true
         },
@@ -68,6 +72,7 @@
     },
     "devDependencies": {
         "@rapidrest/core": "^1.7.0",
+        "@simplewebauthn/server": "^13.3.2",
         "@swc/core": "^1.15.41",
         "@types/bun": "^1.3.14",
         "@types/ioredis-mock": "^8.2.7",
