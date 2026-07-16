@@ -830,9 +830,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rapidrest/core@npm:^1.7.0":
-  version: 1.7.0
-  resolution: "@rapidrest/core@npm:1.7.0"
+"@rapidrest/core@npm:^1.8.0":
+  version: 1.8.0
+  resolution: "@rapidrest/core@npm:1.8.0"
   dependencies:
     form-data: "npm:^4.0.5"
     handlebars: "npm:^4.7.9"
@@ -848,7 +848,7 @@ __metadata:
     reflect-metadata: 0.2.x
     winston: 3.x
     winston-transport: 4.x
-  checksum: 10c0/cd494a678333bb9dd527172f20ca1c9ee7c17d388f50aec52cc48ac4318d85579dfdbb891ddb6e21c5ec11bc1d7c5f21e52e1cc90a7aa2f6c8194eb07bbd24b7
+  checksum: 10c0/a29ad8ff836170773f7a62c13043229de773d2215130a464d999ab96b5fccd6dbec42325e82db4fb4a9d915e3dc3aaf92a7755e67085bebf2f7b650b9fe6d65f
   languageName: node
   linkType: hard
 
@@ -856,7 +856,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@rapidrest/service-core@workspace:."
   dependencies:
-    "@rapidrest/core": "npm:^1.7.0"
+    "@rapidrest/core": "npm:^1.8.0"
     "@simplewebauthn/server": "npm:^13.3.2"
     "@swc/core": "npm:^1.15.41"
     "@types/bun": "npm:^1.3.14"
@@ -883,7 +883,6 @@ __metadata:
     globals: "npm:^17.6.0"
     ioredis: "npm:^5.11.1"
     ioredis-mock: "npm:^8.13.1"
-    jwks-rsa: "npm:^4.1.0"
     lodash-es: "npm:^4.18.1"
     mongodb: "npm:^7.3.0"
     mongodb-memory-server: "npm:^11.2.0"
@@ -895,7 +894,6 @@ __metadata:
     prom-client: "npm:^15.1.3"
     reflect-metadata: "npm:^0.2.2"
     rimraf: "npm:^6.1.3"
-    speakeasy: "npm:^2.0.0"
     sqlite3: "npm:^6.0.1"
     ts-node: "npm:^10.9.2"
     tsx: "npm:^4.19.3"
@@ -912,9 +910,7 @@ __metadata:
     ws: "npm:^8.21.0"
   peerDependencies:
     "@rapidrest/core": 1.x
-    "@simplewebauthn/server": 13.x
     ioredis: 5.x
-    jwks-rsa: 4.x
     lodash-es: 4.x
     mongodb: ^7.0.0
     openapi3-ts: 4.x
@@ -927,11 +923,7 @@ __metadata:
     uWebSockets.js:
       optional: true
   peerDependenciesMeta:
-    "@simplewebauthn/server":
-      optional: true
     ioredis:
-      optional: true
-    jwks-rsa:
       optional: true
     mongodb:
       optional: true
@@ -1438,23 +1430,6 @@ __metadata:
   version: 0.0.29
   resolution: "@types/json5@npm:0.0.29"
   checksum: 10c0/6bf5337bc447b706bb5b4431d37686aa2ea6d07cfd6f79cc31de80170d6ff9b1c7384a9c0ccbc45b3f512bae9e9f75c2e12109806a15331dc94e8a8db6dbb4ac
-  languageName: node
-  linkType: hard
-
-"@types/jsonwebtoken@npm:^9.0.4":
-  version: 9.0.10
-  resolution: "@types/jsonwebtoken@npm:9.0.10"
-  dependencies:
-    "@types/ms": "npm:*"
-    "@types/node": "npm:*"
-  checksum: 10c0/0688ac8fb75f809201cb7e18a12b9d80ce539cb9dd27e1b01e11807cb1a337059e899b8ee3abc3f2c9417f02e363a3069d9eab9ef9724b1da1f0e10713514f94
-  languageName: node
-  linkType: hard
-
-"@types/ms@npm:*":
-  version: 2.1.0
-  resolution: "@types/ms@npm:2.1.0"
-  checksum: 10c0/5ce692ffe1549e1b827d99ef8ff71187457e0eb44adbae38fdf7b9a74bae8d20642ee963c14516db1d35fa2652e65f47680fdf679dcbde52bbfadd021f497225
   languageName: node
   linkType: hard
 
@@ -2299,13 +2274,6 @@ __metadata:
   dependencies:
     bare-path: "npm:^3.0.0"
   checksum: 10c0/5077ddb2386548a1efad58418e4d7d6895700b1ecf95d1a63e020f4ae01ebdf7e5f393c9f9b45f3228de32c4803161a80785cf999b03cecdd913516795c50f7c
-  languageName: node
-  linkType: hard
-
-"base32.js@npm:0.0.1":
-  version: 0.0.1
-  resolution: "base32.js@npm:0.0.1"
-  checksum: 10c0/bea4a63d7f19d55487b487edeb674c06afc6209cafd497a611f65f2483ec48df72c55bb47555c9d03080c4e468d2cd4f26b2d49b36959a1cc30e37a3923bd79e
   languageName: node
   linkType: hard
 
@@ -4589,13 +4557,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jose@npm:^6.1.3":
-  version: 6.2.3
-  resolution: "jose@npm:6.2.3"
-  checksum: 10c0/aa91bccba22cc84d86308f833749bcb0b00441e35c24e0ac79abeac5f76dc62d47bdef9c1da6a0c609f5da6478595f52b252085888b89dbdb163861e40ea4188
-  languageName: node
-  linkType: hard
-
 "js-tokens@npm:^10.0.0":
   version: 10.0.0
   resolution: "js-tokens@npm:10.0.0"
@@ -4736,20 +4697,6 @@ __metadata:
     ecdsa-sig-formatter: "npm:1.0.11"
     safe-buffer: "npm:^5.0.1"
   checksum: 10c0/ab3ebc6598e10dc11419d4ed675c9ca714a387481466b10e8a6f3f65d8d9c9237e2826f2505280a739cf4cbcf511cb288eeec22b5c9c63286fc5a2e4f97e78cf
-  languageName: node
-  linkType: hard
-
-"jwks-rsa@npm:^4.1.0":
-  version: 4.1.0
-  resolution: "jwks-rsa@npm:4.1.0"
-  dependencies:
-    "@types/jsonwebtoken": "npm:^9.0.4"
-    debug: "npm:^4.3.4"
-    jose: "npm:^6.1.3"
-    limiter: "npm:^1.1.5"
-    lru-cache: "npm:^11.0.0"
-    lru-memoizer: "npm:^3.0.0"
-  checksum: 10c0/09d03901705fdaaec4ef4dbfdabdcdd91c669b667e1bf10ac765bde3ef4c90f91d53e60ce4e7bfbec715f2490d25f6e0c58c6f75dff800399a2e1b9140e317b2
   languageName: node
   linkType: hard
 
@@ -4927,13 +4874,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"limiter@npm:^1.1.5":
-  version: 1.1.5
-  resolution: "limiter@npm:1.1.5"
-  checksum: 10c0/ebe2b20a820d1f67b8e1724051246434c419b2da041a7e9cd943f6daf113b8d17a52a1bd88fb79be5b624c10283ecb737f50edb5c1c88c71f4cd367108c97300
-  languageName: node
-  linkType: hard
-
 "linkify-it@npm:^5.0.1":
   version: 5.0.1
   resolution: "linkify-it@npm:5.0.1"
@@ -5084,23 +5024,6 @@ __metadata:
   version: 11.2.5
   resolution: "lru-cache@npm:11.2.5"
   checksum: 10c0/cc98958d25dddf1c8a8cbdc49588bd3b24450e8dfa78f32168fd188a20d4a0331c7406d0f3250c86a46619ee288056fd7a1195e8df56dc8a9592397f4fbd8e1d
-  languageName: node
-  linkType: hard
-
-"lru-cache@npm:^11.0.1":
-  version: 11.5.2
-  resolution: "lru-cache@npm:11.5.2"
-  checksum: 10c0/ece1ad731f5b655e85d67047d04bfc13823dc77aa61c5454924a9869ba600a0104e39cc33d726021feef812bc347ca34a5608a5eb1972a5dd0870b7ecd42c3f2
-  languageName: node
-  linkType: hard
-
-"lru-memoizer@npm:^3.0.0":
-  version: 3.0.0
-  resolution: "lru-memoizer@npm:3.0.0"
-  dependencies:
-    lodash.clonedeep: "npm:^4.5.0"
-    lru-cache: "npm:^11.0.1"
-  checksum: 10c0/d4d1abedd56a79da6416e0c1ae736c6bc084155d45efe427182d4a8318a1054c5fbd9bba154e6dfe8a8b7de7630392186b81faa84f15746eb5459dc0567f181c
   languageName: node
   linkType: hard
 
@@ -6828,15 +6751,6 @@ __metadata:
   version: 3.0.22
   resolution: "spdx-license-ids@npm:3.0.22"
   checksum: 10c0/4a85e44c2ccfc06eebe63239193f526508ebec1abc7cf7bca8ee43923755636234395447c2c87f40fb672cf580a9c8e684513a676bfb2da3d38a4983684bbb38
-  languageName: node
-  linkType: hard
-
-"speakeasy@npm:^2.0.0":
-  version: 2.0.0
-  resolution: "speakeasy@npm:2.0.0"
-  dependencies:
-    base32.js: "npm:0.0.1"
-  checksum: 10c0/14dfc1e3dfc3e3e4ebe62a08cbea7cfc97b7ca79984b9ad8246cb2f994eab1d38b2e6e7cc6ce719210cf57b175dfec1602b87205c3db5f14aca751f62448dd51
   languageName: node
   linkType: hard
 
