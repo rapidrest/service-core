@@ -61,6 +61,12 @@ export interface RepoDeleteOptions extends RepoOperationOptions {
 }
 
 export interface RepoFindOptions extends RepoOperationOptions {
+    /**
+     * Overrides the `ACLAction` checked for this operation instead of its usual default (`COUNT` for `count()`,
+     * `LIST` for `find()`, `READ` for `findOne()`). Used by callers layering a different operation on top of one
+     * of these (e.g. `exists()` checking `ACLAction.EXISTS` instead of `COUNT` when reusing `count()`).
+     */
+    action?: string;
     /** The total number of resources to retrieve. */
     limit?: number;
     /** The page number of the paginated results to retrieve. */
@@ -202,12 +208,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         let count: number = 0;
+        const action: string = options?.action ?? ACLAction.COUNT;
 
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
         // on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ))) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -227,7 +234,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
 
             for (const uid of uids) {
-                if (await this.aclUtils.hasPermission(options?.user, uid, ACLAction.READ)) {
+                if (await this.aclUtils.hasPermission(options?.user, uid, action)) {
                     count++;
                 }
             }
@@ -362,12 +369,16 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
                 acl.records.push({
                     userOrRoleId: options.user.uid,
-                    create: true,
-                    read: true,
-                    update: true,
-                    delete: true,
-                    special: false,
-                    full: false,
+                    actions: [
+                        ACLAction.COUNT,
+                        ACLAction.CREATE,
+                        ACLAction.DELETE,
+                        ACLAction.EXISTS,
+                        ACLAction.READ,
+                        ACLAction.LIST,
+                        ACLAction.TRUNCATE,
+                        ACLAction.UPDATE,
+                    ],
                 });
             }
 
@@ -457,12 +468,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         const reqCache: Map<string, AccessControlList | undefined> = new Map();
+        const action: string = options?.action ?? ACLAction.LIST;
 
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below, right before the
         // results are returned) is an additional layer on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.READ, reqCache))) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, reqCache))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -586,10 +598,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // ACLs are rarely warm in Redis) instead of N sequential round trips.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
             const permitted: boolean[] = await Promise.all(
-                results.map((obj) => this.aclUtils!.hasPermission(options?.user, obj.uid, ACLAction.READ, reqCache)),
+                results.map((obj) => this.aclUtils!.hasPermission(options?.user, obj.uid, action, reqCache)),
             );
             results = results.filter((_obj, i) => permitted[i]);
         }
+
+        // Process the results to remove any properties that have been scoped with @RequiresScope that the user
+        // does not have access to.
+        ObjectUtils.deleteScopedProps(results, options?.user, this.modelClass);
 
         return results;
     }
@@ -645,9 +661,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             // Check user permissions
             if (this.aclUtils?.enabled && !options?.ignoreACL) {
                 const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid);
-                if (
-                    !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.READ))
-                ) {
+                const action: string = options?.action ?? ACLAction.READ;
+                if (!(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, action))) {
                     throw new ApiError(
                         ApiErrors.AUTH_PERMISSION_FAILURE,
                         403,
@@ -657,8 +672,16 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
+        const result = existing ? this.instantiateObject(existing) : undefined;
+
+        // Process the result to remove any properties that have been scoped with @RequiresScope that the user
+        // does not have access to.
+        if (result) {
+            ObjectUtils.deleteScopedProps(result, options?.user, this.modelClass);
+        }
+
         // Make sure we return the correct data type
-        return existing ? this.instantiateObject(existing) : undefined;
+        return result;
     }
 
     /**
@@ -764,7 +787,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Check user permissions. Don't check if record-level ACLs are used as this will be done
         // per record later.
         if (this.aclUtils?.enabled && !options.ignoreACL && !this.modelClass.recordACL) {
-            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.DELETE))) {
+            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.TRUNCATE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -786,12 +809,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
                 // Check if this class uses record level ACLs. If so, we need to check the perms of
                 // each one. We will remove any from our list that the user does not have permission to
-                // delete.
+                // truncate.
                 if (this.aclUtils?.enabled && this.modelClass.recordACL) {
                     finalUids = [];
                     for (const uid of uids) {
                         if (!options.ignoreACL) {
-                            if (await this.aclUtils.hasPermission(options.user, uid, ACLAction.DELETE)) {
+                            if (await this.aclUtils.hasPermission(options.user, uid, ACLAction.TRUNCATE)) {
                                 finalUids.push(uid);
                             }
                         }

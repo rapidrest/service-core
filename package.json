@@ -62,7 +62,7 @@
         }
     },
     "devDependencies": {
-        "@rapidrest/core": "^1.4.0",
+        "@rapidrest/core": "^1.7.0",
         "@swc/core": "^1.15.41",
         "@types/bun": "^1.3.14",
         "@types/ioredis-mock": "^8.2.7",

@@ -116,26 +116,17 @@ export class ACLUtils {
             if (UserUtils.hasRoles(user, this.trustedRoles, acl.uid)) {
                 result = true;
             } else {
-                // Check for the FULL permission. If granted it will supersede any others. Otherwise, we'll
-                // check individually based on the request method.
-                result = await this.hasPermission(user, acl, ACLAction.FULL);
-                if (!result) {
-                    // Map the request method to an ACLAction and test for permission
-                    switch (req.method.toLowerCase()) {
-                        case "delete":
-                            result = await this.hasPermission(user, acl, ACLAction.DELETE);
-                            break;
-                        case "get":
-                            result = await this.hasPermission(user, acl, ACLAction.READ);
-                            break;
-                        case "post":
-                            result = await this.hasPermission(user, acl, ACLAction.CREATE);
-                            break;
-                        case "put":
-                            result = await this.hasPermission(user, acl, ACLAction.UPDATE);
-                            break;
-                    }
-                }
+                // Map the request method to an ACLAction and test for permission. `hasPermission` already
+                // treats `ACLAction.FULL` as a wildcard that supersedes any specific action requested.
+                const methodToAction: Record<string, string> = {
+                    delete: ACLAction.DELETE,
+                    get: ACLAction.READ,
+                    head: ACLAction.COUNT,
+                    post: ACLAction.CREATE,
+                    put: ACLAction.UPDATE,
+                };
+                const action: string | undefined = methodToAction[req.method.toLowerCase()];
+                result = action ? await this.hasPermission(user, acl, action) : false;
             }
         }
 
@@ -156,11 +147,9 @@ export class ACLUtils {
     public async hasPermission(
         user: JWTUser | undefined,
         acl: AccessControlList | string,
-        action: ACLAction,
+        action: string,
         reqCache?: Map<string, AccessControlList | undefined>,
     ): Promise<boolean> {
-        let result: boolean | null = null;
-
         // If the repo isn't available, no acl was provided or the ACL string is empty just return, assume always true
         if (!this.enabled || !this.repo || !acl || acl === "") {
             return true;
@@ -181,39 +170,8 @@ export class ACLUtils {
         // Look for the first available record for the given user
         const record: ACLRecord | null = this.getRecord(acl, user);
 
-        // Validate the requested action against the record.
-        if (record) {
-            // A `FULL` permission grant overrides everything else
-            result = record.full;
-
-            if (!result) {
-                switch (action) {
-                    case ACLAction.CREATE:
-                        result = record.create;
-                        break;
-                    case ACLAction.DELETE:
-                        result = record.delete;
-                        break;
-                    case ACLAction.FULL:
-                        result =
-                            record.full ||
-                            (record.create && record.delete && record.read && record.special && record.update);
-                        break;
-                    case ACLAction.READ:
-                        result = record.read;
-                        break;
-                    case ACLAction.SPECIAL:
-                        result = record.special;
-                        break;
-                    case ACLAction.UPDATE:
-                        result = record.update;
-                        break;
-                }
-            }
-        }
-
-        // No matching record found — deny by default
-        return result !== null && result !== undefined ? result : false;
+        // A `FULL` ("*") grant supersedes any specific action requested.
+        return record ? record.actions.includes(ACLAction.FULL) || record.actions.includes(action) : false;
     }
 
     /**
@@ -329,13 +287,8 @@ export class ACLUtils {
             }
 
             if (foundRecord) {
-                // Check to see if any of the permissions changed for this record
-                result += foundRecord.create !== recordA.create ? 1 : 0;
-                result += foundRecord.delete !== recordA.delete ? 1 : 0;
-                result += foundRecord.full !== recordA.full ? 1 : 0;
-                result += foundRecord.read !== recordA.read ? 1 : 0;
-                result += foundRecord.special !== recordA.special ? 1 : 0;
-                result += foundRecord.update !== recordA.update ? 1 : 0;
+                // Check to see if the granted actions changed for this record
+                result += this.actionsChanged(foundRecord.actions, recordA.actions) ? 1 : 0;
             } else {
                 result++;
             }
@@ -354,19 +307,26 @@ export class ACLUtils {
             }
 
             if (foundRecord) {
-                // Check to see if any of the permissions changed for this record
-                result += foundRecord.create !== recordB.create ? 1 : 0;
-                result += foundRecord.delete !== recordB.delete ? 1 : 0;
-                result += foundRecord.full !== recordB.full ? 1 : 0;
-                result += foundRecord.read !== recordB.read ? 1 : 0;
-                result += foundRecord.special !== recordB.special ? 1 : 0;
-                result += foundRecord.update !== recordB.update ? 1 : 0;
+                // Check to see if the granted actions changed for this record
+                result += this.actionsChanged(foundRecord.actions, recordB.actions) ? 1 : 0;
             } else {
                 result++;
             }
         }
 
         return result;
+    }
+
+    /**
+     * Compares two lists of granted actions, ignoring order, to see if they differ.
+     */
+    private actionsChanged(a: string[], b: string[]): boolean {
+        if (a.length !== b.length) {
+            return true;
+        }
+        const sortedA: string[] = [...a].sort();
+        const sortedB: string[] = [...b].sort();
+        return sortedA.some((action, i) => action !== sortedB[i]);
     }
 
     /**

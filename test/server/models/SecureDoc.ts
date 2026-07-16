@@ -4,6 +4,7 @@
 import { Column, Entity, Index } from "../../../src/decorators/PersistenceDecorators";
 import { ModelDecorators } from "../../../src/decorators";
 import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity";
+import { ACLAction } from "../../../src/security/AccessControlList";
 const { DataStore, Identifier, Protect, ReadOnly, TrackChanges } = ModelDecorators;
 
 @DataStore("mongodb")
@@ -15,21 +16,11 @@ const { DataStore, Identifier, Protect, ReadOnly, TrackChanges } = ModelDecorato
         records: [
             {
                 userOrRoleId: "anonymous",
-                create: false,
-                read: false,
-                update: false,
-                delete: false,
-                special: false,
-                full: false,
+                actions: [],
             },
             {
                 userOrRoleId: ".*",
-                create: true,
-                read: true,
-                update: false,
-                delete: false,
-                special: false,
-                full: false,
+                actions: [ACLAction.CREATE, ACLAction.READ],
             },
         ],
     },

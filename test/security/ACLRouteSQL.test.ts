@@ -5,6 +5,7 @@ import { default as config } from "../config";
 import { request } from "../../src/test/request.js";
 import { BaseACLRoute } from "../../src";
 import { AccessControlListSQL, ACLRecordSQL } from "../../src/security/AccessControlListSQL";
+import { ACLAction } from "../../src/security/AccessControlList";
 import { JWTUtils, Logger, EventUtils, ClassLoader } from "@rapidrest/core";
 import { ObjectFactory } from "../../src/ObjectFactory";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
@@ -121,14 +122,11 @@ describe("ACLRouteSQL Tests", () => {
             records: [
                 new ACLRecordSQL({
                     userOrRoleId: "admin",
-                    full: true,
+                    actions: [ACLAction.FULL],
                 }),
                 new ACLRecordSQL({
                     userOrRoleId: ".*",
-                    create: true,
-                    read: true,
-                    update: false,
-                    delete: false,
+                    actions: [ACLAction.CREATE, ACLAction.READ],
                 }),
             ],
         });
@@ -148,12 +146,7 @@ describe("ACLRouteSQL Tests", () => {
             for (const r2 of resultACL.records) {
                 if (record.userOrRoleId === r2.userOrRoleId) {
                     found = true;
-                    expect(record.create).toEqual(r2.create);
-                    expect(record.delete).toEqual(r2.delete);
-                    expect(record.full).toEqual(r2.full);
-                    expect(record.read).toEqual(r2.read);
-                    expect(record.special).toEqual(r2.special);
-                    expect(record.update).toEqual(r2.update);
+                    expect(record.actions).toEqual(r2.actions);
                     break;
                 }
             }
@@ -171,12 +164,7 @@ describe("ACLRouteSQL Tests", () => {
                 for (const r2 of stored.records) {
                     if (record.userOrRoleId === r2.userOrRoleId) {
                         found = true;
-                        expect(record.create).toEqual(r2.create);
-                        expect(record.delete).toEqual(r2.delete);
-                        expect(record.full).toEqual(r2.full);
-                        expect(record.read).toEqual(r2.read);
-                        expect(record.special).toEqual(r2.special);
-                        expect(record.update).toEqual(r2.update);
+                        expect(record.actions).toEqual(r2.actions);
                         break;
                     }
                 }
@@ -190,14 +178,11 @@ describe("ACLRouteSQL Tests", () => {
             records: [
                 new ACLRecordSQL({
                     userOrRoleId: "admin",
-                    full: true,
+                    actions: [ACLAction.FULL],
                 }),
                 new ACLRecordSQL({
                     userOrRoleId: ".*",
-                    create: true,
-                    read: true,
-                    update: false,
-                    delete: false,
+                    actions: [ACLAction.CREATE, ACLAction.READ],
                 }),
             ],
         });
@@ -216,14 +201,11 @@ describe("ACLRouteSQL Tests", () => {
             records: [
                 new ACLRecordSQL({
                     userOrRoleId: "admin",
-                    full: true,
+                    actions: [ACLAction.FULL],
                 }),
                 new ACLRecordSQL({
                     userOrRoleId: ".*",
-                    create: true,
-                    read: true,
-                    update: false,
-                    delete: false,
+                    actions: [ACLAction.CREATE, ACLAction.READ],
                 }),
             ],
         });
@@ -261,21 +243,15 @@ describe("ACLRouteSQL Tests", () => {
         const acl: AccessControlListSQL = await createACL([
             new ACLRecordSQL({
                 userOrRoleId: "admin",
-                full: true,
+                actions: [ACLAction.FULL],
             }),
             new ACLRecordSQL({
                 userOrRoleId: ".*",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
             new ACLRecordSQL({
                 userOrRoleId: "anonymous",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
         ]);
         const result = await request(server)
@@ -291,21 +267,15 @@ describe("ACLRouteSQL Tests", () => {
         const acl: AccessControlListSQL = await createACL([
             new ACLRecordSQL({
                 userOrRoleId: "admin",
-                full: true,
+                actions: [ACLAction.FULL],
             }),
             new ACLRecordSQL({
                 userOrRoleId: ".*",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
             new ACLRecordSQL({
                 userOrRoleId: "anonymous",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
         ]);
         const result = await request(server).delete("/acls/" + acl.uid);
@@ -330,16 +300,13 @@ describe("ACLRouteSQL Tests", () => {
         const acl: AccessControlListSQL = await createACL([
             new ACLRecordSQL({
                 userOrRoleId: "admin",
-                full: true,
+                actions: [ACLAction.FULL],
             }),
         ]);
         acl.records.push(
             new ACLRecordSQL({
                 userOrRoleId: ".*",
-                create: true,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.CREATE, ACLAction.READ],
             }),
         );
         const result = await request(server)
@@ -355,12 +322,7 @@ describe("ACLRouteSQL Tests", () => {
             for (const r2 of resultACL.records) {
                 if (record.userOrRoleId === r2.userOrRoleId) {
                     found = true;
-                    expect(record.create).toEqual(r2.create);
-                    expect(record.delete).toEqual(r2.delete);
-                    expect(record.full).toEqual(r2.full);
-                    expect(record.read).toEqual(r2.read);
-                    expect(record.special).toEqual(r2.special);
-                    expect(record.update).toEqual(r2.update);
+                    expect(record.actions).toEqual(r2.actions);
                     break;
                 }
             }
@@ -377,12 +339,7 @@ describe("ACLRouteSQL Tests", () => {
                 for (const r2 of result.body.records) {
                     if (record.userOrRoleId === r2.userOrRoleId) {
                         found = true;
-                        expect(record.create).toEqual(r2.create);
-                        expect(record.delete).toEqual(r2.delete);
-                        expect(record.full).toEqual(r2.full);
-                        expect(record.read).toEqual(r2.read);
-                        expect(record.special).toEqual(r2.special);
-                        expect(record.update).toEqual(r2.update);
+                        expect(record.actions).toEqual(r2.actions);
                         break;
                     }
                 }
@@ -395,20 +352,17 @@ describe("ACLRouteSQL Tests", () => {
         const acl: AccessControlListSQL = await createACL([
             new ACLRecordSQL({
                 userOrRoleId: "admin",
-                full: true,
+                actions: [ACLAction.FULL],
             }),
             new ACLRecordSQL({
                 userOrRoleId: ".*",
-                full: true,
+                actions: [ACLAction.FULL],
             }),
         ]);
         acl.records.push(
             new ACLRecordSQL({
                 userOrRoleId: "anonymous",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
         );
         const result = await request(server)
@@ -423,12 +377,7 @@ describe("ACLRouteSQL Tests", () => {
             for (const r2 of resultACL.records) {
                 if (record.userOrRoleId === r2.userOrRoleId) {
                     found = true;
-                    expect(record.create).toEqual(r2.create);
-                    expect(record.delete).toEqual(r2.delete);
-                    expect(record.full).toEqual(r2.full);
-                    expect(record.read).toEqual(r2.read);
-                    expect(record.special).toEqual(r2.special);
-                    expect(record.update).toEqual(r2.update);
+                    expect(record.actions).toEqual(r2.actions);
                     break;
                 }
             }
@@ -445,12 +394,7 @@ describe("ACLRouteSQL Tests", () => {
                 for (const r2 of result.body.records) {
                     if (record.userOrRoleId === r2.userOrRoleId) {
                         found = true;
-                        expect(record.create).toEqual(r2.create);
-                        expect(record.delete).toEqual(r2.delete);
-                        expect(record.full).toEqual(r2.full);
-                        expect(record.read).toEqual(r2.read);
-                        expect(record.special).toEqual(r2.special);
-                        expect(record.update).toEqual(r2.update);
+                        expect(record.actions).toEqual(r2.actions);
                         break;
                     }
                 }
@@ -463,23 +407,17 @@ describe("ACLRouteSQL Tests", () => {
         const acl: AccessControlListSQL = await createACL([
             new ACLRecordSQL({
                 userOrRoleId: "admin",
-                full: true,
+                actions: [ACLAction.FULL],
             }),
             new ACLRecordSQL({
                 userOrRoleId: ".*",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
         ]);
         acl.records.push(
             new ACLRecordSQL({
                 userOrRoleId: "anonymous",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
         );
         const result = await request(server)
@@ -493,30 +431,21 @@ describe("ACLRouteSQL Tests", () => {
         const acl: AccessControlListSQL = await createACL([
             new ACLRecordSQL({
                 userOrRoleId: "admin",
-                full: true,
+                actions: [ACLAction.FULL],
             }),
             new ACLRecordSQL({
                 userOrRoleId: ".*",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
             new ACLRecordSQL({
                 userOrRoleId: "anonymous",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.READ],
             }),
         ]);
         acl.records.push(
             new ACLRecordSQL({
                 userOrRoleId: ".*",
-                create: true,
-                read: true,
-                update: false,
-                delete: false,
+                actions: [ACLAction.CREATE, ACLAction.READ],
             }),
         );
         const result = await request(server)

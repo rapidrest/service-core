@@ -379,7 +379,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         }
 
         const query: any = this.repoUtils.searchIdQuery(id, options.query.version);
-        const result: number = await this.repoUtils.count(query);
+        const result: number = await this.repoUtils.count(query, { user: options.user, action: ACLAction.EXISTS });
         if (result > 0) {
             return options.res.status(200).setHeader("content-length", result);
         } else {
