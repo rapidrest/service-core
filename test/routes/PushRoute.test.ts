@@ -20,6 +20,7 @@ import { WebSocket } from "ws";
 
 import { ClassLoader, JWTUtils, Logger } from "@rapidrest/core";
 import { Route } from "../../src/decorators/RouteDecorators";
+import { ACLAction } from "../../src/security/AccessControlList";
 
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
@@ -60,22 +61,12 @@ describe("BasePushRoute Tests", () => {
 
     const readRecord = (userUid: string): any => ({
         userOrRoleId: userUid,
-        create: false,
-        read: true,
-        update: false,
-        delete: false,
-        special: false,
-        full: false,
+        actions: [ACLAction.READ],
     });
 
     const createRecord = (userUid: string): any => ({
         userOrRoleId: userUid,
-        create: true,
-        read: false,
-        update: false,
-        delete: false,
-        special: false,
-        full: false,
+        actions: [ACLAction.CREATE],
     });
 
     /** Grants the given user `read` access to the ACL entry identified by `channelUid`. */

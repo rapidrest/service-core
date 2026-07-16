@@ -8,7 +8,7 @@ import ProtectedUser from "../server/models/ProtectedUser";
 import { MongoConnection, MongoRepository } from "../../src";
 import { JWTUtils, Logger, EventUtils } from "@rapidrest/core";
 import { AccessControlListMongo } from "../../src/security/AccessControlListMongo";
-import { ACLRecord } from "../../src/security";
+import { ACLAction, ACLRecord } from "../../src/security";
 import { Server } from "../../src/Server";
 import { ObjectFactory } from "../../src/ObjectFactory";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
@@ -35,34 +35,28 @@ const createUser = async (obj: any, ownerUid?: string): Promise<ProtectedUser> =
     // The owner full CRUD access
     records.push({
         userOrRoleId: ownerUid || user.uid,
-        create: true,
-        read: true,
-        update: true,
-        delete: true,
-        special: false,
-        full: false,
+        actions: [
+            ACLAction.CREATE,
+            ACLAction.READ,
+            ACLAction.UPDATE,
+            ACLAction.DELETE,
+            ACLAction.COUNT,
+            ACLAction.LIST,
+            ACLAction.TRUNCATE,
+            ACLAction.EXISTS,
+        ],
     });
 
     // Guests have create-only access
     records.push({
         userOrRoleId: "anonymous",
-        create: true,
-        read: false,
-        update: false,
-        delete: false,
-        special: false,
-        full: false,
+        actions: [ACLAction.CREATE],
     });
 
     // Everyone has read-only access
     records.push({
         userOrRoleId: ".*",
-        create: false,
-        read: true,
-        update: false,
-        delete: false,
-        special: false,
-        full: false,
+        actions: [ACLAction.READ, ACLAction.LIST, ACLAction.COUNT, ACLAction.EXISTS],
     });
 
     const acl: any = {
@@ -682,7 +676,15 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             if (privateAcl) {
                 const wildcard = privateAcl.records.find((r) => r.userOrRoleId === ".*");
                 expect(wildcard).toBeDefined();
-                if (wildcard) wildcard.read = false;
+                if (wildcard) {
+                    wildcard.actions = wildcard.actions.filter(
+                        (a) =>
+                            a !== ACLAction.READ &&
+                            a !== ACLAction.LIST &&
+                            a !== ACLAction.COUNT &&
+                            a !== ACLAction.EXISTS,
+                    );
+                }
                 privateAcl.version++;
                 await aclRepo.save(privateAcl);
             }
@@ -891,12 +893,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             if (defaultACL) {
                 defaultACL.records.push({
                     userOrRoleId: "anonymous",
-                    create: null,
-                    read: true,
-                    update: null,
-                    delete: null,
-                    special: null,
-                    full: null,
+                    actions: [ACLAction.LIST],
                 });
                 defaultACL.version++;
 
@@ -908,7 +905,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result).toHaveProperty("body");
-            // Overriding the class-level default ACL grants anonymous class-level READ (so the request succeeds
+            // Overriding the class-level default ACL grants anonymous class-level LIST (so the request succeeds
             // instead of a 403), but each user's own per-record ACL still explicitly denies anonymous read —
             // and per-record ACLs correctly take precedence over the class/default ACL for individual records.
             expect(result.body).toHaveLength(0);

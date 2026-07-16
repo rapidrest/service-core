@@ -35,7 +35,7 @@ describe("ACLUtils Tests", () => {
                 records: [
                     new ACLRecordMongo({
                         userOrRoleId: "admin",
-                        full: true,
+                        actions: [ACLAction.FULL],
                     }),
                 ],
             }),
@@ -44,16 +44,11 @@ describe("ACLUtils Tests", () => {
                 records: [
                     new ACLRecordMongo({
                         userOrRoleId: "moderator",
-                        full: true,
+                        actions: [ACLAction.FULL],
                     }),
                     new ACLRecordMongo({
                         userOrRoleId: ".*", // any user
-                        create: false,
-                        read: true,
-                        update: false,
-                        delete: false,
-                        special: false,
-                        full: false,
+                        actions: [ACLAction.READ],
                     }),
                 ],
             }),
@@ -62,22 +57,15 @@ describe("ACLUtils Tests", () => {
                 records: [
                     new ACLRecordMongo({
                         userOrRoleId: "god",
-                        full: true,
+                        actions: [ACLAction.FULL],
                     }),
                     new ACLRecordMongo({
                         userOrRoleId: "019eaa26-b4ec-4870-88b6-2d3755a8a05c",
-                        create: true,
-                        read: true,
-                        update: false,
-                        delete: false,
+                        actions: [ACLAction.CREATE, ACLAction.READ],
                     }),
                     new ACLRecordMongo({
                         userOrRoleId: "e75f12e2-7058-4bb2-a826-6f435c61dc1c",
-                        create: false,
-                        read: true,
-                        update: false,
-                        delete: false,
-                        special: false,
+                        actions: [ACLAction.READ],
                     }),
                 ],
                 parentUid: "moderator",
@@ -87,25 +75,15 @@ describe("ACLUtils Tests", () => {
                 records: [
                     new ACLRecordMongo({
                         userOrRoleId: "admin",
-                        full: true,
+                        actions: [ACLAction.FULL],
                     }),
                     new ACLRecordMongo({
                         userOrRoleId: ".*", // any user
-                        create: false,
-                        read: true,
-                        update: false,
-                        delete: false,
-                        special: false,
-                        full: false,
+                        actions: [ACLAction.READ],
                     }),
                     new ACLRecordMongo({
                         userOrRoleId: "anonymous", // anonymous user
-                        create: false,
-                        read: false,
-                        update: false,
-                        delete: false,
-                        special: false,
-                        full: false,
+                        actions: [],
                     }),
                 ],
             }),
@@ -114,21 +92,11 @@ describe("ACLUtils Tests", () => {
                 records: [
                     new ACLRecordMongo({
                         userOrRoleId: "anonymous", // anonymous users
-                        create: false,
-                        read: true,
-                        update: false,
-                        delete: false,
-                        special: false,
-                        full: false,
+                        actions: [ACLAction.READ],
                     }),
                     new ACLRecordMongo({
                         userOrRoleId: ".*", // all users
-                        create: true,
-                        read: true,
-                        update: false,
-                        delete: false,
-                        special: false,
-                        full: false,
+                        actions: [ACLAction.CREATE, ACLAction.READ],
                     }),
                 ],
                 parentUid: "admin",
@@ -138,12 +106,7 @@ describe("ACLUtils Tests", () => {
                 records: [
                     new ACLRecordMongo({
                         userOrRoleId: ".*", // any user
-                        create: undefined,
-                        read: true,
-                        update: undefined,
-                        delete: undefined,
-                        special: undefined,
-                        full: undefined,
+                        actions: [ACLAction.READ],
                     }),
                 ],
                 parent: new AccessControlListMongo({
@@ -151,7 +114,7 @@ describe("ACLUtils Tests", () => {
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
-                            full: true,
+                            actions: [ACLAction.FULL],
                         }),
                     ],
                 }),
@@ -243,7 +206,7 @@ describe("ACLUtils Tests", () => {
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
-                            full: true,
+                            actions: [ACLAction.FULL],
                         }),
                     ],
                 }),
@@ -253,14 +216,11 @@ describe("ACLUtils Tests", () => {
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "god",
-                            full: true,
+                            actions: [ACLAction.FULL],
                         }),
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
-                            create: true,
-                            read: true,
-                            update: false,
-                            delete: false,
+                            actions: [ACLAction.CREATE, ACLAction.READ],
                         }),
                     ],
                 }),
@@ -270,21 +230,15 @@ describe("ACLUtils Tests", () => {
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
-                            full: true,
+                            actions: [ACLAction.FULL],
                         }),
                         new ACLRecordMongo({
                             userOrRoleId: ".*", // any user
-                            create: false,
-                            read: true,
-                            update: false,
-                            delete: false,
+                            actions: [ACLAction.READ],
                         }),
                         new ACLRecordMongo({
                             userOrRoleId: "anonymous", // anonymous user
-                            create: false,
-                            read: false,
-                            update: false,
-                            delete: false,
+                            actions: [],
                         }),
                     ],
                 }),
@@ -310,12 +264,7 @@ describe("ACLUtils Tests", () => {
                 expect(record).toBeDefined();
                 if (record) {
                     expect(record.userOrRoleId).toEqual("anonymous");
-                    expect(record.create).toBe(false);
-                    expect(record.read).toBe(false);
-                    expect(record.update).toBe(false);
-                    expect(record.delete).toBe(false);
-                    expect(record.special).toBe(false);
-                    expect(record.full).toBe(false);
+                    expect(record.actions).toEqual([]);
                 }
             }
         });
@@ -334,7 +283,7 @@ describe("ACLUtils Tests", () => {
                 expect(record).toBeDefined();
                 if (record) {
                     expect(record.userOrRoleId).toEqual("019eaa26-b4ec-4870-88b6-2d3755a8a05c");
-                    expect(record.read).toBe(true);
+                    expect(record.actions).toContain(ACLAction.READ);
                 }
             }
         });
@@ -351,7 +300,7 @@ describe("ACLUtils Tests", () => {
                 expect(record).toBeDefined();
                 if (record) {
                     expect(record.userOrRoleId).toEqual("admin");
-                    expect(record.full).toBe(true);
+                    expect(record.actions).toContain(ACLAction.FULL);
                 }
             }
         });
@@ -368,7 +317,7 @@ describe("ACLUtils Tests", () => {
                 expect(record).toBeDefined();
                 if (record) {
                     expect(record.userOrRoleId).toEqual(".*");
-                    expect(record.read).toBe(true);
+                    expect(record.actions).toContain(ACLAction.READ);
                 }
             }
         });
@@ -392,12 +341,7 @@ describe("ACLUtils Tests", () => {
                 records: [
                     new ACLRecordMongo({
                         userOrRoleId: ".*", // any user
-                        create: undefined,
-                        read: true,
-                        update: undefined,
-                        delete: undefined,
-                        special: undefined,
-                        full: undefined,
+                        actions: [ACLAction.READ],
                     }),
                 ],
                 parentUid: "admin",
@@ -419,7 +363,7 @@ describe("ACLUtils Tests", () => {
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
-                            full: true,
+                            actions: [ACLAction.FULL],
                         }),
                     ],
                 }),
@@ -429,14 +373,11 @@ describe("ACLUtils Tests", () => {
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "god",
-                            full: true,
+                            actions: [ACLAction.FULL],
                         }),
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
-                            create: true,
-                            read: true,
-                            update: false,
-                            delete: false,
+                            actions: [ACLAction.CREATE, ACLAction.READ],
                         }),
                     ],
                 }),
@@ -446,21 +387,15 @@ describe("ACLUtils Tests", () => {
                     records: [
                         new ACLRecordMongo({
                             userOrRoleId: "admin",
-                            full: true,
+                            actions: [ACLAction.FULL],
                         }),
                         new ACLRecordMongo({
                             userOrRoleId: ".*", // any user
-                            create: false,
-                            read: true,
-                            update: false,
-                            delete: false,
+                            actions: [ACLAction.READ],
                         }),
                         new ACLRecordMongo({
                             userOrRoleId: "anonymous", // anonymous user
-                            create: false,
-                            read: false,
-                            update: false,
-                            delete: false,
+                            actions: [],
                         }),
                     ],
                 }),
@@ -489,7 +424,7 @@ describe("ACLUtils Tests", () => {
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(true);
-                expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(false);
+                expect(await aclUtils?.hasPermission(testUser, acl, "special")).toBe(false);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
                 const testMod: any = { uid: uuid.v4(), roles: ["moderator"] };
@@ -497,28 +432,28 @@ describe("ACLUtils Tests", () => {
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.DELETE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.READ)).toBe(true);
-                expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.SPECIAL)).toBe(true);
+                expect(await aclUtils?.hasPermission(testMod, acl, "special")).toBe(true);
                 expect(await aclUtils?.hasPermission(testMod, acl, ACLAction.UPDATE)).toBe(true);
                 const testOther: any = { uid: uuid.v4(), roles: ["other"] };
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.FULL)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.CREATE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.DELETE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.READ)).toBe(true);
-                expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.SPECIAL)).toBe(false);
+                expect(await aclUtils?.hasPermission(testOther, acl, "special")).toBe(false);
                 expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.UPDATE)).toBe(false);
                 const testSuper: any = { uid: uuid.v4(), roles: ["super"] };
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.FULL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.DELETE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.READ)).toBe(true);
-                expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.SPECIAL)).toBe(true);
+                expect(await aclUtils?.hasPermission(testSuper, acl, "special")).toBe(true);
                 expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.UPDATE)).toBe(true);
                 const testOrgSuper: any = { uid: uuid.v4(), roles: ["bf98b869-cabe-452a-bf8d-674c48f2b5bd.super"] };
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.FULL)).toBe(true);
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.CREATE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.DELETE)).toBe(true);
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.READ)).toBe(true);
-                expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.SPECIAL)).toBe(true);
+                expect(await aclUtils?.hasPermission(testOrgSuper, acl, "special")).toBe(true);
                 expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.UPDATE)).toBe(true);
                 const testOtherOrgSuper: any = {
                     uid: uuid.v4(),
@@ -527,7 +462,7 @@ describe("ACLUtils Tests", () => {
                 expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.CREATE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.DELETE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.READ)).toBe(true);
-                expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.SPECIAL)).toBe(false);
+                expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, "special")).toBe(false);
                 expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.UPDATE)).toBe(false);
                 expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.FULL)).toBe(false);
             }
@@ -539,7 +474,7 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(true);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(true);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(false);
+            expect(await aclUtils?.hasPermission(testUser, acl, "special")).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
             const testOther: any = { uid: uuid.v4(), roles: ["other"] };
@@ -547,27 +482,27 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.CREATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.DELETE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.READ)).toBe(true);
-            expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.SPECIAL)).toBe(false);
+            expect(await aclUtils?.hasPermission(testOther, acl, "special")).toBe(false);
             expect(await aclUtils?.hasPermission(testOther, acl, ACLAction.UPDATE)).toBe(false);
             const testSuper: any = { uid: uuid.v4(), roles: ["super"] };
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.FULL)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.CREATE)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.DELETE)).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.READ)).toBe(true);
-            expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.SPECIAL)).toBe(true);
+            expect(await aclUtils?.hasPermission(testSuper, acl, "special")).toBe(true);
             expect(await aclUtils?.hasPermission(testSuper, acl, ACLAction.UPDATE)).toBe(true);
             const testOrgSuper: any = { uid: uuid.v4(), roles: ["bf98b869-cabe-452a-bf8d-674c48f2b5bd.super"] };
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.FULL)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.CREATE)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.DELETE)).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.READ)).toBe(true);
-            expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.SPECIAL)).toBe(true);
+            expect(await aclUtils?.hasPermission(testOrgSuper, acl, "special")).toBe(true);
             expect(await aclUtils?.hasPermission(testOrgSuper, acl, ACLAction.UPDATE)).toBe(true);
             const testOtherOrgSuper: any = { uid: uuid.v4(), roles: ["e75f12e2-7058-4bb2-a826-6f435c61dc1c.super"] };
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.CREATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.DELETE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.READ)).toBe(true);
-            expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.SPECIAL)).toBe(false);
+            expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, "special")).toBe(false);
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.UPDATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testOtherOrgSuper, acl, ACLAction.FULL)).toBe(false);
         });
@@ -578,7 +513,7 @@ describe("ACLUtils Tests", () => {
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.CREATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.DELETE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.READ)).toBe(false);
-            expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.SPECIAL)).toBe(false);
+            expect(await aclUtils?.hasPermission(testUser, acl, "special")).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.UPDATE)).toBe(false);
             expect(await aclUtils?.hasPermission(testUser, acl, ACLAction.FULL)).toBe(false);
         });
@@ -692,12 +627,7 @@ describe("ACLUtils Tests", () => {
                 records: [
                     {
                         userOrRoleId: "admin",
-                        create: true,
-                        delete: true,
-                        full: true,
-                        read: true,
-                        special: true,
-                        update: true,
+                        actions: [ACLAction.CREATE, ACLAction.DELETE, ACLAction.FULL, ACLAction.READ, "special", ACLAction.UPDATE],
                     },
                 ],
             };
@@ -720,12 +650,7 @@ describe("ACLUtils Tests", () => {
             if (acl) {
                 acl.records.push({
                     userOrRoleId: uuid.v4(),
-                    create: false,
-                    delete: false,
-                    full: false,
-                    read: true,
-                    special: false,
-                    update: false,
+                    actions: [ACLAction.READ],
                 });
 
                 const result: AccessControlList | null | undefined = await aclUtils?.saveACL(acl);
@@ -747,12 +672,7 @@ describe("ACLUtils Tests", () => {
             if (acl) {
                 acl.records.push({
                     userOrRoleId: uuid.v4(),
-                    create: false,
-                    delete: false,
-                    full: false,
-                    read: true,
-                    special: false,
-                    update: false,
+                    actions: [ACLAction.READ],
                 });
 
                 const result: AccessControlList | null | undefined = await aclUtils?.saveACL(acl);

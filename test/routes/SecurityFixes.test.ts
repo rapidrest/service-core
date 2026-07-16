@@ -7,6 +7,7 @@ import { Server, ObjectFactory, MongoConnection, MongoRepository } from "../../s
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { JWTUtils, Logger } from "@rapidrest/core";
 import { AccessControlListMongo } from "../../src/security/AccessControlListMongo";
+import { ACLAction } from "../../src/security/AccessControlList";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
 import * as http from "http";
 import * as uuid from "uuid";
@@ -135,9 +136,14 @@ describe("Security Fixes Tests [MongoDB]", () => {
             const acl: AccessControlListMongo | null = await aclRepo.findOne({ uid: created.body.uid } as any);
             expect(acl).toBeDefined();
             if (acl) {
-                expect(acl.records.some((r) => r.userOrRoleId !== "anonymous" && r.userOrRoleId !== ".*" && r.update)).toBe(
-                    true,
-                );
+                expect(
+                    acl.records.some(
+                        (r) =>
+                            r.userOrRoleId !== "anonymous" &&
+                            r.userOrRoleId !== ".*" &&
+                            r.actions.includes(ACLAction.UPDATE),
+                    ),
+                ).toBe(true);
             }
 
             const ownerFollowup = await request(server)

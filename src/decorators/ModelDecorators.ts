@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
-import type { AccessControlList } from "../security/AccessControlList.js";
+import { ACLAction, type AccessControlList } from "../security/AccessControlList.js";
 
 /**
  * Describes a column registration that must be bridged into TypeORM's metadata storage when (and only when) a SQL
@@ -130,25 +130,15 @@ export function Protect(
         records: [
             {
                 userOrRoleId: "anonymous",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
-                special: false,
-                full: false,
+                actions: [ACLAction.COUNT, ACLAction.EXISTS, ACLAction.LIST, ACLAction.READ],
             },
             {
                 userOrRoleId: ".*",
-                create: false,
-                read: true,
-                update: false,
-                delete: false,
-                special: false,
-                full: false,
+                actions: [ACLAction.COUNT, ACLAction.EXISTS, ACLAction.LIST, ACLAction.READ],
             },
         ],
     },
-    recordACL: boolean = false
+    recordACL: boolean = false,
 ) {
     return function (target: any) {
         if (!classACL.uid || classACL.uid === "<ClassName>") {
