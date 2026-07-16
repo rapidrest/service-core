@@ -1,14 +1,14 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-import { Route, Get, User, Auth } from "../../../src/decorators/RouteDecorators";
+import { Route, Get, User, Auth, Post } from "../../../src/decorators/RouteDecorators";
 import { JWTUser, ObjectDecorators } from "@rapidrest/core";
 import { Description, Returns, Summary } from "../../../src/decorators/DocDecorators";
 import { AuthMiddleware, TOTPStrategy, TOTPStrategyOptions, ObjectFactory, RepoUtils, TOTPOptions } from "../../../src";
 import UserModel from "../models/User";
 const { Init, Inject } = ObjectDecorators;
 
-@Route("/auth")
+@Route("/auth/totp")
 @Description("Handles processing of HTTP requests to the `/auth/totp` path.")
 class TOTPRoute {
     @Inject(AuthMiddleware)
@@ -41,6 +41,7 @@ class TOTPRoute {
             length: 64,
         };
         const options: TOTPStrategyOptions = new TOTPStrategyOptions(totpConfig);
+        options.allowQueryParam = true;
         options.notify = async (uid: string, totp: string): Promise<void> => {
             const repoUtils: RepoUtils<UserModel> | undefined =
                 this.objectFactory?.getInstance<RepoUtils<UserModel>>("RepoUtils:User");
@@ -75,7 +76,8 @@ class TOTPRoute {
 
     @Summary("Request")
     @Auth(["totp"])
-    @Get("totp")
+    @Get()
+    @Post()
     @Description("Authenticates the user using the TOTPStrategy and returns the user data.")
     @Returns([Object])
     protected async authBasic(@User user?: any): Promise<any> {

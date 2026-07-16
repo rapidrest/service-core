@@ -51,7 +51,9 @@ class OAuthRoute {
             const repoUtils: RepoUtils<UserModel> | undefined =
                 this.objectFactory?.getInstance<RepoUtils<UserModel>>("RepoUtils:User");
             if (repoUtils) {
-                const user = await repoUtils.findOne(profile.id);
+                // `id` is a REST profile-endpoint field (provider-defined shape); `sub` is the
+                // spec-defined OIDC subject claim when the profile comes from a verified id_token.
+                const user = await repoUtils.findOne(profile.id ?? profile.sub);
                 if (user) {
                     return user as any;
                 } else {

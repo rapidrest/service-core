@@ -1,36 +1,35 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<testsuites name="vitest tests" tests="3" failures="1" errors="0" time="1.0305207">
-    <testsuite name="test/routes/TOTPRoute.test.ts" timestamp="2026-07-16T07:20:34.216Z" hostname="Jane" tests="3" failures="1" errors="0" skipped="0" time="1.0305207">
-        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Can authenticate with totp strategy." time="0.0206823">
+<testsuites name="vitest tests" tests="5" failures="0" errors="0" time="1.009092">
+    <testsuite name="test/routes/TOTPRoute.test.ts" timestamp="2026-07-16T07:50:23.369Z" hostname="Jane" tests="5" failures="0" errors="0" skipped="0" time="1.009092">
+        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Can authenticate with totp strategy using Authorization header." time="0.0232685">
             <system-out>
-2026-07-16T07:20:33.872Z [34mdebug[39m: Authentication failed but is required to proceed.
-
-2026-07-16T07:20:33.877Z [34mdebug[39m: str.toUpperCase is not a function
-
-            </system-out>
-            <failure message="expected undefined to deeply equal &apos;a0cb1f57-11f0-43bf-8b0a-eb3c84464849&apos;" type="AssertionError">
-AssertionError: expected undefined to deeply equal &apos;a0cb1f57-11f0-43bf-8b0a-eb3c84464849&apos;
-
-- Expected:
-&quot;a0cb1f57-11f0-43bf-8b0a-eb3c84464849&quot;
-
-+ Received:
-undefined
-
- ❯ test/routes/TOTPRoute.test.ts:109:33
-            </failure>
-        </testcase>
-        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Cannot authenticate with totp strategy with bad code." time="0.0050637">
-            <system-out>
-2026-07-16T07:20:33.883Z [34mdebug[39m: Authentication failed but is required to proceed.
-
-2026-07-16T07:20:33.885Z [34mdebug[39m: Invalid authentication request.
+2026-07-16T07:50:23.015Z [34mdebug[39m: Authentication failed but is required to proceed.
 
             </system-out>
         </testcase>
-        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Cannot authenticate with totp strategy using JWT token." time="0.0043918">
+        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Can authenticate with totp strategy using query parameter." time="0.00737">
             <system-out>
-2026-07-16T07:20:33.889Z [34mdebug[39m: Invalid authentication request.
+2026-07-16T07:50:23.028Z [34mdebug[39m: Authentication failed but is required to proceed.
+
+            </system-out>
+        </testcase>
+        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Can authenticate with totp strategy using POST." time="0.0097687">
+            <system-out>
+2026-07-16T07:50:23.038Z [34mdebug[39m: Authentication failed but is required to proceed.
+
+            </system-out>
+        </testcase>
+        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Cannot authenticate with totp strategy with bad code." time="0.0046344">
+            <system-out>
+2026-07-16T07:50:23.045Z [34mdebug[39m: Authentication failed but is required to proceed.
+
+2026-07-16T07:50:23.046Z [34mdebug[39m: Invalid authentication request.
+
+            </system-out>
+        </testcase>
+        <testcase classname="test/routes/TOTPRoute.test.ts" name="TOTPRoute Tests &gt; Cannot authenticate with totp strategy using JWT token." time="0.0041809">
+            <system-out>
+2026-07-16T07:50:23.050Z [34mdebug[39m: Invalid authentication request.
 
             </system-out>
         </testcase>

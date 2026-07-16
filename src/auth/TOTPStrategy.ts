@@ -120,10 +120,22 @@ export class TOTPStrategy implements AuthStrategy {
     private getLoginInfo(req: HttpRequest): any {
         let loginInfo: string = "";
 
-        // Login info should be found in this order: Query Parameter => Authorization
+        // Login info should be found in this order: Body => Query Parameter => Authorization
+
+        // The request body should have the form `{ id: "...", code: "..." }`
+        if (typeof req.body === "object") {
+            if (req.body.id) {
+                loginInfo = req.body.id;
+                if (req.body.code) {
+                    loginInfo += ":" + req.body.code;
+                }
+            }
+        }
+
         // Check the query parameter (only when explicitly opted in — tokens in URLs appear in logs)
         if (this.options.allowQueryParam && this.options.queryKey && req.query && this.options.queryKey in req.query) {
             loginInfo = req.query[this.options.queryKey] as string;
+            loginInfo = Buffer.from(loginInfo, "base64").toString("utf-8");
         }
 
         // Next check the headers. It's possible there is more than one header value defined. Loop through each of
@@ -143,7 +155,7 @@ export class TOTPStrategy implements AuthStrategy {
                     continue;
                 }
 
-                loginInfo = parts[1];
+                loginInfo = Buffer.from(parts[1], "base64").toString("utf-8");
             }
         }
 
@@ -159,8 +171,7 @@ export class TOTPStrategy implements AuthStrategy {
 
         // If the login info has been found, verify it.
         if (loginInfo && loginInfo.length > 0) {
-            const info: string = Buffer.from(loginInfo, "base64").toString("utf-8");
-            const parts: string[] = info.split(":");
+            const parts: string[] = loginInfo.split(":");
             if (parts.length === 1) {
                 // Phase 1: User sent a user ID only. Send the user a TOTP code using an available
                 // notification method.
@@ -180,7 +191,7 @@ export class TOTPStrategy implements AuthStrategy {
                         return {
                             data: loginInfo,
                             method: this.name,
-                            payload: info,
+                            payload: loginInfo,
                             user,
                         };
                     }

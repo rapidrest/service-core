@@ -14,6 +14,11 @@ export interface AuthResult {
     method: string;
     /** The fully decoded payload from the auth data. */
     payload?: any;
+    /**
+     * Client-supplied app-correlation data extracted from the `state` round-trip, if any (see
+     * OAuthStrategy's combined state/CSRF design). Available to route handlers via `@AuthResult`.
+     */
+    state?: string;
     /** The authenticated user profile, or `undefined` if authentication failed. */
     user?: JWTUser;
 }

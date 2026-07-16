@@ -13,6 +13,9 @@ export const OAuthProtocol = {
     OPENID: "openid",
 } as const;
 
+/** The two PKCE code challenge methods registered by RFC 7636 / the IANA PKCE registry. */
+export type PkceMethod = "S256" | "plain";
+
 export interface OAuthProvider {
     /** The unique name of the provider that can be used for authentication. */
     name: string;
@@ -23,20 +26,35 @@ export interface OAuthProvider {
     /** The shared secret that has been provided by the OAuth provider. */
     clientSecret: string;
     /**
-     * Indicates whether PKCE is required by the OAuth provider. Optionally, set the value to the desired algorithm of
-     * the PKCE challenge method (E.g., `S256`).
+     * Indicates whether PKCE is required by the OAuth provider. Set to `true` to allow either
+     * `S256` or `plain` (the client may choose), or set to `"S256"`/`"plain"` to require that
+     * specific method regardless of what the client requests.
      */
-    pkce?: boolean | string;
+    pkce?: boolean | PkceMethod;
     /** The URL of the provider's API that the user profile can be retrieved from. */
     profileURL?: string;
     /** The authentication protocol to use (e.g. OAuth 2.0 or Open ID). */
     protocol: string;
-    /** The callback URI that has been registered with the OAuth provider. */
-    redirectURI: string;
+    /**
+     * The callback URI (or list of allowed callback URIs) that have been registered with the OAuth
+     * provider. A caller may request a specific `redirect_uri` via query parameter, but only a value
+     * that exactly matches one of these is honored — anything else is rejected.
+     */
+    redirectURI: string | string[];
     /** The list of scopes to request during the authentication process. Default is `none`. */
     scope?: string[];
     /** The URL of the provider's API that will perform token exchange. */
     tokenURL: string;
+    /**
+     * The provider's JWKS endpoint, used to verify ID token signatures. Required when `protocol`
+     * is `openid` and the provider returns an `id_token`.
+     */
+    jwksURI?: string;
+    /**
+     * The expected `iss` claim of ID tokens from this provider. Required when `protocol` is
+     * `openid` and the provider returns an `id_token`.
+     */
+    issuer?: string;
 }
 
 /**
@@ -59,6 +77,9 @@ export class OAuthStrategyOptions {
     }
 }
 
+/** Matches a valid RFC 7636 code_verifier: 43-128 chars from the unreserved character set. */
+const PKCE_VERIFIER_PATTERN = /^[A-Za-z0-9\-._~]{43,128}$/;
+
 /**
  * Implements an authentication strategy for performing OAuth 2.0 and OpenID Connect authorization with a third-party provider.
  *
@@ -72,14 +93,45 @@ export class OAuthStrategyOptions {
  * Authorization Code. The client initiates a request to a route handler, containing the code, and then
  * calls `authenticate()`.
  *
+ * Requires session support (see `SessionManager`/the `session` config block) — `state`, `nonce`, PKCE
+ * material, and the validated `redirect_uri` are all stored server-side between the two requests above.
+ *
  * @author Jean-Philippe Steinmetz <rapidrests@gmail.com>
  */
 export class OAuthStrategy implements AuthStrategy {
     public readonly name: string = "oauth";
     private options: OAuthStrategyOptions;
+    /** Cached `jwks-rsa` clients, keyed by JWKS URI, so keys are cached across requests. */
+    private jwksClients: Map<string, any> = new Map();
 
     constructor(options: OAuthStrategyOptions) {
         this.options = options;
+    }
+
+    /**
+     * Resolves the effective PKCE code challenge method to use, given what the provider requires
+     * (if anything specific) and what the client requested. Throws if the client requests an
+     * invalid value, or a value that conflicts with a provider-mandated method.
+     *
+     * @param clientMethod The `code_challenge_method` requested by the client, if any.
+     */
+    protected resolvePkceMethod(clientMethod?: string): PkceMethod {
+        const pkce = this.options.provider.pkce;
+        const required: PkceMethod | undefined = pkce === "S256" || pkce === "plain" ? pkce : undefined;
+
+        if (clientMethod) {
+            if (clientMethod !== "S256" && clientMethod !== "plain") {
+                throw new Error(`Invalid code_challenge_method '${clientMethod}'. Must be "S256" or "plain".`);
+            }
+            if (required && clientMethod !== required) {
+                throw new Error(
+                    `This provider requires PKCE method '${required}', but '${clientMethod}' was requested.`,
+                );
+            }
+            return clientMethod;
+        }
+
+        return required ?? "S256";
     }
 
     /**
@@ -89,56 +141,82 @@ export class OAuthStrategy implements AuthStrategy {
      * @param redirectURI The source URI to redirect the user to once authentication is complete.
      */
     protected buildAuthorizationURI(req: HttpRequest, redirectURI?: string): string {
-        let url: string = this.options.provider.authorizationURL + `?client_id=${this.options.provider.clientID}`;
+        if (!req.session) {
+            throw new Error(
+                "OAuthStrategy requires session support. Configure the `session` config block so the " +
+                    "session middleware is registered.",
+            );
+        }
 
-        redirectURI = redirectURI ?? (req.query?.redirect_uri as string) ?? this.options.provider.redirectURI;
+        const provider = this.options.provider;
 
-        if (this.options.provider.pkce) {
-            if (!req.session) {
+        // Only a redirect_uri that exactly matches one of the provider's configured/allowed values
+        // is honored — this lets a downstream frontend dynamically choose its own callback target
+        // (different environments, subdomains, multi-tenant deployments) without opening the door
+        // to an attacker supplying an arbitrary redirect_uri.
+        const allowedRedirectURIs: string[] = Array.isArray(provider.redirectURI)
+            ? provider.redirectURI
+            : [provider.redirectURI];
+        const requestedRedirectURI = redirectURI ?? (req.query?.redirect_uri as string | undefined);
+        if (requestedRedirectURI && !allowedRedirectURIs.includes(requestedRedirectURI)) {
+            throw new Error(
+                `redirect_uri '${requestedRedirectURI}' is not in the list of allowed redirect URIs configured ` +
+                    "for this provider.",
+            );
+        }
+        const finalRedirectURI = requestedRedirectURI ?? allowedRedirectURIs[0];
+        req.session.redirect_uri = finalRedirectURI;
+
+        let url: string = provider.authorizationURL + `?client_id=${encodeURIComponent(provider.clientID)}`;
+
+        // Combined state: a server-generated CSRF token, plus optional client-supplied
+        // app-correlation data. The session cookie is httpOnly (invisible to browser JS), so this
+        // is the only channel a frontend has to round-trip its own data through the provider
+        // redirect. Only the CSRF-token half is ever validated server-side; the app-data half is
+        // handed back to the caller untouched via AuthResult.state.
+        const csrfToken: string = crypto.randomBytes(24).toString("base64url");
+        const clientAppData: string = (req.query?.state as string | undefined) ?? "";
+        req.session.state = csrfToken;
+        url += `&state=${encodeURIComponent(`${csrfToken}.${clientAppData}`)}`;
+
+        if (provider.pkce) {
+            const method = this.resolvePkceMethod(req.query.code_challenge_method as string | undefined);
+            const clientVerifier = req.query.code_verifier as string | undefined;
+            if (clientVerifier && !PKCE_VERIFIER_PATTERN.test(clientVerifier)) {
                 throw new Error(
-                    "OAuthStrategy requires session support for PKCE. Configure the `session` config " +
-                        "block so the session middleware is registered.",
+                    "code_verifier does not meet RFC 7636 requirements (43-128 chars, unreserved charset).",
                 );
             }
+            const verifier: string = clientVerifier ?? crypto.randomBytes(32).toString("base64url");
+            const codeChallenge: string =
+                (req.query.code_challenge as string) ||
+                (method === "plain"
+                    ? verifier
+                    : crypto
+                          .createHash("sha256")
+                          .update(Buffer.from(verifier, "ascii"))
+                          .digest("base64")
+                          .replace(/=/g, "")
+                          .replace(/\+/g, "-")
+                          .replace(/\//g, "_"));
 
-            // Create a random verifier string and generate a code challenge with it. Per RFC 7636
-            // the verifier itself must be an unreserved-charset string (not raw bytes) since it's
-            // later sent back verbatim during token exchange — base64url encoding a random buffer
-            // yields exactly such a string.
-            const algo: string =
-                (req.query.code_challenge_method as string) ||
-                (typeof this.options.provider.pkce === "string" ? this.options.provider.pkce : "SHA-256");
-            const verifier: string = req.query.code_verifier
-                ? (req.query.code_verifier as string)
-                : crypto.randomBytes(32).toString("base64url");
-            const codeChallenge =
-                req.query.code_challenge ||
-                crypto
-                    .createHash(algo)
-                    .update(Buffer.from(verifier, "ascii"))
-                    .digest("base64")
-                    .replace(/=/g, "")
-                    .replace(/\+/g, "-")
-                    .replace(/\//g, "_");
-
-            // Add the challenge to the URL
-            url += `&code_challenge=${codeChallenge}&code_challenge_method=${algo}`;
+            url += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=${encodeURIComponent(method)}`;
 
             // Store all pkce info in the session for reference later.
             req.session.code_challenge = codeChallenge;
-            req.session.code_challenge_method = algo;
+            req.session.code_challenge_method = method;
             req.session.code_verifier = verifier;
         }
 
-        if (redirectURI) {
-            url += `&redirect_uri=${encodeURIComponent(redirectURI)}`;
+        if (provider.protocol === OAuthProtocol.OPENID) {
+            const nonce: string = crypto.randomBytes(24).toString("base64url");
+            req.session.nonce = nonce;
+            url += `&nonce=${encodeURIComponent(nonce)}`;
         }
 
-        url += `&response_type=${this.options.provider.protocol === OAuthProtocol.OPENID ? "id_token code" : "code"}`;
-
-        url += `&scope=${req.query.scope || (this.options.provider.scope ?? []).join(" ")}`;
-
-        url += `&state=${req.query.state}`;
+        url += `&redirect_uri=${encodeURIComponent(finalRedirectURI)}`;
+        url += `&response_type=code`;
+        url += `&scope=${encodeURIComponent((req.query.scope as string) || (provider.scope ?? []).join(" "))}`;
 
         return url;
     }
@@ -148,13 +226,43 @@ export class OAuthStrategy implements AuthStrategy {
         res: HttpResponse,
         required?: boolean,
     ): Promise<AuthResult | undefined> {
+        const error = req.query?.error ?? req.body?.error;
+        if (error) {
+            const description = req.query?.error_description ?? req.body?.error_description;
+            throw new Error(`OAuth provider returned an error: ${error}${description ? ` - ${description}` : ""}`);
+        }
+
         // Is this an authorization request or token exchange?
         if (req.body?.code || req.query?.code) {
+            if (!req.session) {
+                throw new Error(
+                    "OAuthStrategy requires session support. Configure the `session` config block so the " +
+                        "session middleware is registered.",
+                );
+            }
+
+            const incomingState: string = (req.body?.state ?? req.query?.state ?? "") as string;
+            const separatorIdx = incomingState.indexOf(".");
+            const csrfPortion = separatorIdx >= 0 ? incomingState.slice(0, separatorIdx) : incomingState;
+            const appData = separatorIdx >= 0 ? incomingState.slice(separatorIdx + 1) : undefined;
+
+            if (!csrfPortion || csrfPortion !== req.session.state) {
+                throw new Error("Invalid or missing state parameter. Possible CSRF attempt.");
+            }
+            delete req.session.state;
+
             // 1. First exchange the auth code for the access token with the provider
             const accessToken: any = await this.exchangeOAuthCode(req);
 
             // 2. Retrieve the user profile.
-            const profile: any = await this.retrieveUserProfile(accessToken);
+            const profile: any = await this.retrieveUserProfile(accessToken, req);
+
+            // Consumed — clear so a stolen/replayed session cookie can't be used against a second flow.
+            delete req.session.code_verifier;
+            delete req.session.code_challenge;
+            delete req.session.code_challenge_method;
+            delete req.session.nonce;
+            delete req.session.redirect_uri;
 
             // 3. Notify the verify callback to create a user object for this profile.
             const user: JWTUser | undefined = await this.options.verify(profile, accessToken);
@@ -163,6 +271,7 @@ export class OAuthStrategy implements AuthStrategy {
                 data: accessToken,
                 method: this.name,
                 payload: accessToken,
+                state: appData,
                 user,
             };
         } else {
@@ -186,32 +295,44 @@ export class OAuthStrategy implements AuthStrategy {
      * @param provider The OAuth provider to perform the exchange with.
      */
     protected async exchangeOAuthCode(req: HttpRequest): Promise<any> {
+        const provider = this.options.provider;
+
         // The code may come from either request query for body
         const code: string = req.body?.code || req.query?.code;
         if (!code) {
             throw new Error("Authorization code is missing!");
         }
 
+        const allowedRedirectURIs: string[] = Array.isArray(provider.redirectURI)
+            ? provider.redirectURI
+            : [provider.redirectURI];
+
         // Create a url-encoded payload for the token exchange per RFC-6749 Section 4.1.3
         let data: any = {
             code,
             grant_type: "authorization_code",
-            redirect_uri: req.body?.redirect_uri ?? req.query?.redirect_uri ?? this.options.provider.redirectURI,
+            // Must exactly match what was sent during the authorize step — reuse the value that was
+            // validated and stored in the session then, rather than re-trusting client input here.
+            redirect_uri: req.session?.redirect_uri ?? allowedRedirectURIs[0],
         };
 
         // If PKCE is required for this provider make sure to include the challenge. The request body may have already
         // included the challenge details. If not, we'll use what we have from the stored session.
-        if (this.options.provider.pkce) {
+        if (provider.pkce) {
             data.code_verifier = req.body?.code_verifier ?? req.query?.code_verifier ?? req.session?.code_verifier;
         }
 
+        const headers: any = { "Content-Type": "application/x-www-form-urlencoded" };
+        if (provider.clientSecret) {
+            headers.Authorization = `Basic ${Buffer.from(provider.clientID + ":" + provider.clientSecret).toString("base64")}`;
+        } else {
+            // Public/PKCE-only clients have no secret to authenticate with via Basic auth — per
+            // RFC 6749 §2.3.1 they must instead identify themselves via a body parameter.
+            data.client_id = provider.clientID;
+        }
+
         try {
-            const result: AxiosResponse = await axios.post(this.options.provider.tokenURL, data, {
-                headers: {
-                    Authorization: `Basic ${Buffer.from(this.options.provider.clientID + ":" + this.options.provider.clientSecret).toString("base64")}`,
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-            });
+            const result: AxiosResponse = await axios.post(provider.tokenURL, data, { headers });
             if (result && (result.status !== 200 || !result.data)) {
                 throw new Error("Failed to retrieve access token.");
             }
@@ -228,41 +349,107 @@ export class OAuthStrategy implements AuthStrategy {
     /**
      * Retrieves the user profile from the specified OAuth provider using the given access token.
      * @param token The access token to use to retrieve the user profile.
+     * @param req The source HTTP request, used to validate the id_token's nonce claim.
      */
-    protected async retrieveUserProfile(token: any): Promise<any> {
-        // Was an id_token provided? If so, we can decode it and retrieve the profile without
-        // having to contact the OAuth provider again.
-        if (token.id_token) {
-            const payload: any = token.id_token;
-            if (typeof payload !== "object") {
-                throw new Error("Invalid id_token provided");
-            }
-            return payload;
-        } else {
-            // If no profileURL has been set just immediately return.
-            if (!this.options.provider.profileURL) {
-                return undefined;
-            }
-
-            try {
-                const request: AxiosResponse = await axios.get(this.options.provider.profileURL, {
-                    headers: {
-                        Accept: "application/json",
-                        Authorization: `${token.token_type} ${token.access_token}`,
-                    },
-                });
-                if (request && (request.status !== 200 || !request.data)) {
-                    throw new Error("Failed to retrieve user profile.");
-                }
-
-                const json: any = typeof request.data === "string" ? JSON.parse(request.data) : request.data;
-                return json;
-            } catch (err: any) {
-                const error: any =
-                    err.response?.data || new Error(`Failed to retrieve user profile. ${err.message || ""}`);
-                error.status = err.status;
-                throw error;
-            }
+    protected async retrieveUserProfile(token: any, req: HttpRequest): Promise<any> {
+        // Was an id_token provided? If so, we can verify and decode it to retrieve the profile
+        // without having to contact the OAuth provider again — some OpenID providers only expose
+        // profile data this way and have no separate profile endpoint at all.
+        if (token.id_token && this.options.provider.protocol === OAuthProtocol.OPENID) {
+            return await this.verifyIdToken(token.id_token, req);
         }
+
+        // If no profileURL has been set just immediately return.
+        if (!this.options.provider.profileURL) {
+            return undefined;
+        }
+
+        try {
+            const request: AxiosResponse = await axios.get(this.options.provider.profileURL, {
+                headers: {
+                    Accept: "application/json",
+                    Authorization: `${token.token_type} ${token.access_token}`,
+                },
+            });
+            if (request && (request.status !== 200 || !request.data)) {
+                throw new Error("Failed to retrieve user profile.");
+            }
+
+            const json: any = typeof request.data === "string" ? JSON.parse(request.data) : request.data;
+            return json;
+        } catch (err: any) {
+            const error: any =
+                err.response?.data || new Error(`Failed to retrieve user profile. ${err.message || ""}`);
+            error.status = err.status;
+            throw error;
+        }
+    }
+
+    /**
+     * Dynamically imports the given optional peer dependency, throwing a helpful error if it is not installed.
+     *
+     * @param pkg The name of the package to import.
+     */
+    private async importOptionalDependency(pkg: string): Promise<any> {
+        try {
+            return await import(pkg);
+        } catch (err: any) {
+            throw new Error(
+                `OAuth provider '${this.options.provider.name}' uses OpenID with an id_token, which requires ` +
+                    `the optional peer dependency '${pkg}' for signature verification. Install it with: yarn add ${pkg}`,
+            );
+        }
+    }
+
+    /**
+     * Returns a (cached) `jwks-rsa` client for the given JWKS URI.
+     * @param jwksURI The JWKS endpoint to fetch signing keys from.
+     */
+    private async getJwksClient(jwksURI: string): Promise<any> {
+        let client = this.jwksClients.get(jwksURI);
+        if (!client) {
+            const mod: any = await this.importOptionalDependency("jwks-rsa");
+            const buildClient = mod.default ?? mod;
+            client = buildClient({ jwksUri: jwksURI });
+            this.jwksClients.set(jwksURI, client);
+        }
+        return client;
+    }
+
+    /**
+     * Verifies the signature, issuer, audience, and nonce of the given ID token.
+     *
+     * @param idToken The compact JWT id_token to verify.
+     * @param req The source HTTP request, used to validate the nonce against the stored session value.
+     */
+    private async verifyIdToken(idToken: string, req: HttpRequest): Promise<any> {
+        const provider = this.options.provider;
+        if (!provider.jwksURI || !provider.issuer) {
+            throw new Error(
+                `OAuth provider '${provider.name}' has protocol 'openid' but is missing required ` +
+                    "'jwksURI'/'issuer' configuration for ID token verification.",
+            );
+        }
+
+        const decoded = jwt.decode(idToken, { complete: true });
+        if (!decoded || typeof decoded === "string") {
+            throw new Error("Invalid id_token: unable to decode JWT header.");
+        }
+
+        const client = await this.getJwksClient(provider.jwksURI);
+        const signingKey = await client.getSigningKey(decoded.header.kid);
+        const publicKey: string = signingKey.getPublicKey();
+
+        const payload: any = jwt.verify(idToken, publicKey, {
+            algorithms: ["RS256"],
+            issuer: provider.issuer,
+            audience: provider.clientID,
+        });
+
+        if (!req.session?.nonce || payload.nonce !== req.session.nonce) {
+            throw new Error("Invalid or missing nonce in id_token. Possible replay attack.");
+        }
+
+        return payload;
     }
 }

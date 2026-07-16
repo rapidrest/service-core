@@ -82,7 +82,7 @@ describe("TOTPRoute Tests", () => {
         }
     });
 
-    it("Can authenticate with totp strategy.", async () => {
+    it("Can authenticate with totp strategy using Authorization header.", async () => {
         const user: User = await createUser({
             name: "dtennant",
             firstName: "David",
@@ -105,6 +105,83 @@ describe("TOTPRoute Tests", () => {
                 "Authorization",
                 `totp ${Buffer.from(`${user.uid}:${route.totpCodes.get(user.uid)}`).toString("base64")}`,
             );
+        expect(result).toHaveProperty("body");
+        expect(result.body.uid).toEqual(user.uid);
+        expect(result.body.version).toEqual(user.version);
+        expect(result.body.firstName).toEqual(user.firstName);
+        expect(result.body.lastName).toEqual(user.lastName);
+        expect(result.body.age).toEqual(user.age);
+
+        const stored: User | null = await repo.findOne({ uid: result.body.uid } as any);
+        expect(stored).toBeDefined();
+        if (stored) {
+            expect(stored.uid).toEqual(user.uid);
+            expect(stored.version).toEqual(user.version);
+            expect(stored.firstName).toEqual(user.firstName);
+            expect(stored.lastName).toEqual(user.lastName);
+            expect(stored.age).toEqual(user.age);
+        }
+    });
+
+    it("Can authenticate with totp strategy using query parameter.", async () => {
+        const user: User = await createUser({
+            name: "dtennant",
+            firstName: "David",
+            lastName: "Tennant",
+            age: 47,
+            password: "MyP@ssw0rd1sS3cuR3!",
+        });
+
+        const client = agent(server);
+        let result = await client
+            .get("/auth/totp")
+            .set("Authorization", `totp ${Buffer.from(`${user.uid}`).toString("base64")}`);
+        expect(result.status).toBe(200);
+
+        const route: TOTPRoute = objectFactory.getInstance("routes.TOTPRoute:default");
+        expect(route).toBeDefined();
+        result = await client.get(
+            `/auth/totp?auth_totp=${Buffer.from(`${user.uid}:${route.totpCodes.get(user.uid)}`).toString("base64")}`,
+        );
+        expect(result).toHaveProperty("body");
+        expect(result.body.uid).toEqual(user.uid);
+        expect(result.body.version).toEqual(user.version);
+        expect(result.body.firstName).toEqual(user.firstName);
+        expect(result.body.lastName).toEqual(user.lastName);
+        expect(result.body.age).toEqual(user.age);
+
+        const stored: User | null = await repo.findOne({ uid: result.body.uid } as any);
+        expect(stored).toBeDefined();
+        if (stored) {
+            expect(stored.uid).toEqual(user.uid);
+            expect(stored.version).toEqual(user.version);
+            expect(stored.firstName).toEqual(user.firstName);
+            expect(stored.lastName).toEqual(user.lastName);
+            expect(stored.age).toEqual(user.age);
+        }
+    });
+
+    it("Can authenticate with totp strategy using POST.", async () => {
+        const user: User = await createUser({
+            name: "dtennant",
+            firstName: "David",
+            lastName: "Tennant",
+            age: 47,
+            password: "MyP@ssw0rd1sS3cuR3!",
+        });
+
+        const client = agent(server);
+        let result = await client
+            .get("/auth/totp")
+            .set("Authorization", `totp ${Buffer.from(`${user.uid}`).toString("base64")}`);
+        expect(result.status).toBe(200);
+
+        const route: TOTPRoute = objectFactory.getInstance("routes.TOTPRoute:default");
+        expect(route).toBeDefined();
+        result = await client.post(`/auth/totp`).send({
+            id: user.uid,
+            code: route.totpCodes.get(user.uid),
+        });
         expect(result).toHaveProperty("body");
         expect(result.body.uid).toEqual(user.uid);
         expect(result.body.version).toEqual(user.version);
