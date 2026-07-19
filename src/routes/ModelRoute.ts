@@ -593,7 +593,8 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        const existing: T | null | undefined = options.existing || (await this.repoUtils?.findOne(id, {}));
+        const existing: T | null | undefined =
+            options.existing || (await this.repoUtils?.findOne(id, { user: options.user }));
         if (!existing) {
             throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
         }
