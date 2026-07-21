@@ -315,6 +315,7 @@ export class OpenApiSpec {
         metadata: any,
         docs: DocumentsData,
         routeClass: any,
+        isWebSocket: boolean = false,
     ): OpenApiSpec {
         const { after, authRequired, before } = metadata;
         let { authStrategies } = metadata;
@@ -474,9 +475,9 @@ export class OpenApiSpec {
             }
         }
 
-        // If the path has `.websocket` at the end, make sure to add the `x-upgrade` extension
-        // Also remove all response schemas since they don't apply.
-        if (path.includes(".websocket")) {
+        // WebSocket upgrade routes get the `x-upgrade` extension so consumers of the spec can tell
+        // them apart from a plain GET. Response schemas don't apply to an upgrade, so drop them too.
+        if (isWebSocket) {
             data["x-upgrade"] = true;
             responseSchemas.splice(0, responseSchemas.length);
         }
@@ -577,7 +578,20 @@ export class OpenApiSpec {
         }
 
         // Check against common built-in types
-        const builtInTypes = [Object, Array, Boolean, Date, RegExp, Map, Number, Set, String, Promise, Function];
+        const builtInTypes = [
+            Object,
+            Array,
+            Boolean,
+            Buffer,
+            Date,
+            RegExp,
+            Map,
+            Number,
+            Set,
+            String,
+            Promise,
+            Function,
+        ];
         return builtInTypes.some((type) => value === type);
     }
 

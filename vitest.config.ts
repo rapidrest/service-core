@@ -38,7 +38,7 @@ export default defineConfig({
             enabled: true,
             provider: 'v8',
             include: ['src/**/*.ts'],
-            exclude: ['**/node_modules/**', '**/test/**'],
+            exclude: ['**/node_modules/**', '**/test/**', 'src/http/bun/**'],
             reporter: ['text', 'json', 'html', 'lcov'],
             thresholds: {
                 branches: 0,

@@ -56,8 +56,11 @@ export class EventListenerManager {
                         Reflect.hasOwnMetadata("rrst:eventListeners", clazz) &&
                         clazz.prototype.constructor.length === 0
                     ) {
-                        const obj = await this.objectFactory.newInstance(clazz, { name: "default" });
-                        this.register(obj);
+                        // Registration happens below via the `instances` loop — `newInstance` has
+                        // already stored this object there by the time it resolves, and registering
+                        // it here too would double-add its handlers (each `register()` call binds
+                        // fresh function references, so the dedup check in `addEventHandler` can't catch it).
+                        await this.objectFactory.newInstance(clazz, { name: "default" });
                     }
                 } catch (err) {
                     this.logger.debug(`EventListeners: Unable to process class[${clazz}], Error=${err}`);

@@ -48,6 +48,24 @@ describe("MemorySessionStore Tests", () => {
         expect(await store.load("to-destroy")).toBeUndefined();
         store.dispose();
     });
+
+    it("Reclaims expired, never-reloaded sessions via the periodic sweep.", async () => {
+        vi.useFakeTimers();
+        try {
+            const store = new MemorySessionStore();
+            await store.save("expired", { uid: "user-4" }, 0);
+            await store.save("still-valid", { uid: "user-5" }, 3600);
+
+            // Advance past both the TTL and the sweep interval so the sweep timer fires.
+            await vi.advanceTimersByTimeAsync(60_000);
+
+            expect((store as any).entries.has("expired")).toBe(false);
+            expect((store as any).entries.has("still-valid")).toBe(true);
+            store.dispose();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 describe("RedisSessionStore Tests", () => {
@@ -68,6 +86,13 @@ describe("RedisSessionStore Tests", () => {
         await store.save("to-destroy", { uid: "user-3" }, 60);
         await store.destroy("to-destroy");
         expect(await store.load("to-destroy")).toBeUndefined();
+    });
+
+    it("Returns undefined when the stored value is not valid JSON.", async () => {
+        const client = new Redis() as any;
+        const store = new RedisSessionStore(client);
+        await client.set("session:corrupted", "not-json");
+        expect(await store.load("corrupted")).toBeUndefined();
     });
 });
 
@@ -107,6 +132,26 @@ describe("SessionManager Tests", () => {
         await objectFactory.destroy();
     });
 
+    it("generateId returns a fresh, non-empty session ID each call.", async () => {
+        const objectFactory = new ObjectFactory(makeConfig(), new Logger());
+        const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
+        const a = mgr.generateId();
+        const b = mgr.generateId();
+        expect(a).not.toBe(b);
+        expect(a.length).toBeGreaterThan(0);
+        await objectFactory.destroy();
+    });
+
+    it("delegates load/save/destroy to the underlying store.", async () => {
+        const objectFactory = new ObjectFactory(makeConfig(), new Logger());
+        const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
+        await mgr.save("sess-1", { uid: "user-1" });
+        expect(await mgr.load("sess-1")).toEqual({ uid: "user-1" });
+        await mgr.destroy("sess-1");
+        expect(await mgr.load("sess-1")).toBeUndefined();
+        await objectFactory.destroy();
+    });
+
     it("verifyId rejects a tampered signature.", async () => {
         const objectFactory = new ObjectFactory(makeConfig(), new Logger());
         const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
@@ -120,6 +165,21 @@ describe("SessionManager Tests", () => {
         const objectFactory = new ObjectFactory(makeConfig(), new Logger());
         const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
         expect(mgr.verifyId("not-a-signed-value")).toBeUndefined();
+        await objectFactory.destroy();
+    });
+
+    it("verifyId rejects a signature of the wrong length.", async () => {
+        const objectFactory = new ObjectFactory(makeConfig(), new Logger());
+        const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
+        expect(mgr.verifyId("session-id.short")).toBeUndefined();
+        await objectFactory.destroy();
+    });
+
+    it("defaults ttlSeconds to 1800 when session.ttl is not configured.", async () => {
+        const config = { get: (key: string) => (key === "session" ? { secret: "s" } : undefined) };
+        const objectFactory = new ObjectFactory(config, new Logger());
+        const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
+        expect(mgr.ttlSeconds).toBe(1800);
         await objectFactory.destroy();
     });
 });

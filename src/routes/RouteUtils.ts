@@ -301,7 +301,7 @@ export class RouteUtils {
                             app.ws(path, middleware, undefined, upgradeAuth);
 
                             // Update our OpenAPI spec — WebSocket upgrade is a GET request
-                            this.apiSpec.addRoute(key, path, "get", metadata, docs, route);
+                            this.apiSpec.addRoute(key, path, "get", metadata, docs, route, true);
                             this.logger.info("Registered Route: WS " + path);
                             continue;
                         }

@@ -505,4 +505,95 @@ describe("ACLRouteMongo Tests", () => {
             expect(acl.parentUid).toBe(parentUid);
         }
     });
+
+    it("Can check existence of an ACL document as a trusted user.", async () => {
+        const acl: AccessControlListMongo = await createACL();
+        const result = await request(server)
+            .head("/acls/" + acl.uid)
+            .set("Authorization", "jwt " + adminToken);
+        expect(result.headers["content-length"]).toBe("1");
+    });
+
+    it("Cannot check existence of an ACL document without authentication.", async () => {
+        const acl: AccessControlListMongo = await createACL();
+        const result = await request(server).head("/acls/" + acl.uid);
+        expect(result.status).toBe(401);
+    });
+
+    it("Cannot check existence of an ACL document as an untrusted user without FULL permission.", async () => {
+        const acl: AccessControlListMongo = await createACL();
+        const result = await request(server)
+            .head("/acls/" + acl.uid)
+            .set("Authorization", "jwt " + userToken);
+        expect(result.status).toBe(403);
+    });
+
+    it("Can bulk update ACL documents as a trusted user.", async () => {
+        const acls: AccessControlListMongo[] = await createACLs(2);
+        const result = await request(server)
+            .put("/acls")
+            .set("Authorization", "jwt " + adminToken)
+            .send(acls.map((acl) => ({ uid: acl.uid, version: acl.version, parentUid: uuid.v4() })));
+        expect(result.status).toBeGreaterThanOrEqual(200);
+        expect(result.status).toBeLessThan(300);
+    });
+
+    it("Cannot bulk update ACL documents without authentication.", async () => {
+        const acls: AccessControlListMongo[] = await createACLs(2);
+        const result = await request(server)
+            .put("/acls")
+            .send(acls.map((acl) => ({ uid: acl.uid, parentUid: uuid.v4() })));
+        expect(result.status).toBe(401);
+    });
+
+    it("Cannot bulk update ACL documents as an untrusted user.", async () => {
+        const acls: AccessControlListMongo[] = await createACLs(2);
+        const result = await request(server)
+            .put("/acls")
+            .set("Authorization", "jwt " + userToken)
+            .send(acls.map((acl) => ({ uid: acl.uid, parentUid: uuid.v4() })));
+        expect(result.status).toBe(403);
+    });
+
+    it("Cannot bulk update default_ ACL documents.", async () => {
+        const result = await request(server)
+            .put("/acls")
+            .set("Authorization", "jwt " + adminToken)
+            .send([{ uid: "default_ProtectedUser", parentUid: uuid.v4() }]);
+        expect(result.status).toBe(403);
+    });
+
+    it("Can update a single ACL property as a trusted user.", async () => {
+        const acl: AccessControlListMongo = await createACL();
+        const newParentUid = uuid.v4();
+        const result = await request(server)
+            .put(`/acls/${acl.uid}/parentUid`)
+            .set("Authorization", "jwt " + adminToken)
+            .send(JSON.stringify(newParentUid))
+            .set("Content-Type", "application/json");
+        expect(result.status).toBeGreaterThanOrEqual(200);
+        expect(result.status).toBeLessThan(300);
+    });
+
+    it("Cannot truncate ACL documents without authentication.", async () => {
+        const result = await request(server).delete("/acls");
+        expect(result.status).toBe(401);
+    });
+
+    it("Cannot truncate ACL documents as an untrusted user.", async () => {
+        const result = await request(server)
+            .delete("/acls")
+            .set("Authorization", "jwt " + userToken);
+        expect(result.status).toBe(403);
+    });
+
+    it("Can truncate ACL documents as a trusted user.", async () => {
+        await createACLs(3);
+        const result = await request(server)
+            .delete("/acls")
+            .set("Authorization", "jwt " + adminToken);
+        expect(result.status).toBeGreaterThanOrEqual(200);
+        expect(result.status).toBeLessThan(300);
+        expect(await repo.count()).toBe(0);
+    });
 });

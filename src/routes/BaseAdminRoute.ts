@@ -80,6 +80,13 @@ export class BaseAdminRoute {
 
     protected redisClient?: Redis;
 
+    /**
+     * A dedicated connection for publishing admin channel messages (e.g. the `RESTART` signal).
+     * `redisClient` issues `SUBSCRIBE` in `init()`, which puts it into subscriber-only mode — Redis
+     * connections in that state can't also run `PUBLISH`, so a separate connection is required.
+     */
+    protected redisPublisher?: Redis;
+
     /** The underlying ReleaseNotes specification. */
     protected releaseNotes?: string;
 
@@ -100,6 +107,7 @@ export class BaseAdminRoute {
         if (this.cacheConnConfig) {
             const adminChannel: string = this.serviceName || "service_admin";
             this.redisClient = new Redis(this.cacheConnConfig.url, this.cacheConnConfig.options);
+            this.redisPublisher = this.redisClient.duplicate();
             void this.redisClient.subscribe(adminChannel);
             this.redisClient.on("message", (channel: string, message: string) => {
                 if (channel === adminChannel) {
@@ -252,6 +260,6 @@ export class BaseAdminRoute {
 
         // Send the restart signal to all services.
         const channelName: string = this.serviceName || "service_admin";
-        void this.redisClient?.publish(channelName, "RESTART");
+        void this.redisPublisher?.publish(channelName, "RESTART");
     }
 }
