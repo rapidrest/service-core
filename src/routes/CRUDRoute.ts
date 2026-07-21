@@ -5,7 +5,7 @@ import { RepoUtils } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
 import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
-import type { JWTUser } from "@rapidrest/core";
+import { ApiError, type JWTUser } from "@rapidrest/core";
 import { Description, Returns, Summary, TypeInfo } from "../decorators/DocDecorators.js";
 import {
     Delete,
@@ -21,6 +21,7 @@ import {
     Validate,
 } from "../decorators/RouteDecorators.js";
 import { ModelRoute, type UpdateObject } from "./ModelRoute.js";
+import { ApiErrorMessages } from "../ApiErrors.js";
 
 /**
  * The `CRUDRoute` provides a base implementation of all CRUD endpoint behaviors that `ModelRoute` offers for a given
@@ -67,15 +68,34 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         return super.doCount({ params, query, res, user });
     }
 
+    /**
+     * Override this function to perform additional custom validation of object creation. This is called
+     * for each object passed to the `create()` operation.
+     */
     protected validateCreate(obj: Partial<T> | Partial<T>[], @User user?: JWTUser) {
         return super.validate(obj, { user });
+    }
+
+    private async validateCreateBulk(objs: Partial<T> | Partial<T>[], @User user?: JWTUser) {
+        objs = Array.isArray(objs) ? objs : [objs];
+
+        const promises: Promise<void>[] = [];
+        for (const obj of objs) {
+            promises.push(this.validateCreate(obj, user));
+        }
+
+        const result = await Promise.allSettled(promises);
+        const errors = result.filter((p) => p.status === "rejected").map((r) => r.reason);
+        if (errors.length > 0) {
+            throw new ApiError(ApiErrorMessages.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
+        }
     }
 
     @Summary("Create {{model}}(s)")
     @Description("Create a new {{model}}.")
     @Returns([Object])
     @Post()
-    @Validate("validateCreate")
+    @Validate("validateCreateBulk")
     public create(obj: T | T[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T | Array<T>> {
         return super.doCreate(obj, { req, user });
     }
@@ -134,6 +154,11 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         return super.doTruncate({ params, query, user });
     }
 
+    /**
+     * Override this function to perform additional custom validation of object updates. This is called
+     * for `update()` and `updateBulk()` operations. `updateBulk()` calls this function for each update
+     * object.
+     */
     protected async validateUpdate(@Param("id") id: string, obj: UpdateObject<T>, @User user?: JWTUser) {
         return this.validate(obj, { user });
     }
@@ -152,8 +177,17 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         return super.doUpdate(id, obj, { user });
     }
 
-    protected async validateUpdateBulk(objs: UpdateObject<T>[], @User user?: JWTUser) {
-        return super.validate(objs, { user });
+    private async validateUpdateBulk(objs: UpdateObject<T>[], @User user?: JWTUser) {
+        const promises: Promise<void>[] = [];
+        for (const obj of objs) {
+            promises.push(this.validateUpdate(obj.uid, obj, user));
+        }
+
+        const result = await Promise.allSettled(promises);
+        const errors = result.filter((p) => p.status === "rejected").map((r) => r.reason);
+        if (errors.length > 0) {
+            throw new ApiError(ApiErrorMessages.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
+        }
     }
 
     @Summary("Update {{model}}s in bulk")
