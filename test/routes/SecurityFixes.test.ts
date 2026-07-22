@@ -171,6 +171,34 @@ describe("Security Fixes Tests [MongoDB]", () => {
         });
     });
 
+    describe("RepoUtils.create() duplicate-identifier race (TOCTOU)", () => {
+        it("Lets only one of two concurrent creates with the same identifier succeed.", async () => {
+            // RepoUtils.create() pre-checks for a duplicate identifier via count() before save() — a
+            // non-atomic check-then-insert. Firing two creates concurrently (no await between them) lets
+            // both pass the count() pre-check before either save() commits, so the real guarantee has to
+            // come from BaseMongoEntity's unique (uid, version) index: exactly one save() should succeed
+            // and the other should fail with a clean IDENTIFIER_EXISTS ApiError, not a raw duplicate-key
+            // error or (worse) two documents with the same identifier.
+            const route: any = objectFactory.getInstance("routes.UserRoute");
+            const name = uuid.v4();
+
+            const [a, b] = await Promise.allSettled([
+                route.repoUtils.create({ name }, { ignoreACL: true }),
+                route.repoUtils.create({ name }, { ignoreACL: true }),
+            ]);
+
+            const fulfilled = [a, b].filter((r) => r.status === "fulfilled");
+            const rejected = [a, b].filter((r) => r.status === "rejected");
+            expect(fulfilled.length).toBe(1);
+            expect(rejected.length).toBe(1);
+            expect(rejected[0].reason?.status).toBe(400);
+            expect(rejected[0].reason?.code).toBe("api-011"); // ApiErrors.IDENTIFIER_EXISTS
+
+            const matches: any[] = await route.repoUtils.repo.find({ name } as any).toArray();
+            expect(matches.length).toBe(1);
+        });
+    });
+
     describe("Request body size limit", () => {
         it("Rejects a request body larger than the configured maximum with a 413.", async () => {
             const token = tokenFor(uuid.v4());

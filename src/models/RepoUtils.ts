@@ -341,7 +341,21 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile since T
         // extends BaseEntity.
-        const result: T = this.instantiateObject(await this.repo.save(newObj));
+        let saved: any;
+        try {
+            saved = await this.repo.save(newObj);
+        } catch (err: any) {
+            // The count() check above is only a fast-path pre-check — it's inherently racy, since another
+            // concurrent create() for the same identifier can pass it before this save() commits. The real
+            // guarantee comes from BaseMongoEntity's unique (uid, version) index (see its own comment):
+            // when two creates race past the count() check, the database itself rejects the loser here with
+            // a duplicate-key error, which we translate to the same error the pre-check reports.
+            if (err?.code === 11000) {
+                throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+            }
+            throw err;
+        }
+        const result: T = this.instantiateObject(saved);
 
         if (this.cacheClient && this.modelClass.cacheTTL) {
             // Cache the object for faster retrieval
@@ -893,14 +907,25 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         if (this.repo instanceof MongoRepository) {
             if (existing instanceof BaseEntity) {
                 if (keepPrevious) {
-                    result = this.instantiateObject(
-                        await this.repo.save({
-                            ...obj,
-                            _id: undefined, // Ensure we save a new document
-                            dateModified: new Date(),
-                            version: (obj as any).version + 1,
-                        } as any),
-                    );
+                    // Same (uid, version) unique index race as RepoUtils.create(): two concurrent updates of
+                    // the same version can both pass the optimistic-lock check above and both attempt to
+                    // insert (uid, version + 1). The database rejects the loser; treat that the same as a
+                    // lost optimistic-lock race rather than letting the raw duplicate-key error escape.
+                    try {
+                        result = this.instantiateObject(
+                            await this.repo.save({
+                                ...obj,
+                                _id: undefined, // Ensure we save a new document
+                                dateModified: new Date(),
+                                version: (obj as any).version + 1,
+                            } as any),
+                        );
+                    } catch (err: any) {
+                        if (err?.code === 11000) {
+                            throw new ApiError(ApiErrors.INVALID_OBJECT_VERSION, 409, ApiErrorMessages.INVALID_OBJECT_VERSION);
+                        }
+                        throw err;
+                    }
                 } else {
                     await this.repo.updateOne(
                         { uid: obj.uid, version: (obj as any).version },
@@ -915,12 +940,19 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 }
             } else if (obj.uid) {
                 if (keepPrevious) {
-                    result = this.instantiateObject(
-                        await this.repo.save({
-                            ...obj,
-                            version: (obj as any).version + 1,
-                        } as any),
-                    );
+                    try {
+                        result = this.instantiateObject(
+                            await this.repo.save({
+                                ...obj,
+                                version: (obj as any).version + 1,
+                            } as any),
+                        );
+                    } catch (err: any) {
+                        if (err?.code === 11000) {
+                            throw new ApiError(ApiErrors.INVALID_OBJECT_VERSION, 409, ApiErrorMessages.INVALID_OBJECT_VERSION);
+                        }
+                        throw err;
+                    }
                 } else {
                     await this.repo.updateOne(
                         { uid: obj.uid },
