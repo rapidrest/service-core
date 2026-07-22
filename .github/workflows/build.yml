@@ -10,7 +10,7 @@ jobs:
     container:
       image: node:lts-trixie-slim
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Enable corepack
         run: corepack enable
@@ -41,13 +41,13 @@ jobs:
       image: node:lts-trixie-slim
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Enable corepack
         run: corepack enable
 
       - name: Install system dependencies
-        run: apt-get update && apt-get install -y --no-install-recommends libcurl4
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates libcurl4 curl
 
       - name: Restore node_modules cache
         uses: actions/cache@v4
@@ -83,7 +83,7 @@ jobs:
     needs: build
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run validation script
         run: |
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Enable corepack
         run: corepack enable
