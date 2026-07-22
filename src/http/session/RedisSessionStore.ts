@@ -13,6 +13,9 @@ const KEY_PREFIX = "session:";
 export class RedisSessionStore implements SessionStore {
     private client: Redis;
 
+    /** The default record TTL (in seconds). */
+    public defaultTTL: number = 60;
+
     constructor(client: Redis) {
         this.client = client;
     }
@@ -27,11 +30,15 @@ export class RedisSessionStore implements SessionStore {
         }
     }
 
-    public async save(sessionId: string, data: Record<string, any>, ttlSeconds: number): Promise<void> {
+    public async save(
+        sessionId: string,
+        data: Record<string, any>,
+        ttlSeconds: number = this.defaultTTL,
+    ): Promise<void> {
         await this.client.setex(KEY_PREFIX + sessionId, ttlSeconds, JSON.stringify(data));
     }
 
-    public async destroy(sessionId: string): Promise<void> {
+    public async delete(sessionId: string): Promise<void> {
         await this.client.del(KEY_PREFIX + sessionId);
     }
 }

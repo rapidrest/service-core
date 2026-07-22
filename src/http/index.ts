@@ -10,7 +10,6 @@ export type { WsUpgradeAuth, WsUpgradeAuthResult } from "./MiddlewareChain.js";
 // Session support — populates req.session across requests via a signed cookie. Registered
 // globally by Server.ts only when a `session` config block is present.
 export type { SessionStore } from "./session/SessionStore.js";
-export { MemorySessionStore } from "./session/MemorySessionStore.js";
 export { RedisSessionStore } from "./session/RedisSessionStore.js";
 export { SessionManager } from "./session/SessionManager.js";
 export { createSessionMiddleware } from "./session/sessionMiddleware.js";

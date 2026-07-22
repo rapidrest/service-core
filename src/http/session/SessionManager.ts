@@ -3,12 +3,12 @@
 ///////////////////////////////////////////////////////////////////////////////
 import * as crypto from "crypto";
 import type { Redis } from "ioredis";
-import { ObjectDecorators } from "@rapidrest/core";
+import { MemoryStore, ObjectDecorators } from "@rapidrest/core";
 import { DatabaseDecorators } from "../../decorators/index.js";
-import { MemorySessionStore } from "./MemorySessionStore.js";
 import { RedisSessionStore } from "./RedisSessionStore.js";
 import type { SessionStore } from "./SessionStore.js";
-const { Config, Destroy, Init, Logger } = ObjectDecorators;
+import { ObjectFactory } from "../../ObjectFactory.js";
+const { Config, Init, Inject, Logger } = ObjectDecorators;
 const { RedisConnection } = DatabaseDecorators;
 
 /**
@@ -32,6 +32,9 @@ export class SessionManager {
     @Logger
     private logger?: any;
 
+    @Inject(ObjectFactory)
+    private objectFactory?: ObjectFactory;
+
     private store!: SessionStore;
     private secret!: string;
 
@@ -42,7 +45,11 @@ export class SessionManager {
     public cookiePath!: string;
 
     @Init
-    private init(): void {
+    private async init() {
+        if (!this.objectFactory) {
+            throw new Error("objectFactory is not set.");
+        }
+
         this.secret = this.options.secret ?? this.globalCookieSecret;
         if (!this.secret) {
             throw new Error(
@@ -57,16 +64,14 @@ export class SessionManager {
         this.cookiePath = this.options.cookiePath ?? "/";
 
         if (this.options.store === "redis" && !this.cacheClient) {
-            throw new Error(
-                "session.store is set to 'redis' but no `cache` datastore connection was found.",
-            );
+            throw new Error("session.store is set to 'redis' but no `cache` datastore connection was found.");
         }
 
         if (this.cacheClient && this.options.store !== "memory") {
-            this.store = new RedisSessionStore(this.cacheClient);
+            this.store = await this.objectFactory.newInstance(RedisSessionStore, { args: [this.cacheClient] });
             this.logger?.info("Session support enabled (store: redis).");
         } else {
-            this.store = new MemorySessionStore();
+            this.store = await this.objectFactory.newInstance(MemoryStore);
             this.logger?.info("Session support enabled (store: memory).");
         }
     }
@@ -107,14 +112,7 @@ export class SessionManager {
         return this.store.save(sessionId, data, this.ttlSeconds);
     }
 
-    public async destroy(sessionId: string): Promise<void> {
-        return this.store.destroy(sessionId);
-    }
-
-    @Destroy
-    private dispose(): void {
-        if (this.store instanceof MemorySessionStore) {
-            this.store.dispose();
-        }
+    public async delete(sessionId: string): Promise<void> {
+        return this.store.delete(sessionId);
     }
 }

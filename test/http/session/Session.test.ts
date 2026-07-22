@@ -1,11 +1,11 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
+import config from "../../config";
 import Redis from "ioredis-mock";
-import { Logger } from "@rapidrest/core";
+import { Logger, MemoryStore } from "@rapidrest/core";
 import { ObjectFactory } from "../../../src/ObjectFactory";
 import { ConnectionManager } from "../../../src/database/ConnectionManager";
-import { MemorySessionStore } from "../../../src/http/session/MemorySessionStore";
 import { RedisSessionStore } from "../../../src/http/session/RedisSessionStore";
 import { SessionManager } from "../../../src/http/session/SessionManager";
 
@@ -17,90 +17,48 @@ function makeConfig(sessionOverrides: any = {}) {
     return { get: (key: string) => data[key] };
 }
 
-describe("MemorySessionStore Tests", () => {
-    it("Can save and load session data.", async () => {
-        const store = new MemorySessionStore();
-        await store.save("abc", { uid: "user-1" }, 60);
-        const loaded = await store.load("abc");
-        expect(loaded).toEqual({ uid: "user-1" });
-        store.dispose();
-    });
-
-    it("Returns undefined for a session ID that was never saved.", async () => {
-        const store = new MemorySessionStore();
-        expect(await store.load("does-not-exist")).toBeUndefined();
-        store.dispose();
-    });
-
-    it("Expires session data after its TTL elapses.", async () => {
-        const store = new MemorySessionStore();
-        await store.save("expiring", { uid: "user-2" }, 0);
-        // ttlSeconds=0 means expiresAt is effectively "now" — a later Date.now() reads past it.
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        expect(await store.load("expiring")).toBeUndefined();
-        store.dispose();
-    });
-
-    it("Removes session data on destroy().", async () => {
-        const store = new MemorySessionStore();
-        await store.save("to-destroy", { uid: "user-3" }, 60);
-        await store.destroy("to-destroy");
-        expect(await store.load("to-destroy")).toBeUndefined();
-        store.dispose();
-    });
-
-    it("Reclaims expired, never-reloaded sessions via the periodic sweep.", async () => {
-        vi.useFakeTimers();
-        try {
-            const store = new MemorySessionStore();
-            await store.save("expired", { uid: "user-4" }, 0);
-            await store.save("still-valid", { uid: "user-5" }, 3600);
-
-            // Advance past both the TTL and the sweep interval so the sweep timer fires.
-            await vi.advanceTimersByTimeAsync(60_000);
-
-            expect((store as any).entries.has("expired")).toBe(false);
-            expect((store as any).entries.has("still-valid")).toBe(true);
-            store.dispose();
-        } finally {
-            vi.useRealTimers();
-        }
-    });
-});
-
 describe("RedisSessionStore Tests", () => {
+    const objectFactory = new ObjectFactory(config, Logger());
+
     it("Can save and load session data.", async () => {
-        const store = new RedisSessionStore(new Redis() as any);
+        const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, {
+            args: [new Redis() as any],
+        });
         await store.save("abc", { uid: "user-1" }, 60);
         const loaded = await store.load("abc");
         expect(loaded).toEqual({ uid: "user-1" });
     });
 
     it("Returns undefined for a session ID that was never saved.", async () => {
-        const store = new RedisSessionStore(new Redis() as any);
+        const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, {
+            args: [new Redis() as any],
+        });
         expect(await store.load("does-not-exist")).toBeUndefined();
     });
 
     it("Removes session data on destroy().", async () => {
-        const store = new RedisSessionStore(new Redis() as any);
+        const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, {
+            args: [new Redis() as any],
+        });
         await store.save("to-destroy", { uid: "user-3" }, 60);
-        await store.destroy("to-destroy");
+        await store.delete("to-destroy");
         expect(await store.load("to-destroy")).toBeUndefined();
     });
 
     it("Returns undefined when the stored value is not valid JSON.", async () => {
         const client = new Redis() as any;
-        const store = new RedisSessionStore(client);
+        const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, { args: [client] });
         await client.set("session:corrupted", "not-json");
         expect(await store.load("corrupted")).toBeUndefined();
     });
 });
 
 describe("SessionManager Tests", () => {
+    const objectFactory = new ObjectFactory(config, Logger());
+
     it("Selects MemorySessionStore when no `cache` connection is configured.", async () => {
-        const objectFactory = new ObjectFactory(makeConfig(), new Logger());
         const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
-        expect((mgr as any).store).toBeInstanceOf(MemorySessionStore);
+        expect((mgr as any).store).toBeInstanceOf(MemoryStore);
         await objectFactory.destroy();
     });
 
@@ -147,7 +105,7 @@ describe("SessionManager Tests", () => {
         const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
         await mgr.save("sess-1", { uid: "user-1" });
         expect(await mgr.load("sess-1")).toEqual({ uid: "user-1" });
-        await mgr.destroy("sess-1");
+        await mgr.delete("sess-1");
         expect(await mgr.load("sess-1")).toBeUndefined();
         await objectFactory.destroy();
     });

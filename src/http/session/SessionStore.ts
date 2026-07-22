@@ -10,7 +10,7 @@ export interface SessionStore {
     /** Loads the session data for the given session ID, or `undefined` if none exists (or has expired). */
     load(sessionId: string): Promise<Record<string, any> | undefined>;
     /** Persists the given session data, resetting its expiration to `ttlSeconds` from now. */
-    save(sessionId: string, data: Record<string, any>, ttlSeconds: number): Promise<void>;
+    save(sessionId: string, data: Record<string, any>, ttlSeconds?: number): Promise<void>;
     /** Removes the session data for the given session ID, if any. */
-    destroy(sessionId: string): Promise<void>;
+    delete(sessionId: string): Promise<void>;
 }
