@@ -5,10 +5,7 @@
 // runtime. It is loaded dynamically by `ConnectionManager` if (and only if) a SQL datastore is configured.
 import * as typeorm from "typeorm";
 import { pendingTypeOrmColumns } from "../decorators/ModelDecorators.js";
-import {
-    ColumnInfo,
-    IndexInfo,
-} from "../decorators/PersistenceDecorators.js";
+import { ColumnInfo, IndexInfo } from "../decorators/PersistenceDecorators.js";
 import { ModelUtils } from "../models/ModelUtils.js";
 
 /**
@@ -58,29 +55,27 @@ export function registerFrameworkMetadata(entities: any[]): void {
             }
         }
 
+        // A @TrackChanges() entity stores one row per (uid, version) rather than one row per uid, so its
+        // primary key must cover both columns. Otherwise, inserting a second version row always violates
+        // uid's own primary key constraint. Every other entity keeps uid alone as its primary key.
+        const isTrackChanges: boolean = !!entity.trackChanges;
+
         // Primary key columns are already guaranteed unique by the database; an additional explicit index on the
         // same single column is redundant and, for SQLite in particular, collides with the index that TypeORM
         // generates automatically to enforce uniqueness of non-integer primary keys.
         const primaryProperties: Set<string> = new Set();
-        for (
-            let proto = entity.prototype;
-            proto && proto !== Object.prototype;
-            proto = Object.getPrototypeOf(proto)
-        ) {
+        for (let proto = entity.prototype; proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
             const columns: ColumnInfo[] = Reflect.getOwnMetadata("rrst:columns", proto) ?? [];
             for (const column of columns) {
-                if (column.options.primary) {
+                if (column.options.primary || (isTrackChanges && column.propertyName === "version")) {
                     primaryProperties.add(column.propertyName);
                 }
             }
         }
 
         // Register columns and property-level indexes for every level of the prototype chain
-        for (
-            let proto = entity.prototype;
-            proto && proto !== Object.prototype;
-            proto = Object.getPrototypeOf(proto)
-        ) {
+        let versionColumnType: any;
+        for (let proto = entity.prototype; proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
             const target: any = proto.constructor;
 
             const columns: ColumnInfo[] = Reflect.getOwnMetadata("rrst:columns", proto) ?? [];
@@ -89,10 +84,14 @@ export function registerFrameworkMetadata(entities: any[]): void {
                 if (column.options.isObjectId) {
                     continue;
                 }
+                const resolvedType: any = column.options.type ?? column.designType;
+                if (isTrackChanges && column.propertyName === "version") {
+                    versionColumnType = resolvedType;
+                }
+
                 const exists: boolean = storage.columns.some(
                     (c) => c.target === target && c.propertyName === column.propertyName,
                 );
-                const resolvedType: any = column.options.type ?? column.designType;
                 if (exists || !resolvedType) {
                     continue;
                 }
@@ -117,6 +116,26 @@ export function registerFrameworkMetadata(entities: any[]): void {
                 registerIndex(storage, target, index);
             }
         }
+
+        // Promote "version" to a primary column for this trackChanges entity specifically. This can't be done
+        // by mutating the shared BaseEntity-level "version" registration above (that's visible to, and would
+        // incorrectly promote, every other entity that inherits it too). So it's registered separately here,
+        // under this entity's own (leaf) target instead. TypeORM resolves an entity's columns by walking its
+        // whole inheritance chain and, when the same property name is registered against more than one class
+        // in that chain, keeps whichever registration appears FIRST in TypeORM's metadata args storage array
+        // (see MetadataArgsStorage.filterByTargetAndWithoutDuplicateProperties).
+        if (
+            isTrackChanges &&
+            versionColumnType &&
+            !storage.columns.some((c) => c.target === entity && c.propertyName === "version")
+        ) {
+            storage.columns.unshift({
+                target: entity,
+                propertyName: "version",
+                mode: "regular",
+                options: { type: versionColumnType, primary: true },
+            });
+        }
     }
 }
 
@@ -127,9 +146,7 @@ export function registerFrameworkMetadata(entities: any[]): void {
 function registerIndex(storage: any, target: any, index: IndexInfo): void {
     const exists: boolean = storage.indices.some(
         (i: any) =>
-            i.target === target &&
-            i.name === index.name &&
-            JSON.stringify(i.columns) === JSON.stringify(index.columns),
+            i.target === target && i.name === index.name && JSON.stringify(i.columns) === JSON.stringify(index.columns),
     );
     if (exists) {
         return;

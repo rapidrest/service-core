@@ -182,6 +182,23 @@ describe("BunResponse Tests", () => {
         expect(await response.text()).toBe("chunk1chunk2");
     });
 
+    it("write() accepts a Buffer chunk", async () => {
+        const res = new BunResponse(makeReq());
+        res.write(Buffer.from("buf-chunk"));
+        res.end();
+        const response = await res.responseReady;
+        expect(await response.text()).toBe("buf-chunk");
+    });
+
+    it("end(data) while streaming enqueues the final chunk before closing", async () => {
+        const res = new BunResponse(makeReq());
+        res.flushHeaders();
+        res.write("first-");
+        res.end("last");
+        const response = await res.responseReady;
+        expect(await response.text()).toBe("first-last");
+    });
+
     it("write()/end() after writableEnded are no-ops", async () => {
         const res = new BunResponse(makeReq());
         res.end("first");
@@ -238,6 +255,23 @@ describe("BunResponse Tests", () => {
         });
         await new Promise((resolve) => setImmediate(resolve));
         expect(called).toBe(true);
+    });
+
+    it("only fires onFinish handlers once, even if the finish trigger fires again after end()", async () => {
+        // The AbortSignal listener calls _fireFinish() unconditionally, regardless of whether end()
+        // already ran — _fireFinish()'s own internal `if (this._finished) return` guard is what
+        // prevents onFinish handlers from running a second time in that case.
+        const ac = new AbortController();
+        const req = new Request("http://localhost/test", { signal: ac.signal });
+        const res = new BunResponse(req);
+        let count = 0;
+        res.onFinish(() => {
+            count++;
+        });
+        res.end();
+        ac.abort();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(count).toBe(1);
     });
 
     it("abortStream() errors an in-flight stream and marks it ended", async () => {
@@ -307,6 +341,20 @@ describe("readBunBody Tests", () => {
         expect(result).toEqual({ ok: true });
         expect(req.body).toBeUndefined();
         expect(req.rawBody).toBeUndefined();
+    });
+
+    it("reads a body with no content-type header, falling back to raw bytes", async () => {
+        // A Uint8Array body (unlike a plain string) does not trigger the Fetch API's automatic
+        // Content-Type default, so req.headers["content-type"] is genuinely absent here.
+        const rawReq = new Request("http://localhost/test", {
+            method: "POST",
+            body: new TextEncoder().encode("raw bytes, no type"),
+        });
+        expect(rawReq.headers.get("content-type")).toBeNull();
+        const req = new BunRequest(rawReq, makeIpSource());
+        const result = await readBunBody(req, rawReq);
+        expect(result).toEqual({ ok: true });
+        expect(req.rawBody?.toString()).toBe("raw bytes, no type");
     });
 
     it("reads and parses a JSON body, setting rawBody and body", async () => {

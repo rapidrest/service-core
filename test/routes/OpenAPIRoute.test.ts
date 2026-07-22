@@ -72,7 +72,10 @@ describe("OpenAPIRoute Tests", () => {
         expect(result.body.info.termsOfService).toBe(config.get("termsOfService"));
         expect(result.body.info.license).toBe(config.get("license"));
         expect(result.body.info.version).toBe(config.get("version"));
-        expect(Object.keys(result.body.paths).length).toBe(31);
+        // Grew from 31 as new fixture routes were added: VersionedItemRoute (test/server/routes) plus
+        // DefaultRoute's /error500, /error-raw, /error-string (used by the RepoUtils SQL trackChanges
+        // and Server.ts global-error-middleware coverage tests).
+        expect(Object.keys(result.body.paths).length).toBe(37);
         const schemas = Object.keys(result.body.components.schemas);
         const parameters = Object.keys(result.body.components.parameters);
         expect(result.body.servers[0].url).toBe(config.get("cluster_url"));

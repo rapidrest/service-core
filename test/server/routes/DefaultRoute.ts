@@ -49,6 +49,31 @@ class DefaultRoute {
     }
 
     @Summary("Request")
+    @Get("error500")
+    @Description("Throws a 500-level ApiError, to exercise the server's error-logging (not just error-handling) path.")
+    @Returns([null])
+    protected async throwError500(): Promise<any> {
+        throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, "This is a 500-level test.");
+    }
+
+    @Summary("Request")
+    @Get("error-raw")
+    @Description("Throws a raw (non-ApiError) Error, to exercise the server's ApiError-wrapping fallback.")
+    @Returns([null])
+    protected async throwErrorRaw(): Promise<any> {
+        throw new Error("This is a raw error test.");
+    }
+
+    @Summary("Request")
+    @Get("error-string")
+    @Description("Throws a literal string, to exercise the server's string-error handling.")
+    @Returns([null])
+    protected async throwErrorString(): Promise<any> {
+        // eslint-disable-next-line no-throw-literal -- deliberately testing a non-Error throw
+        throw "This is a raw string error test.";
+    }
+
+    @Summary("Request")
     @WebSocket("connect")
     @Description("Establishes a socket connection that responds to all messages with `echo ${msg}`.")
     protected wsConnect(@Socket ws: ws, @User user?: any): void {

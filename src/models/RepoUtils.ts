@@ -839,7 +839,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 if (this.repo instanceof MongoRepository) {
                     await this.repo.deleteMany({ uid: { $in: finalUids } } as any);
                 } else {
-                    await this.repo.delete(finalUids);
+                    // A plain array of ids only maps to a WHERE ... IN clause when the primary key is a single
+                    // column — for a trackChanges entity the SQL primary key is the composite (uid, version),
+                    // so an explicit In() on the uid column is used instead of relying on that implicit form.
+                    const { In } = ModelUtils.orm;
+                    await this.repo.delete({ uid: In(finalUids) });
                 }
 
                 if (!options?.skipPush) {
@@ -922,7 +926,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         );
                     } catch (err: any) {
                         if (err?.code === 11000) {
-                            throw new ApiError(ApiErrors.INVALID_OBJECT_VERSION, 409, ApiErrorMessages.INVALID_OBJECT_VERSION);
+                            throw new ApiError(
+                                ApiErrors.INVALID_OBJECT_VERSION,
+                                409,
+                                ApiErrorMessages.INVALID_OBJECT_VERSION,
+                            );
                         }
                         throw err;
                     }
@@ -949,7 +957,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         );
                     } catch (err: any) {
                         if (err?.code === 11000) {
-                            throw new ApiError(ApiErrors.INVALID_OBJECT_VERSION, 409, ApiErrorMessages.INVALID_OBJECT_VERSION);
+                            throw new ApiError(
+                                ApiErrors.INVALID_OBJECT_VERSION,
+                                409,
+                                ApiErrorMessages.INVALID_OBJECT_VERSION,
+                            );
                         }
                         throw err;
                     }
@@ -998,7 +1010,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        query = this.searchIdQuery(existing.uid, obj instanceof BaseEntity ? obj.version + 1 : undefined);
+        query = this.searchIdQuery(existing.uid, existing instanceof BaseEntity ? existing.version + 1 : undefined);
         if (!result) {
             if (this.repo instanceof MongoRepository) {
                 result = await this.repo.findOne(query["$match"] ? query["$match"] : query);

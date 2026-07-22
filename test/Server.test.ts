@@ -110,6 +110,50 @@ describe("Server Tests", () => {
         expect(result.body.message).toBe("This is a test.");
     });
 
+    it("Logs (rather than debug-logs) a 500-level ApiError and still returns a clean JSON error body.", async () => {
+        const result = await request(server).get("/error500");
+        expect(result.status).toBe(500);
+        expect(result.body.status).toBe(500);
+        expect(result.body.message).toBe("This is a 500-level test.");
+    });
+
+    it("Wraps a raw (non-ApiError) thrown Error into a clean 500 ApiError response.", async () => {
+        const result = await request(server).get("/error-raw");
+        expect(result.status).toBe(500);
+        expect(result.body.status).toBe(500);
+        expect(result.body.code).toBe(ApiErrors.INTERNAL_ERROR);
+        // The raw Error's own message must not leak to the client -- it's replaced with the generic
+        // INTERNAL_ERROR message, same as any other unexpected (non-ApiError) failure.
+        expect(result.body.message).not.toContain("This is a raw error test.");
+    });
+
+    it("Handles a literal string thrown from a handler as a generic 500.", async () => {
+        const result = await request(server).get("/error-string");
+        expect(result.status).toBe(500);
+        expect(result.body.status).toBe(500);
+        expect(result.body.message).toBe("Internal Server Error");
+    });
+
+    it("Never leaks a stack trace to the client, regardless of NODE_ENV.", async () => {
+        // Error.stack is a non-enumerable accessor, so it's dropped by the plain object spread
+        // (`{...err, ...}`) that builds the client-facing error body before the NODE_ENV check even
+        // runs — the intent (stripping stack in production) holds, though the "keep it in development"
+        // half never actually surfaces a stack in the JSON body either. Confirms the safe outcome
+        // (no leak either way) without asserting the never-true "included in development" behavior.
+        const original = process.env.NODE_ENV;
+        try {
+            process.env.NODE_ENV = "development";
+            const devResult = await request(server).get("/error-raw");
+            expect(devResult.body.stack).toBeUndefined();
+
+            process.env.NODE_ENV = "production";
+            const prodResult = await request(server).get("/error-raw");
+            expect(prodResult.body.stack).toBeUndefined();
+        } finally {
+            process.env.NODE_ENV = original;
+        }
+    });
+
     it("Returns a JSON 404 for a path that matches no registered route.", async () => {
         expect(server.isRunning()).toBe(true);
         const result = await request(server).get("/this-path-does-not-exist");
