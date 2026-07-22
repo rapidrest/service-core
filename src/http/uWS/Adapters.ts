@@ -14,7 +14,15 @@ export function parseCookies(cookieHeader: string): Record<string, string> {
         if (idx < 0) continue;
         const key = part.slice(0, idx).trim();
         const val = part.slice(idx + 1).trim();
-        result[key] = decodeURIComponent(val);
+        try {
+            result[key] = decodeURIComponent(val);
+        } catch {
+            // Malformed percent-encoding (e.g. a bare "%") — fall back to the raw value rather than
+            // letting the throw escape into the caller, which for the uWS request path happens before
+            // any try/catch and would otherwise crash the process (no global unhandledRejection handler
+            // is registered anywhere in this package).
+            result[key] = val;
+        }
     }
     return result;
 }

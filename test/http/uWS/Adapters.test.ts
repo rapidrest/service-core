@@ -31,6 +31,15 @@ describe("parseCookies Tests", () => {
     it("skips segments without an '=' separator", () => {
         expect(parseCookies("foo=bar; noequalshere; baz=qux")).toEqual({ foo: "bar", baz: "qux" });
     });
+
+    it("falls back to the raw value instead of throwing on malformed percent-encoding", () => {
+        // A bare "%" is invalid percent-encoding and makes decodeURIComponent throw. This must not
+        // propagate — UWSRequest's constructor calls parseCookies() synchronously with no surrounding
+        // try/catch, so an uncaught throw here would crash request handling for any malformed cookie.
+        expect(() => parseCookies("foo=%")).not.toThrow();
+        expect(parseCookies("foo=%")).toEqual({ foo: "%" });
+        expect(parseCookies("foo=%zz; bar=baz")).toEqual({ foo: "%zz", bar: "baz" });
+    });
 });
 
 describe("parseQueryString Tests", () => {

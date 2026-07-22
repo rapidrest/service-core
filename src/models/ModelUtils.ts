@@ -439,6 +439,12 @@ export class ModelUtils {
                 return parsed;
             }
         } else {
+            // A non-string value only reaches here when the caller already parsed the raw query into native
+            // types itself (e.g. the `q` base64-encoded JSON query parameter in RouteUtils.wrapMiddleware) —
+            // it never passed through the string-only checks above, so it must be validated here instead.
+            // Without this, a client could smuggle a raw Mongo operator (e.g. `{"$ne": null}`) straight into
+            // the query by supplying it as a JSON object rather than an `op(value)`-encoded string.
+            ModelUtils.assertNoOperatorInjection(param);
             return param;
         }
     }

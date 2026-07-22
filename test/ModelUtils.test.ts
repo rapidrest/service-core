@@ -428,6 +428,52 @@ describe("ModelUtils Tests", () => {
             ).toThrow();
         });
 
+        it("Rejects a Mongo operator supplied as an already-parsed object value, not an op(value) string.", () => {
+            // This is the shape RouteUtils.wrapMiddleware's `q` query parameter produces: it base64-decodes
+            // and JSON.parses the raw client payload, so a query value can arrive as a real object rather
+            // than the `op(value)`-encoded string every other test in this suite exercises. The string-only
+            // checks above must not be the only line of defense.
+            const request: any = {};
+            request.query = {
+                myParam: { $ne: null },
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Rejects a Mongo operator nested inside an already-parsed array value.", () => {
+            const request: any = {};
+            request.query = {
+                myParam: ["safe", { $gt: 0 }],
+            };
+
+            expect(() =>
+                ModelUtils.buildSearchQueryMongo(undefined, request.params, request.query, true, request.user),
+            ).toThrow();
+        });
+
+        it("Still allows an already-parsed plain object/array value with no hidden operator.", () => {
+            const request: any = {};
+            request.query = {
+                myParam: { nested: "value" },
+            };
+
+            const query = ModelUtils.buildSearchQueryMongo(
+                undefined,
+                request.params,
+                request.query,
+                true,
+                request.user,
+            );
+            expect(query).toEqual({
+                $match: {
+                    myParam: { nested: "value" },
+                },
+            });
+        });
+
         it("Rejects a Mongo operator hidden inside a range() value.", () => {
             const request: any = {};
             request.query = {
