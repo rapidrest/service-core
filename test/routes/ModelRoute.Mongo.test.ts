@@ -443,6 +443,32 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 expect(existing.age).toBe(result.body.age);
             }
         });
+
+        it("Can update a document property that passes field-level validation. [MongoDB]", async () => {
+            const user: User = await createUser("vname1", "Valid", "Name", 30);
+            const result = await request(server)
+                .put("/users/" + user.uid + "/name")
+                .send(`"valid-new-name"`);
+            expect(result.status).toBeGreaterThanOrEqual(200);
+            expect(result.status).toBeLessThan(300);
+            expect(result.body.name).toBe("valid-new-name");
+
+            const existing: User | null = await repo.findOne({ uid: user.uid } as any);
+            expect(existing?.name).toBe("valid-new-name");
+        });
+
+        it("Cannot update a document property that fails field-level validation. [MongoDB]", async () => {
+            const user: User = await createUser("vname2", "Valid", "Name", 30);
+            const result = await request(server)
+                .put("/users/" + user.uid + "/name")
+                .send(`"invalid name with spaces!"`);
+            expect(result.status).toBe(400);
+
+            // The record must be unchanged since validation should reject before doUpdateProperty runs.
+            const existing: User | null = await repo.findOne({ uid: user.uid } as any);
+            expect(existing?.name).toBe("vname2");
+            expect(existing?.version).toBe(user.version);
+        });
     });
 
     describe("Multiple Document Tests [MongoDB]", () => {

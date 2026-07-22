@@ -65,7 +65,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         @Response res: HttpResponse,
         @User user?: JWTUser,
     ): Promise<any> {
-        return super.doCount({ params, query, res, user });
+        return await super.doCount({ params, query, res, user });
     }
 
     /**
@@ -96,8 +96,8 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Returns([Object])
     @Post()
     @Validate("validateCreateBulk")
-    public create(obj: T | T[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T | Array<T>> {
-        return super.doCreate(obj, { req, user });
+    public async create(obj: T | T[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T | Array<T>> {
+        return await super.doCreate(obj, { req, user });
     }
 
     @Summary("Delete {{name}} by ID")
@@ -111,7 +111,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         @Request req: HttpRequest,
         @User user?: JWTUser,
     ): Promise<void> {
-        return super.doDelete(id, { user, req, version, purge: purge === "true" });
+        return await super.doDelete(id, { user, req, version, purge: purge === "true" });
     }
 
     @Summary("Exists")
@@ -127,7 +127,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         @Response res: HttpResponse,
         @User user?: JWTUser,
     ): Promise<any> {
-        return super.doExists(id, { query, res, user });
+        return await super.doExists(id, { query, res, user });
     }
 
     @Summary("Find All {{model}}s")
@@ -135,7 +135,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Returns([[Array, Object]])
     @Get()
     public async find(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<Array<T>> {
-        return super.doFind({ params, query, user });
+        return await super.doFind({ params, query, user });
     }
 
     @Summary("Find {{model}} by ID")
@@ -143,7 +143,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Returns([Object])
     @Get("/:id")
     public async findById(@Param("id") id: string, @Query() query: any, @User user?: JWTUser): Promise<T | null> {
-        return super.doFindById(id, { query, user });
+        return await super.doFindById(id, { query, user });
     }
 
     @Summary("Truncate {{model}}s")
@@ -151,7 +151,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Returns([null])
     @Delete()
     public async truncate(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<void> {
-        return super.doTruncate({ params, query, user });
+        return await super.doTruncate({ params, query, user });
     }
 
     /**
@@ -160,7 +160,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
      * object.
      */
     protected async validateUpdate(@Param("id") id: string, obj: UpdateObject<T>, @User user?: JWTUser) {
-        return this.validate(obj, { user });
+        return await this.validate(obj, { user });
     }
 
     @Summary("Update {{model}} by ID")
@@ -174,7 +174,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         @Request req: HttpRequest,
         @User user?: JWTUser,
     ): Promise<T> {
-        return super.doUpdate(id, obj, { user });
+        return await super.doUpdate(id, obj, { user });
     }
 
     private async validateUpdateBulk(objs: UpdateObject<T>[], @User user?: JWTUser) {
@@ -196,7 +196,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Put()
     @Validate("validateUpdateBulk")
     public async updateBulk(obj: UpdateObject<T>[], @Request req: HttpRequest, @User user?: JWTUser): Promise<T[]> {
-        return super.doBulkUpdate(obj, { user, req });
+        return await super.doBulkUpdate(obj, { user, req });
     }
 
     @Summary("Update {{model}} by ID and property")
@@ -204,12 +204,19 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Description("Updates a single property of an existing {{model}}.")
     @TypeInfo([Object])
     @Returns([Object])
-    public updateProperty(
+    public async updateProperty(
         @Param("id") id: string,
         @Param("property") propertyName: string,
         obj: any,
         @User user?: JWTUser,
     ): Promise<T> {
-        return super.doUpdateProperty(id, propertyName, obj, { user });
+        await this.validateUpdate(
+            id,
+            {
+                [propertyName]: obj,
+            } as UpdateObject<T>,
+            user,
+        );
+        return await super.doUpdateProperty(id, propertyName, obj, { user });
     }
 }
