@@ -44,10 +44,7 @@ describe("JWTStrategy.getAuthToken (via authenticateSync)", () => {
     it("skips an Authorization header whose scheme doesn't match", () => {
         const strategy = makeStrategy();
         const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });
-        const result = strategy.authenticateSync(
-            makeReq({ headers: { authorization: `Basic ${token}` } }),
-            {} as any
-        );
+        const result = strategy.authenticateSync(makeReq({ headers: { authorization: `Basic ${token}` } }), {} as any);
         expect(result).toBeUndefined();
     });
 
@@ -56,7 +53,7 @@ describe("JWTStrategy.getAuthToken (via authenticateSync)", () => {
         const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });
         const result = strategy.authenticateSync(
             makeReq({ headers: { authorization: ["Basic garbage", `jwt ${token}`] } }),
-            {} as any
+            {} as any,
         );
         expect(result?.user?.uid).toBe("u1");
     });
@@ -81,6 +78,43 @@ describe("JWTStrategy.getAuthToken (via authenticateSync)", () => {
         const result = strategy.authenticateSync(makeReq({ cookies: { jwt: token } }), {} as any);
         expect(result?.user?.uid).toBe("u1");
     });
+
+    describe("source precedence (query > header > cookie, per the documented order)", () => {
+        it("prefers the Authorization header over a cookie when both are present", () => {
+            const strategy = makeStrategy();
+            const headerToken = JWTUtils.createTokenSync(authConfig, { uid: "header-user" });
+            const cookieToken = JWTUtils.createTokenSync(authConfig, { uid: "cookie-user" });
+            const result = strategy.authenticateSync(
+                makeReq({
+                    headers: { authorization: `jwt ${headerToken}` },
+                    cookies: { jwt: cookieToken },
+                }),
+                {} as any,
+            );
+            expect(result?.user?.uid).toBe("header-user");
+        });
+
+        it("prefers a query parameter over the Authorization header when both are present and allowed", () => {
+            const strategy = makeStrategy({ allowQueryParam: true });
+            const queryToken = JWTUtils.createTokenSync(authConfig, { uid: "query-user" });
+            const headerToken = JWTUtils.createTokenSync(authConfig, { uid: "header-user" });
+            const result = strategy.authenticateSync(
+                makeReq({
+                    query: { auth_token: queryToken },
+                    headers: { authorization: `jwt ${headerToken}` },
+                }),
+                {} as any,
+            );
+            expect(result?.user?.uid).toBe("query-user");
+        });
+
+        it("falls back to the cookie only when neither the query parameter nor the header supplied a token", () => {
+            const strategy = makeStrategy({ allowQueryParam: true });
+            const cookieToken = JWTUtils.createTokenSync(authConfig, { uid: "cookie-user" });
+            const result = strategy.authenticateSync(makeReq({ cookies: { jwt: cookieToken } }), {} as any);
+            expect(result?.user?.uid).toBe("cookie-user");
+        });
+    });
 });
 
 describe("JWTStrategy.authenticate (async)", () => {
@@ -97,13 +131,6 @@ describe("JWTStrategy.authenticate (async)", () => {
         const result = await strategy.authenticate(makeReq(), {} as any);
         expect(result).toBeUndefined();
     });
-
-    it("throws when no token is found and auth is required", async () => {
-        const strategy = makeStrategy();
-        await expect(strategy.authenticate(makeReq(), {} as any, true)).rejects.toThrow(
-            "Invalid or missing auth token."
-        );
-    });
 });
 
 describe("JWTStrategy.authenticateSync", () => {
@@ -114,8 +141,6 @@ describe("JWTStrategy.authenticateSync", () => {
 
     it("throws when no token is found and auth is required", () => {
         const strategy = makeStrategy();
-        expect(() => strategy.authenticateSync(makeReq(), {} as any, true)).toThrow(
-            "Invalid or missing auth token."
-        );
+        expect(() => strategy.authenticateSync(makeReq(), {} as any, true)).toThrow("Invalid or missing auth token.");
     });
 });

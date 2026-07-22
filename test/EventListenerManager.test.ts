@@ -84,6 +84,70 @@ describe("EventListenerManager Tests", () => {
         expect(() => redis.emit("message", "channel1", "not-json")).not.toThrow();
     });
 
+    it("isolates a handler that throws synchronously so other handlers still run", async () => {
+        // Regression test: a synchronous throw from a handler used to propagate up through onEvent() and
+        // get caught by the *message parsing* try/catch, mislabeling a handler bug as "could not parse"
+        // the (successfully parsed) event — and would have stopped any later handler from running too.
+        const redis = makeRedis();
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+
+        const received: any[] = [];
+        class ThrowingHandler {
+            @OnEvent("thing.happened")
+            public onThing() {
+                throw new Error("handler boom");
+            }
+        }
+        class WorkingHandler {
+            @OnEvent("thing.happened")
+            public onThing(evt: any) {
+                received.push(evt);
+            }
+        }
+        manager.register(new ThrowingHandler());
+        manager.register(new WorkingHandler());
+
+        expect(() =>
+            redis.emit("message", "channel1", JSON.stringify({ type: "thing.happened" }))
+        ).not.toThrow();
+        expect(received).toEqual([{ type: "thing.happened" }]);
+    });
+
+    it("does not produce an unhandled rejection when an async handler rejects", async () => {
+        const redis = makeRedis();
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+
+        const received: any[] = [];
+        class RejectingHandler {
+            @OnEvent("thing.happened")
+            public async onThing() {
+                throw new Error("async handler boom");
+            }
+        }
+        class WorkingHandler {
+            @OnEvent("thing.happened")
+            public onThing(evt: any) {
+                received.push(evt);
+            }
+        }
+        manager.register(new RejectingHandler());
+        manager.register(new WorkingHandler());
+
+        const unhandled = vi.fn();
+        process.on("unhandledRejection", unhandled);
+        try {
+            redis.emit("message", "channel1", JSON.stringify({ type: "thing.happened" }));
+            // Let the rejected promise's .catch() run before asserting.
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(unhandled).not.toHaveBeenCalled();
+            expect(received).toEqual([{ type: "thing.happened" }]);
+        } finally {
+            process.off("unhandledRejection", unhandled);
+        }
+    });
+
     it("does not register the same method twice when walking the prototype chain", async () => {
         const redis = makeRedis();
         const objectFactory = new ObjectFactory(config, Logger());

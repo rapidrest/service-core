@@ -38,13 +38,15 @@ export class EventListenerManager {
             this.logger.debug(err);
         }
         this.redis.on("message", (channel, message) => {
+            let decoded: any;
             try {
-                const decoded: any = JSON.parse(message);
-                this.onEvent(decoded);
+                decoded = JSON.parse(message);
             } catch (err) {
                 this.logger.error("EventManager: Received event but could not parse it.");
                 this.logger.debug(`EventManager: Channel=${channel}, Event=${message}, Error=${err}`);
+                return;
             }
+            this.onEvent(decoded);
         });
 
         // Go through each class in the ObjectFactory and create any with event listener decorator.
@@ -95,7 +97,24 @@ export class EventListenerManager {
                 const handlers: Function[] = entry[1];
                 if (handlers) {
                     for (const handler of handlers) {
-                        handler(evt);
+                        // Each handler is isolated: a synchronous throw or an async rejection from one
+                        // handler must not prevent the remaining handlers (for this or other matching
+                        // event types) from running, and must be reported as a handler failure — not
+                        // conflated with the unrelated JSON-parsing try/catch this used to run inside.
+                        try {
+                            const result: any = handler(evt);
+                            if (result instanceof Promise) {
+                                result.catch((err: any) => {
+                                    this.logger.error(
+                                        "EventManager: An event handler rejected while processing an event.",
+                                    );
+                                    this.logger.debug(err);
+                                });
+                            }
+                        } catch (err: any) {
+                            this.logger.error("EventManager: An event handler threw while processing an event.");
+                            this.logger.debug(err);
+                        }
                     }
                 }
             }

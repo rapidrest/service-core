@@ -285,4 +285,26 @@ describe("ModelRoute.doUpdateProperty", () => {
         expect(route.repoUtils.findOne).toHaveBeenCalledTimes(1);
         expect(route.repoUtils.update).toHaveBeenCalled();
     });
+
+    it("uses the caller-supplied options.version instead of silently falling back to existing.version", async () => {
+        // Regression test for an operator-precedence bug: `options.version || "version" in existing ? x : y`
+        // parsed as `(options.version || ("version" in existing)) ? x : y`, so a BaseEntity (which always has
+        // a "version" property) made the ternary always resolve to existing.version, discarding whatever
+        // version the caller explicitly passed in.
+        const route = makeRoute();
+        const existing = new User({ uid: "user-1", version: 5 });
+        route.repoUtils.findOne.mockResolvedValue(existing);
+        await route.doUpdateProperty("user-1", "name", "new-name", { version: 3 });
+        const [updateObj] = route.repoUtils.update.mock.calls[0];
+        expect(updateObj.version).toBe(3);
+    });
+
+    it("falls back to existing.version when the caller does not supply options.version", async () => {
+        const route = makeRoute();
+        const existing = new User({ uid: "user-1", version: 5 });
+        route.repoUtils.findOne.mockResolvedValue(existing);
+        await route.doUpdateProperty("user-1", "name", "new-name", {});
+        const [updateObj] = route.repoUtils.update.mock.calls[0];
+        expect(updateObj.version).toBe(5);
+    });
 });

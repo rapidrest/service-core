@@ -37,9 +37,8 @@ export interface AuthStrategy {
      *
      * @param req The request containing data to attempt authentication with.
      * @param res The response to use when writing back directly to the client.
-     * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
      */
-    authenticate(req: HttpRequest, res?: HttpResponse, required?: boolean): Promise<AuthResult | undefined>;
+    authenticate(req: HttpRequest, res?: HttpResponse): Promise<AuthResult | undefined>;
 
     /**
      * Attempts to perform authentication with the given request data. If authentication was successful, returns an
@@ -50,7 +49,6 @@ export interface AuthStrategy {
      *
      * @param req The request containing data to attempt authentication with.
      * @param res The response to use when writing back directly to the client.
-     * @param required Set to `true` to if authentication is required to pass, otherwise set to `false`.
      */
-    authenticateSync(req: HttpRequest, res?: HttpResponse, required?: boolean): AuthResult | undefined;
+    authenticateSync(req: HttpRequest, res?: HttpResponse): AuthResult | undefined;
 }

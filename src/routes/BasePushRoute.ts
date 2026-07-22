@@ -83,7 +83,19 @@ export class BasePushRoute {
 
         // Establish a new redis pub/sub client for this connection
         const redis: Redis = new Redis(this.redisConfig.url, this.redisConfig.options);
-        const subs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
+
+        // On a first-ever connection there's nothing stored yet, so just the user's own identity channel
+        // (always implicitly permitted, same as the SUBSCRIBE message handler below never ACL-checks it).
+        // On a *re*connection, activeSubs may hold channels approved during a previous session — permission
+        // can have been revoked since then, so every channel other than the identity one is re-checked here
+        // rather than trusted as still-valid.
+        const storedSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
+        const subs: string[] = [];
+        for (const channel of storedSubs) {
+            if (channel === user.uid || (await this.aclUtils?.hasPermission(user, channel, ACLAction.READ))) {
+                subs.push(channel);
+            }
+        }
         try {
             await redis.subscribe(...subs);
             this.logger.info(`User ${user.uid} successfully subscribed to push channels: ${subs}`);
@@ -170,7 +182,16 @@ export class BasePushRoute {
             // Remove the socket from our tracked list
             const socks: ws[] = this.activeSocks.get(user.uid) || [];
             socks.splice(socks.indexOf(sock), 1);
-            this.activeSocks.set(user.uid, socks);
+
+            // Once the user has no other open connections, drop their tracked state entirely rather than
+            // leaving a stale (activeSocks) or permanently-growing (activeSubs) entry behind — otherwise
+            // every distinct uid that ever connects, even once, leaks a map entry for the life of the process.
+            if (socks.length === 0) {
+                this.activeSocks.delete(user.uid);
+                this.activeSubs.delete(user.uid);
+            } else {
+                this.activeSocks.set(user.uid, socks);
+            }
         });
     }
 

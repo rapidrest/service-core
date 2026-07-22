@@ -56,16 +56,14 @@ describe("AuthMiddleware.authenticate (async)", () => {
     it("throws when the strategy name is not registered", async () => {
         const mw = new AuthMiddleware();
         await expect(mw.authenticate(["missing"], {} as any)).rejects.toThrow(
-            "No authentication strategy has been registered with name: missing"
+            "No authentication strategy has been registered with name: missing",
         );
     });
 
     it("throws when required and no strategy authenticates successfully", async () => {
         const mw = new AuthMiddleware();
         mw.register("test", makeStrategy());
-        await expect(mw.authenticate(["test"], {} as any, undefined, true)).rejects.toThrow(
-            "Authentication failed but is required to proceed."
-        );
+        await expect(mw.authenticate(["test"], {} as any, undefined, true)).rejects.toThrow("Authentication failed.");
     });
 
     it("returns undefined when not required and no strategy authenticates", async () => {
@@ -80,22 +78,49 @@ describe("AuthMiddleware.authenticate (async)", () => {
         mw.register("test", makeStrategy({ authenticate: vi.fn().mockResolvedValue(result) }));
         await expect(mw.authenticate(["test"], {} as any)).resolves.toBe(result);
     });
+
+    it("falls through to the next strategy when an earlier one has no credential, even when required=true", async () => {
+        // Mirrors the real AuthStrategy contract (see JWTStrategy): a strategy throws on failure only
+        // when it itself receives required=true. If AuthMiddleware ever regresses to passing the
+        // aggregate `required` straight through to each strategy, "first" would throw here and this
+        // test would fail because "second" is never reached.
+        const mw = new AuthMiddleware();
+        const result: AuthResult = { method: "second", user: { uid: "u2" } as any };
+        mw.register(
+            "first",
+            makeStrategy({
+                authenticate: vi.fn(async (_req, _res, required) => {
+                    if (required) throw new Error("first strategy: no credential");
+                    return undefined;
+                }),
+            }),
+        );
+        mw.register("second", makeStrategy({ authenticate: vi.fn().mockResolvedValue(result) }));
+        await expect(mw.authenticate(["first", "second"], {} as any, undefined, true)).resolves.toBe(result);
+    });
+
+    it("still throws when required=true and every strategy fails", async () => {
+        const mw = new AuthMiddleware();
+        mw.register("first", makeStrategy());
+        mw.register("second", makeStrategy());
+        await expect(mw.authenticate(["first", "second"], {} as any, undefined, true)).rejects.toThrow(
+            "Authentication failed.",
+        );
+    });
 });
 
 describe("AuthMiddleware.authenticateSync", () => {
     it("throws when the strategy name is not registered", () => {
         const mw = new AuthMiddleware();
         expect(() => mw.authenticateSync(["missing"], {} as any)).toThrow(
-            "No authentication strategy has been registered with name: missing"
+            "No authentication strategy has been registered with name: missing",
         );
     });
 
     it("throws when required and no strategy authenticates successfully", () => {
         const mw = new AuthMiddleware();
         mw.register("test", makeStrategy());
-        expect(() => mw.authenticateSync(["test"], {} as any, undefined, true)).toThrow(
-            "Authentication failed but is required to proceed."
-        );
+        expect(() => mw.authenticateSync(["test"], {} as any, undefined, true)).toThrow("Authentication failed.");
     });
 
     it("returns the result from the first successful strategy", () => {
@@ -103,6 +128,15 @@ describe("AuthMiddleware.authenticateSync", () => {
         const result: AuthResult = { method: "test", user: { uid: "u1" } as any };
         mw.register("test", makeStrategy({ authenticateSync: vi.fn().mockReturnValue(result) }));
         expect(mw.authenticateSync(["test"], {} as any)).toBe(result);
+    });
+
+    it("still throws when required=true and every strategy fails", () => {
+        const mw = new AuthMiddleware();
+        mw.register("first", makeStrategy());
+        mw.register("second", makeStrategy());
+        expect(() => mw.authenticateSync(["first", "second"], {} as any, undefined, true)).toThrow(
+            "Authentication failed.",
+        );
     });
 });
 
@@ -160,9 +194,7 @@ describe("AuthMiddleware.authWebSocket", () => {
         const token = JWTUtils.createTokenSync(config.get("auth"), { uid: "u1" });
         sock.emit("message", JSON.stringify({ id: 0, type: "LOGIN", data: token }), false);
 
-        expect(sock.send).toHaveBeenCalledWith(
-            JSON.stringify({ id: 0, type: "LOGIN_RESPONSE", success: true })
-        );
+        expect(sock.send).toHaveBeenCalledWith(JSON.stringify({ id: 0, type: "LOGIN_RESPONSE", success: true }));
         expect(req.user.uid).toBe("u1");
         expect(next).toHaveBeenCalledWith();
     });
@@ -194,9 +226,7 @@ describe("AuthMiddleware.authWebSocket", () => {
         sock.emit("message", JSON.stringify({ id: 0, type: "LOGIN", data: makeNoUidToken() }), false);
 
         expect(sock.close).toHaveBeenCalled();
-        expect(sock.send).toHaveBeenCalledWith(
-            expect.stringContaining('"type":"LOGIN_RESPONSE"')
-        );
+        expect(sock.send).toHaveBeenCalledWith(expect.stringContaining('"type":"LOGIN_RESPONSE"'));
         expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
 
@@ -218,7 +248,7 @@ describe("AuthMiddleware.authWebSocket", () => {
                 type: "LOGIN_RESPONSE",
                 success: false,
                 data: "Invalid authentication token.",
-            })
+            }),
         );
         expect(next).toHaveBeenCalledWith();
     });

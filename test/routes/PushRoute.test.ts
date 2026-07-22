@@ -179,6 +179,59 @@ describe("BasePushRoute Tests", () => {
                 sockB.close();
             }
         });
+
+        it("Re-checks ACL permission on reconnect and drops a channel whose access was revoked.", async () => {
+            const user: any = { uid: uuid.v4(), name: "reconnect1" };
+            const token = JWTUtils.createTokenSync(config.get("auth"), user);
+            const channel: string = uuid.v4();
+            await grantChannelRead(channel, user.uid);
+
+            // First connection: subscribe to the channel, then disconnect.
+            await requestws(server)
+                .ws(basePath, { headers: { Authorization: `jwt ${token}` } })
+                .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: [user.uid] })
+                .sendJson({ id: 1, type: "SUBSCRIBE", data: channel })
+                .expectJson({ id: 1, type: "SUBSCRIBED", success: true, data: [channel] })
+                .close()
+                .expectClosed();
+
+            // Revoke the permission by editing the existing ACL document in place (re-using `saveChannelAcl`
+            // here would insert a second document sharing the same uid — see its doc comment).
+            const existingAcl: any = await aclRepo.findOne({ uid: channel } as any);
+            existingAcl.records = [];
+            await aclRepo.save(existingAcl);
+
+            // Reconnecting must not silently re-grant the now-revoked channel just because it was
+            // previously approved.
+            await requestws(server)
+                .ws(basePath, { headers: { Authorization: `jwt ${token}` } })
+                .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: [user.uid] })
+                .close()
+                .expectClosed();
+        });
+
+        it("Clears tracked subscription state once the user's last connection closes.", async () => {
+            const user: any = { uid: uuid.v4(), name: "leaktest1" };
+            const token = JWTUtils.createTokenSync(config.get("auth"), user);
+            const channel: string = uuid.v4();
+            await grantChannelRead(channel, user.uid);
+
+            await requestws(server)
+                .ws(basePath, { headers: { Authorization: `jwt ${token}` } })
+                .expectJson({ id: 0, type: "SUBSCRIBED", success: true, data: [user.uid] })
+                .sendJson({ id: 1, type: "SUBSCRIBE", data: channel })
+                .expectJson({ id: 1, type: "SUBSCRIBED", success: true, data: [channel] })
+                .close()
+                .expectClosed();
+
+            // The server's "close" handler runs its cleanup asynchronously after the client observes the
+            // socket close — give it a moment to finish.
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            const route: any = objectFactory.getInstance("routes.PushRoute");
+            expect(route.activeSubs.has(user.uid)).toBe(false);
+            expect(route.activeSocks.has(user.uid)).toBe(false);
+        });
     });
 
     describe("SUBSCRIBE / UNSUBSCRIBE", () => {

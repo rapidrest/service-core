@@ -59,7 +59,7 @@ export class AuthMiddleware {
             // Attempt authentication with the strategy
             const strategy: AuthStrategy | undefined = this.strategies.get(name);
             if (strategy) {
-                const authResult: AuthResult | undefined = await strategy.authenticate(req, res, required);
+                const authResult: AuthResult | undefined = await strategy.authenticate(req, res);
 
                 // Was it successful?
                 if (authResult) {
@@ -71,7 +71,7 @@ export class AuthMiddleware {
         }
 
         if (required) {
-            throw new Error("Authentication failed but is required to proceed.");
+            throw new Error("Authentication failed.");
         }
 
         return undefined;
@@ -99,7 +99,7 @@ export class AuthMiddleware {
             // Attempt authentication with the strategy
             const strategy: AuthStrategy | undefined = this.strategies.get(name);
             if (strategy) {
-                authResult = strategy.authenticateSync(req, res, required);
+                authResult = strategy.authenticateSync(req, res);
             } else {
                 throw new Error("No authentication strategy has been registered with name: " + name);
             }
@@ -111,7 +111,7 @@ export class AuthMiddleware {
         }
 
         if (!authResult && required) {
-            throw new Error("Authentication failed but is required to proceed.");
+            throw new Error("Authentication failed.");
         }
 
         return authResult;

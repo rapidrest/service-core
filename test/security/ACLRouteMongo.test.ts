@@ -575,6 +575,15 @@ describe("ACLRouteMongo Tests", () => {
         expect(result.status).toBeLessThan(300);
     });
 
+    it("Cannot update a single property of a default_ ACL document.", async () => {
+        const result = await request(server)
+            .put("/acls/default_ProtectedUser/parentUid")
+            .set("Authorization", "jwt " + adminToken)
+            .send(JSON.stringify(uuid.v4()))
+            .set("Content-Type", "application/json");
+        expect(result.status).toBe(403);
+    });
+
     it("Cannot truncate ACL documents without authentication.", async () => {
         const result = await request(server).delete("/acls");
         expect(result.status).toBe(401);

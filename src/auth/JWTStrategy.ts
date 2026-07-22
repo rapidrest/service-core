@@ -112,9 +112,11 @@ export class JWTStrategy {
             authToken = req.query[this.options.queryKey] as string;
         }
 
-        // Next check the headers. It's possible there is more than one header value defined. Loop through each of
+        // Next check the headers, but only if a higher-precedence source (the query parameter above)
+        // hasn't already supplied a token — a later-checked, lower-precedence source must never override
+        // an earlier one. It's possible there is more than one header value defined; loop through each of
         // them until we have a verified token.
-        if (this.options.headerKey && this.options.headerKey in req.headers) {
+        if (!authToken && this.options.headerKey && this.options.headerKey in req.headers) {
             const value: string | string[] | undefined = req.headers[this.options.headerKey];
             const headers: string[] = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
 
@@ -133,15 +135,16 @@ export class JWTStrategy {
             }
         }
 
-        // Check the cookie header — only overwrite if a value is actually present
-        if (this.options.cookieSecure && this.options.cookieName && req.signedCookies) {
+        // Check the cookie header — lowest precedence, so only consulted if neither the query parameter
+        // nor the header supplied a token above.
+        if (!authToken && this.options.cookieSecure && this.options.cookieName && req.signedCookies) {
             // TODO Decrypt the signed cookie
             const cookieToken = req.signedCookies[this.options.cookieName];
             if (cookieToken) {
                 authToken = cookieToken;
             }
         }
-        if (!this.options.cookieSecure && this.options.cookieName && req.cookies) {
+        if (!authToken && !this.options.cookieSecure && this.options.cookieName && req.cookies) {
             const cookieToken = req.cookies[this.options.cookieName];
             if (cookieToken) {
                 authToken = cookieToken;
@@ -177,10 +180,6 @@ export class JWTStrategy {
                     user,
                 };
             }
-        }
-
-        if (required) {
-            throw new Error("Invalid or missing auth token.");
         }
 
         return undefined;

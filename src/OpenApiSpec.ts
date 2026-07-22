@@ -371,8 +371,13 @@ export class OpenApiSpec {
                     if (ref) {
                         mParams.push(ref);
                     } else {
+                        // Must be `qName` (the actual query parameter name captured above), not the outer
+                        // `name` function parameter (the route handler's method name) — that `name` binding
+                        // shadows an unrelated inner `name` from the path-parameter loop above, which is out
+                        // of scope by this point, so without this fix every undocumented query parameter was
+                        // incorrectly listed under the handler's method name instead of its own name.
                         mParams.push({
-                            name,
+                            name: qName,
                             in: "query",
                             schema: {
                                 type: "string",

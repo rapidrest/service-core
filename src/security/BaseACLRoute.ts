@@ -154,7 +154,7 @@ export abstract class BaseACLRoute<T extends AccessControlList> extends CRUDRout
         return super.update(id, obj, req, user);
     }
 
-    @Before("checkPerms")
+    @Before(["checkPerms", "checkNotDefault"])
     public updateProperty(
         @Param("id") id: string,
         @Param("property") propertyName: string,

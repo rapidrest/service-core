@@ -203,3 +203,36 @@ describe("OpenApiSpec.addRoute isWebSocket flag", () => {
         expect(pathItem["x-upgrade"]).toBeUndefined();
     });
 });
+
+describe("OpenApiSpec.addRoute query parameter naming", () => {
+    it("documents an un-referenced query parameter under its own name, not the route handler's method name", () => {
+        // Regression test: `mParams.push({ name, ... })` used the outer `addRoute` function parameter `name`
+        // (the route handler's method name, e.g. "search") instead of `qName` (the actual query parameter
+        // name, e.g. "term") — an inner `name` from an unrelated earlier loop (over :path parameters) had
+        // gone out of scope by this point, so the identifier resolved to the wrong binding.
+        const spec = new OpenApiSpec();
+        class FakeRoute {
+            public search() {
+                return undefined;
+            }
+        }
+        Reflect.defineMetadata("rrst:args", { 0: ["query", "term"] }, FakeRoute.prototype, "search");
+
+        // Path includes ":id" so addRoute's "this is probably not a search endpoint" heuristic skips
+        // auto-injecting the limit/page/sort parameter references — this bare, un-initialized OpenApiSpec
+        // never registered those shared components, so referencing them here would push `undefined`
+        // placeholders into the parameter list.
+        spec.addRoute(
+            "search",
+            "/search/:id",
+            "get",
+            { authRequired: false },
+            { description: "test" } as any,
+            new FakeRoute(),
+        );
+
+        const params: any[] = spec.paths?.["/search/:id"]?.get?.parameters ?? [];
+        expect(params).toEqual(expect.arrayContaining([expect.objectContaining({ name: "term", in: "query" })]));
+        expect(params.some((p) => p.name === "search")).toBe(false);
+    });
+});

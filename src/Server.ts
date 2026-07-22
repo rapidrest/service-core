@@ -564,6 +564,14 @@ export class Server {
      */
     public stop(): Promise<void> {
         return new Promise(async (resolve, reject) => {
+            // Watchdog: guards the whole shutdown sequence against hanging indefinitely (e.g. a database
+            // connection that never closes). `unref()`'d so it can never by itself keep the process alive,
+            // and always cleared below once the promise settles.
+            const timer: NodeJS.Timeout = setTimeout(() => {
+                reject("Failed to shut down server.");
+            }, 30000);
+            timer.unref?.();
+
             this.logger.info("Stopping background services...");
             await this.serviceManager?.stopAll();
 
@@ -576,14 +584,12 @@ export class Server {
                 this.logger.info("Closing database connections...");
                 await this.connectionManager?.disconnect();
 
+                clearTimeout(timer);
                 resolve();
             } catch (err) {
+                clearTimeout(timer);
                 reject(err);
             }
-
-            setTimeout(() => {
-                reject("Failed to shut down server.");
-            }, 30000);
         });
     }
 

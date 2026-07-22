@@ -603,7 +603,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             id,
             {
                 uid: existing.uid,
-                version: options.version || "version" in existing ? (existing as any).version : undefined,
+                version: options.version || ("version" in existing ? (existing as any).version : undefined),
                 [propertyName]: value,
             } as any,
             {
