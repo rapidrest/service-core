@@ -219,18 +219,20 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
+        const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options);
+
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
             let uids: string[] = [];
             if (this.repo instanceof MongoRepository) {
-                if (Array.isArray(query)) {
-                    uids = await this.repo.distinct("uid", query[0].$match);
+                if (Array.isArray(searchQuery)) {
+                    uids = await this.repo.distinct("uid", searchQuery[0].$match);
                 } else {
-                    uids = await this.repo.distinct("uid", query["$match"] ? query["$match"] : query);
+                    uids = await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
                 }
             } else {
-                (await this.repo.find(query)).forEach((obj: T) => uids.push(obj.uid));
+                (await this.repo.find(searchQuery)).forEach((obj: T) => uids.push(obj.uid));
             }
 
             for (const uid of uids) {
@@ -243,15 +245,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.repo instanceof MongoRepository) {
-            if (Array.isArray(query)) {
-                query.push({ $count: "count" });
-                const result: any = await this.repo.aggregate(query).next();
+            if (Array.isArray(searchQuery)) {
+                searchQuery.push({ $count: "count" });
+                const result: any = await this.repo.aggregate(searchQuery).next();
                 count = result ? result.count : count;
             } else {
-                count = await this.repo.count(query["$match"] ? query["$match"] : query);
+                count = await this.repo.count(searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
             }
         } else {
-            count = await this.repo.count(query);
+            count = await this.repo.count(searchQuery);
         }
 
         return count;
@@ -562,21 +564,23 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // If the query wasn't cached retrieve from the database
         if (results.length === 0) {
+            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options);
+
             if (this.repo instanceof MongoRepository) {
                 const skip: number = page * limit;
-                if (Array.isArray(query)) {
-                    results = await this.repo.aggregate(query).skip(skip).limit(limit).toArray();
+                if (Array.isArray(searchQuery)) {
+                    results = await this.repo.aggregate(searchQuery).skip(skip).limit(limit).toArray();
                 } else {
                     results = await this.repo
-                        .find(query["$match"] ? query["$match"] : query, {
+                        .find(searchQuery["$match"] ? searchQuery["$match"] : searchQuery, {
                             limit,
                             skip,
-                            sort: query["$sort"],
+                            sort: searchQuery["$sort"],
                         })
                         .toArray();
                 }
             } else {
-                results = await this.repo.find(query);
+                results = await this.repo.find(searchQuery);
             }
 
             // Cache the results for future requests. Don't bother if there were no results.
@@ -807,15 +811,16 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         try {
+            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options);
             let uids: Array<string> = [];
             if (this.repo instanceof MongoRepository) {
-                if (Array.isArray(query)) {
-                    uids = await this.repo.distinct("uid", query[0].$match);
+                if (Array.isArray(searchQuery)) {
+                    uids = await this.repo.distinct("uid", searchQuery[0].$match);
                 } else {
-                    uids = await this.repo.distinct("uid", query["$match"] ? query["$match"] : query);
+                    uids = await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
                 }
             } else {
-                (await this.repo.find(query)).forEach((obj: T) => uids.push(obj.uid));
+                (await this.repo.find(searchQuery)).forEach((obj: T) => uids.push(obj.uid));
             }
 
             if (uids.length > 0) {

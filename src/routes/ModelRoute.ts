@@ -1,7 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { ModelUtils } from "../models/ModelUtils.js";
 import { RepoUtils, type RepoOperationOptions } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
 import { Redis } from "ioredis";
@@ -199,20 +198,18 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        const searchQuery: any = ModelUtils.buildSearchQuery(
-            this.modelClass,
-            this.repoUtils.repo,
-            options.params,
-            options.query,
-            true,
-            options.user,
+        const result: number = await this.repoUtils.count(
+            {
+                ...options.query,
+                ...options.params,
+            },
+            {
+                limit: options.query?.limit,
+                page: options.query?.page,
+                version: options.params?.version || options.query?.version,
+                user: options.user,
+            },
         );
-        const result: number = await this.repoUtils.count(searchQuery, {
-            limit: options.query?.limit,
-            page: options.query?.page,
-            version: options.params?.version || options.query?.version,
-            user: options.user,
-        });
         options.res.setHeader("content-length", result);
 
         return options.res.status(200);
@@ -399,21 +396,18 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        const searchQuery: any = ModelUtils.buildSearchQuery(
-            this.modelClass,
-            this.repoUtils.repo,
-            options.params,
-            options.query,
-            true,
-            options.user,
+        return await this.repoUtils.find(
+            {
+                ...options.query,
+                ...options.params,
+            },
+            {
+                limit: options.query?.limit,
+                page: options.query?.page,
+                version: options.params?.version || options.query?.version,
+                user: options.user,
+            },
         );
-
-        return await this.repoUtils.find(searchQuery, {
-            limit: options.query?.limit,
-            page: options.query?.page,
-            version: options.params?.version || options.query?.version,
-            user: options.user,
-        });
     }
 
     /**
@@ -461,23 +455,20 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        const searchQuery: any = ModelUtils.buildSearchQuery(
-            this.modelClass,
-            this.repoUtils.repo,
-            options.params,
-            options.query,
-            true,
-            options.user,
+        await this.repoUtils?.truncate(
+            {
+                ...options.query,
+                ...options.params,
+            },
+            {
+                limit: options.query?.limit,
+                page: options.query?.page,
+                pushChannels: options.pushChannels,
+                skipPush: options.skipPush,
+                version: options.params?.version || options.query?.version,
+                user: options.user,
+            },
         );
-
-        await this.repoUtils?.truncate(searchQuery, {
-            limit: options.query?.limit,
-            page: options.query?.page,
-            pushChannels: options.pushChannels,
-            skipPush: options.skipPush,
-            version: options.params?.version || options.query?.version,
-            user: options.user,
-        });
 
         if (options.recordEvent) {
             const evt: any = {

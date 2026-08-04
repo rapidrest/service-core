@@ -469,8 +469,7 @@ export class ModelUtils {
      *
      * @param modelClass The class definition of the data model to build a search query for.
      * @param repo The repository to build a search query for.
-     * @param {any} params The URI parameters for the endpoint that was requested.
-     * @param {any} queryParams The URI query parameters that were included in the request.
+     * @param {any} query The search query parameters to include.
      * @param {bool} exactMatch Set to true to create a query where parameters are to be matched exactly, otherwise set to false to use a 'contains' search.
      * @param {any} user The user that is performing the request.
      * @returns {object} The TypeORM compatible query object.
@@ -478,23 +477,22 @@ export class ModelUtils {
     public static buildSearchQuery<T extends {}>(
         modelClass: any,
         repo: Repository<T> | MongoRepository<T> | undefined,
-        params?: any,
-        queryParams?: any,
+        query: any = {},
         exactMatch: boolean = false,
         user?: any,
     ): any {
         // By default we don't want to return deleted recoverable objects unless explicitly requested
         if (new modelClass() instanceof RecoverableBaseEntity) {
-            queryParams = {
-                ...queryParams,
-                deleted: queryParams && "deleted" in queryParams ? queryParams.deleted : false,
+            query = {
+                ...query,
+                deleted: query && "deleted" in query ? query.deleted : false,
             };
         }
 
         if (repo instanceof MongoRepository) {
-            return ModelUtils.buildSearchQueryMongo(modelClass, params, queryParams, exactMatch, user);
+            return ModelUtils.buildSearchQueryMongo(modelClass, query, exactMatch, user);
         } else {
-            return ModelUtils.buildSearchQuerySQL(modelClass, params, queryParams, exactMatch, user);
+            return ModelUtils.buildSearchQuerySQL(modelClass, query, exactMatch, user);
         }
     }
 
@@ -515,26 +513,19 @@ export class ModelUtils {
      * When no operator is provided the comparison will always be evaluated as `eq`.
      *
      * @param modelClass The class definition of the data model to build a search query for.
-     * @param {any} params The URI parameters for the endpoint that was requested.
-     * @param {any} queryParams The URI query parameters that were included in the request.
+     * @param {any} query The search query parameters to include.
      * @param {bool} exactMatch Set to true to create a query where parameters are to be matched exactly, otherwise set to false to use a 'contains' search.
      * @param {any} user The user that is performing the request.
      * @returns {object} The TypeORM compatible query object.
      */
-    public static buildSearchQuerySQL(
-        modelClass: any,
-        params?: any,
-        queryParams?: any,
-        exactMatch: boolean = false,
-        user?: any,
-    ): any {
-        const query: any = {};
-        query.where = [];
+    public static buildSearchQuerySQL(modelClass: any, query: any = {}, exactMatch: boolean = false, user?: any): any {
+        const result: any = {};
+        result.where = [];
 
-        // Add the URL parameters
-        for (const key in params) {
+        // Pre-process any query values (e.g. the `me` identifier)
+        for (const key in query) {
             // If the value is 'me' that's a special keyword to reference the user ID.
-            if (params[key] === "me") {
+            if (query[key] === "me") {
                 if (!user) {
                     throw new ApiError(
                         ApiErrors.SEARCH_INVALID_ME_REFERENCE,
@@ -542,9 +533,7 @@ export class ModelUtils {
                         ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                     );
                 }
-                query.where[key] = user.uid;
-            } else {
-                query.where[key] = params[key];
+                query[key] = user.uid;
             }
         }
 
@@ -554,8 +543,8 @@ export class ModelUtils {
 
         // So first let's find out how many queries in total we are going to need.
         let numQueries = 1;
-        for (const key in queryParams) {
-            const value: string | string[] = queryParams[key];
+        for (const key in query) {
+            const value: string | string[] = query[key];
             if (Array.isArray(value)) {
                 if (value.length > numQueries) {
                     numQueries = value.length;
@@ -567,7 +556,7 @@ export class ModelUtils {
 
         // Now go through each query paramater. If the parameter is a single value, add it to each query object. If it's an array,
         // add only one value to each query object.
-        for (let key in queryParams) {
+        for (let key in query) {
             // Ignore reserved query parameters
             if (key.match(REGEX_RESERVED_QUERY_PARAMS)) {
                 continue;
@@ -575,13 +564,13 @@ export class ModelUtils {
 
             // Limit, page and sort are reserved for specifying query limits
             if (key.match(REGEX_QUERY_LIMITS)) {
-                let value: any = queryParams[key];
+                let value: any = query[key];
 
                 if (key === "limit") {
                     key = "take";
-                    query[key] = Number(value);
+                    result[key] = Number(value);
                 } else if (key === "page") {
-                    query[key] = Number(value);
+                    result[key] = Number(value);
                 } else if (key === "sort") {
                     key = "order";
 
@@ -596,48 +585,48 @@ export class ModelUtils {
                         }
                     }
 
-                    query[key] = value;
+                    result[key] = value;
                 }
 
                 continue;
             }
 
-            if (Array.isArray(queryParams[key])) {
+            if (Array.isArray(query[key])) {
                 // Add each value in the array to each corresponding query
                 let i = 0;
-                for (const value of queryParams[key]) {
-                    if (!query.where[i]) {
-                        query.where[i] = {};
+                for (const value of query[key]) {
+                    if (!result.where[i]) {
+                        result.where[i] = {};
                     }
 
-                    query.where[i][key] = ModelUtils.getQueryParamValue(value);
+                    result.where[i][key] = ModelUtils.getQueryParamValue(value);
 
                     i++;
                 }
             } else {
                 // Add the parameter to every query
                 for (let i = 0; i < numQueries; i++) {
-                    if (!query.where[i]) {
-                        query.where[i] = {};
+                    if (!result.where[i]) {
+                        result.where[i] = {};
                     }
 
-                    query.where[i][key] = ModelUtils.getQueryParamValue(queryParams[key]);
+                    result.where[i][key] = ModelUtils.getQueryParamValue(query[key]);
                 }
             }
         }
 
-        if (query.where.length === 0) {
-            delete query.where;
+        if (result.where.length === 0) {
+            delete result.where;
         }
 
-        if (query.take) {
-            query.take = Math.min(query.take, 1000);
+        if (result.take) {
+            result.take = Math.min(result.take, 1000);
         } else {
-            query.take = 100;
+            result.take = 100;
         }
-        query.page = query.page ? query.page : 0;
+        result.page = result.page ? result.page : 0;
 
-        return query;
+        return result;
     }
 
     /**
@@ -659,26 +648,30 @@ export class ModelUtils {
      * NOTE: The result of this function is only compatible with the `aggregate()` function.
      *
      * @param modelClass The class definition of the data model to build a search query for.
-     * @param {any} params The URI parameters for the endpoint that was requested.
-     * @param {any} queryParams The URI query parameters that were included in the request.
+     * @param {any} query The search query parameters to include.
      * @param {bool} exactMatch Set to true to create a query where parameters are to be matched exactly, otherwise set to false to use a 'contains' search.
      * @param {any} user The user that is performing the request.
      * @returns {object} The TypeORM compatible query object.
      */
     public static buildSearchQueryMongo(
         modelClass: any,
-        params?: any,
-        queryParams?: any,
+        query: any = {},
         exactMatch: boolean = false,
         user?: any,
     ): any {
         const queries: any[] = [{}];
         let sort: any = undefined;
 
-        // Add the URL parameters
-        for (const key in params) {
+        // logger?.debug(`Query params: ${JSON.stringify(queryParams)}`);
+
+        for (const key in query) {
+            // Ignore reserved query parameters
+            if (key.match(REGEX_RESERVED_QUERY_PARAMS)) {
+                continue;
+            }
+
             // If the value is 'me' that's a special keyword to reference the user ID.
-            if (params[key] === "me") {
+            if (query[key] === "me") {
                 if (!user) {
                     throw new ApiError(
                         ApiErrors.SEARCH_INVALID_ME_REFERENCE,
@@ -686,23 +679,12 @@ export class ModelUtils {
                         ApiErrorMessages.SEARCH_INVALID_ME_REFERENCE,
                     );
                 }
-                queries[0][key] = user.uid;
-            } else {
-                queries[0][key] = params[key];
-            }
-        }
-
-        // logger?.debug(`Query params: ${JSON.stringify(queryParams)}`);
-
-        for (const key in queryParams) {
-            // Ignore reserved query parameters
-            if (key.match(REGEX_RESERVED_QUERY_PARAMS)) {
-                continue;
+                query[key] = user.uid;
             }
 
             // Limit, page and sort are reserved for specifying query limits
             if (key.match(REGEX_QUERY_LIMITS)) {
-                let value: any = queryParams[key];
+                let value: any = query[key];
 
                 if (key === "sort") {
                     if (typeof value === "string") {
@@ -752,8 +734,8 @@ export class ModelUtils {
             if (key === "$or") {
                 // Array of OR queries
                 let orResults: any[] = [];
-                for (const query of queryParams[key] as Array<any>) {
-                    const subQueryOrResult = this.buildSearchQueryMongo(modelClass, undefined, query, exactMatch, user);
+                for (const q of query[key] as Array<any>) {
+                    const subQueryOrResult = this.buildSearchQueryMongo(modelClass, q, exactMatch, user);
                     const validSubQueryResult =
                         Array.isArray(subQueryOrResult) && subQueryOrResult.length > 0
                             ? subQueryOrResult[0]["$match"]
@@ -766,12 +748,12 @@ export class ModelUtils {
                 continue;
             }
 
-            if (Array.isArray(queryParams[key])) {
+            if (Array.isArray(query[key])) {
                 // Add each value in the array to each corresponding query. Injection safety is already enforced
                 // inside getQueryParamValueMongo() itself, at the point the client-supplied value is parsed.
                 const conditions: any[] = [];
-                for (let i = 0; i < queryParams[key].length; i++) {
-                    const value: any = ModelUtils.getQueryParamValueMongo(queryParams[key][i]);
+                for (let i = 0; i < query[key].length; i++) {
+                    const value: any = ModelUtils.getQueryParamValueMongo(query[key][i]);
 
                     if (!queries[i]) {
                         queries[i] = {
@@ -782,7 +764,7 @@ export class ModelUtils {
                     queries[i][key] = value;
                 }
             } else {
-                const value: any = ModelUtils.getQueryParamValueMongo(queryParams[key]);
+                const value: any = ModelUtils.getQueryParamValueMongo(query[key]);
                 for (let i = 0; i < queries.length; i++) {
                     queries[i][key] = value;
                 }
