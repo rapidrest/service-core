@@ -379,16 +379,23 @@ export function readBody(
                 return;
             }
 
+            // `chunk` is a raw ArrayBuffer that uWS reuses/detaches once this callback returns, so any
+            // reference to it must not outlive this call. `Buffer.from(arrayBuffer)` does NOT copy in that
+            // case — given an ArrayBuffer (as opposed to a TypedArray/Buffer), it returns a *view* over that
+            // same memory. Retaining that view past this callback (on `req.rawBody`, or in `chunks` for a
+            // later `Buffer.concat()`) and reading it afterward throws "Cannot perform
+            // %TypedArray%.prototype.set on a detached ArrayBuffer" (or silently returns garbage bytes).
+            // `chunk.slice(0)` copies the bytes into a brand new, independently-owned ArrayBuffer first.
             if (isLast && !hasChunks) {
                 // Fast path: single-chunk body — skip the chunks array and Buffer.concat entirely.
-                parseBody(Buffer.from(chunk));
+                parseBody(Buffer.from(chunk.slice(0)));
                 resolve(true);
                 return;
             }
 
-            // Multi-chunk path: copy each chunk (ArrayBuffer is only valid during this callback).
+            // Multi-chunk path: copy each chunk immediately, for the same reason as the fast path above.
             hasChunks = true;
-            chunks.push(Buffer.from(chunk));
+            chunks.push(Buffer.from(chunk.slice(0)));
 
             if (isLast) {
                 parseBody(Buffer.concat(chunks));
