@@ -72,7 +72,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
      * Override this function to perform additional custom validation of object creation. This is called
      * for each object passed to the `create()` operation.
      */
-    protected validateCreate(obj: Partial<T> | Partial<T>[], @User user?: JWTUser) {
+    protected validateCreate(obj: Partial<T>, @User user?: JWTUser) {
         return super.validate(obj, { user });
     }
 
