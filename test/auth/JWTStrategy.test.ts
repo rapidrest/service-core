@@ -139,8 +139,102 @@ describe("JWTStrategy.authenticateSync", () => {
         expect(strategy.authenticateSync(makeReq(), {} as any)).toBeUndefined();
     });
 
-    it("throws when no token is found and auth is required", () => {
+    it("returns undefined when no token is found and auth is not required", () => {
         const strategy = makeStrategy();
-        expect(() => strategy.authenticateSync(makeReq(), {} as any, true)).toThrow("Invalid or missing auth token.");
+        const result = strategy.authenticateSync(makeReq(), {} as any);
+        expect(result).toBeUndefined();
+    });
+});
+
+describe("JWTStrategy session updates", () => {
+    it("does not touch req.session when it is undefined", async () => {
+        const strategy = makeStrategy();
+        const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });
+        const req = makeReq({ headers: { authorization: `jwt ${token}` } });
+        expect(req.session).toBeUndefined();
+
+        await strategy.authenticate(req, {} as any);
+        expect(req.session).toBeUndefined();
+    });
+
+    it("does not create a session on failed authentication", async () => {
+        const strategy = makeStrategy();
+        const req = makeReq({ session: {} });
+
+        await strategy.authenticate(req, {} as any);
+        expect(req.session).toEqual({});
+    });
+
+    it("populates ip, lastAccess and userUid on the session (async)", async () => {
+        const strategy = makeStrategy();
+        const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });
+        const req = makeReq({
+            headers: { authorization: `jwt ${token}` },
+            session: {},
+            socket: { remoteAddress: "203.0.113.5" },
+        });
+
+        const before = Date.now();
+        const result = await strategy.authenticate(req, {} as any);
+        const after = Date.now();
+
+        expect(result?.user?.uid).toBe("u1");
+        expect(req.session.ip).toBe("203.0.113.5");
+        expect(req.session.userUid).toBe("u1");
+        expect(req.session.lastAccess).toBeGreaterThanOrEqual(before);
+        expect(req.session.lastAccess).toBeLessThanOrEqual(after);
+        expect(req.session.lastLogin).toBe(req.session.lastAccess);
+    });
+
+    it("populates ip, lastAccess and userUid on the session (sync)", () => {
+        const strategy = makeStrategy();
+        const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });
+        const req = makeReq({
+            headers: { authorization: `jwt ${token}` },
+            session: {},
+            socket: { remoteAddress: "203.0.113.5" },
+        });
+
+        const before = Date.now();
+        const result = strategy.authenticateSync(req, {} as any);
+        const after = Date.now();
+
+        expect(result?.user?.uid).toBe("u1");
+        expect(req.session.ip).toBe("203.0.113.5");
+        expect(req.session.userUid).toBe("u1");
+        expect(req.session.lastAccess).toBeGreaterThanOrEqual(before);
+        expect(req.session.lastAccess).toBeLessThanOrEqual(after);
+        expect(req.session.lastLogin).toBe(req.session.lastAccess);
+    });
+
+    it("preserves the original lastLogin across subsequent authentications, only advancing lastAccess", async () => {
+        const strategy = makeStrategy();
+        const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });
+        const req = makeReq({
+            headers: { authorization: `jwt ${token}` },
+            session: { lastLogin: 12345, lastAccess: 12345 },
+            socket: { remoteAddress: "203.0.113.5" },
+        });
+
+        await strategy.authenticate(req, {} as any);
+
+        expect(req.session.lastLogin).toBe(12345);
+        expect(req.session.lastAccess).toBeGreaterThan(12345);
+    });
+
+    it("updates userUid and ip on the session when a different user re-authenticates", async () => {
+        const strategy = makeStrategy();
+        const token = JWTUtils.createTokenSync(authConfig, { uid: "u2" });
+        const req = makeReq({
+            headers: { authorization: `jwt ${token}` },
+            session: { userUid: "u1", ip: "198.51.100.1", lastLogin: 111, lastAccess: 111 },
+            socket: { remoteAddress: "203.0.113.5" },
+        });
+
+        await strategy.authenticate(req, {} as any);
+
+        expect(req.session.userUid).toBe("u2");
+        expect(req.session.ip).toBe("203.0.113.5");
+        expect(req.session.lastLogin).toBe(111);
     });
 });

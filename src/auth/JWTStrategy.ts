@@ -6,6 +6,7 @@ import type { HttpRequest, HttpResponse } from "../http/types.js";
 import dayjs from "dayjs";
 import { createRequire } from "module";
 import type { AuthResult } from "./AuthStrategy.js";
+import { NetUtils } from "../NetUtils.js";
 const { Config, Init } = ObjectDecorators;
 const _require = createRequire(process.cwd() + "/package.json");
 const duration = _require("dayjs/plugin/duration");
@@ -154,11 +155,7 @@ export class JWTStrategy {
         return authToken;
     }
 
-    public async authenticate(
-        req: HttpRequest,
-        res: HttpResponse,
-        required?: boolean,
-    ): Promise<JWTAuthResult | undefined> {
+    public async authenticate(req: HttpRequest, res: HttpResponse): Promise<JWTAuthResult | undefined> {
         let user: JWTUser | undefined = undefined;
         let authPayload: JWTPayload | undefined = undefined;
         let authToken: string | undefined = this.getAuthToken(req);
@@ -172,6 +169,15 @@ export class JWTStrategy {
             }
             authPayload = payload;
             if (user) {
+                // If sessions are enabled, update the stored information about the authenticated user
+                if (req.session) {
+                    const now = Date.now();
+                    req.session.ip = NetUtils.getIPAddress(req);
+                    req.session.lastAccess = now;
+                    req.session.lastLogin = req.session.lastLogin ?? now;
+                    req.session.userUid = user.uid;
+                }
+
                 return {
                     data: authToken,
                     method: this.name,
@@ -185,7 +191,7 @@ export class JWTStrategy {
         return undefined;
     }
 
-    public authenticateSync(req: HttpRequest, res: HttpResponse, required?: boolean): JWTAuthResult | undefined {
+    public authenticateSync(req: HttpRequest, res: HttpResponse): JWTAuthResult | undefined {
         let user: JWTUser | undefined = undefined;
         let authPayload: JWTPayload | undefined = undefined;
         let authToken: string | undefined = this.getAuthToken(req);
@@ -199,6 +205,15 @@ export class JWTStrategy {
             }
             authPayload = payload;
             if (user) {
+                // If sessions are enabled, update the stored information about the authenticated user
+                if (req.session) {
+                    const now = Date.now();
+                    req.session.ip = NetUtils.getIPAddress(req);
+                    req.session.lastAccess = now;
+                    req.session.lastLogin = req.session.lastLogin ?? now;
+                    req.session.userUid = user.uid;
+                }
+
                 return {
                     data: authToken,
                     method: this.name,
@@ -207,10 +222,6 @@ export class JWTStrategy {
                     user,
                 };
             }
-        }
-
-        if (required) {
-            throw new Error("Invalid or missing auth token.");
         }
 
         return undefined;
