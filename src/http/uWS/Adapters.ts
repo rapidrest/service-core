@@ -141,7 +141,7 @@ export class UWSRequest implements HttpRequest {
 export class UWSResponse implements HttpResponse {
     private readonly uwsRes: UWSHttpResponse;
     private _statusCode: number = 200;
-    private _headers: Map<string, string> = new Map();
+    private _headers: Map<string, string | string[]> = new Map();
     private _headersSent: boolean = false;
     private _writableEnded: boolean = false;
     private _streaming: boolean = false;
@@ -184,12 +184,25 @@ export class UWSResponse implements HttpResponse {
         return this;
     }
 
-    public setHeader(key: string, value: string | number): this {
-        this._headers.set(key.toLowerCase(), String(value));
+    public setHeader(key: string, value: string | number | string[]): this {
+        this._headers.set(key.toLowerCase(), Array.isArray(value) ? value.map(String) : String(value));
         return this;
     }
 
-    public getHeader(key: string): string | undefined {
+    public appendHeader(key: string, value: string | number): this {
+        const lowerKey = key.toLowerCase();
+        const existing = this._headers.get(lowerKey);
+        if (existing === undefined) {
+            this._headers.set(lowerKey, String(value));
+        } else if (Array.isArray(existing)) {
+            existing.push(String(value));
+        } else {
+            this._headers.set(lowerKey, [existing, String(value)]);
+        }
+        return this;
+    }
+
+    public getHeader(key: string): string | string[] | undefined {
         return this._headers.get(key.toLowerCase());
     }
 
@@ -220,10 +233,7 @@ export class UWSResponse implements HttpResponse {
                 // Write all buffered headers except content-length:
                 // uWS auto-adds content-length via end(data) or endWithoutBody(n), so
                 // writing it manually would create a duplicate Content-Length header.
-                for (const [key, value] of this._headers.entries()) {
-                    if (key === "content-length") continue;
-                    this.uwsRes.writeHeader(key, value);
-                }
+                this._writeHeaders();
                 this._headersSent = true;
             }
 
@@ -232,7 +242,7 @@ export class UWSResponse implements HttpResponse {
                 // without sending body bytes. Allows doCount/doExists to report a count via
                 // content-length without triggering the duplicate-header bug.
                 const cl = this._headers.get("content-length");
-                this.uwsRes.endWithoutBody(cl !== undefined ? parseInt(cl, 10) : undefined);
+                this.uwsRes.endWithoutBody(typeof cl === "string" ? parseInt(cl, 10) : undefined);
             } else if (data === undefined || data === null) {
                 this.uwsRes.end();
             } else {
@@ -251,12 +261,26 @@ export class UWSResponse implements HttpResponse {
         this._streaming = true;
         this.uwsRes.cork(() => {
             this.uwsRes.writeStatus(this._statusToString(this._statusCode));
-            for (const [key, value] of this._headers.entries()) {
-                if (key === "content-length") continue;
-                this.uwsRes.writeHeader(key, value);
-            }
+            this._writeHeaders();
             this._headersSent = true;
         });
+    }
+
+    /**
+     * Writes all buffered headers to the wire, skipping content-length (uWS sets it
+     * automatically via end(data)/endWithoutBody(n)). Headers with multiple values (e.g. one
+     * set via `appendHeader`, such as multiple `Set-Cookie` cookies) are written as repeated
+     * `writeHeader` calls — uWS emits a separate header line per call rather than overwriting.
+     */
+    private _writeHeaders(): void {
+        for (const [key, value] of this._headers.entries()) {
+            if (key === "content-length") continue;
+            if (Array.isArray(value)) {
+                for (const v of value) this.uwsRes.writeHeader(key, v);
+            } else {
+                this.uwsRes.writeHeader(key, value);
+            }
+        }
     }
 
     /**

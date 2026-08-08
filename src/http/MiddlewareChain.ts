@@ -152,6 +152,9 @@ export function makeWsStubResponse(): HttpResponse {
         setHeader() {
             return this;
         },
+        appendHeader() {
+            return this;
+        },
         getHeader() {
             return undefined;
         },

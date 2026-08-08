@@ -46,8 +46,14 @@ export interface HttpResponse {
     /** Intermediate result passed between middleware via res.result. */
     result?: any;
     status(code: number): this;
-    setHeader(key: string, value: string | number): this;
-    getHeader(key: string): string | undefined;
+    /** Sets a header, replacing any value(s) previously set for the same key. */
+    setHeader(key: string, value: string | number | string[]): this;
+    /**
+     * Adds a value for a header without clobbering any value(s) already set for the same key —
+     * the header is sent as multiple lines on the wire (e.g. multiple `Set-Cookie` headers).
+     */
+    appendHeader(key: string, value: string | number): this;
+    getHeader(key: string): string | string[] | undefined;
     json(data: any): void;
     send(data?: any): void;
     end(data?: any): void;

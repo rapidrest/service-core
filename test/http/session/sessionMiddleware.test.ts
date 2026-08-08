@@ -26,6 +26,7 @@ function makeReqRes(cookies: Record<string, string> = {}) {
     const req: any = { cookies };
     const res: any = {
         setHeader: vi.fn(),
+        appendHeader: vi.fn(),
         onFinish: (fn: () => Promise<void>) => {
             finishHandler = fn;
         },
@@ -44,7 +45,7 @@ describe("createSessionMiddleware Tests", () => {
         await middleware(req, res, next);
 
         expect(mgr.generateId).toHaveBeenCalled();
-        expect(res.setHeader).toHaveBeenCalledWith(
+        expect(res.appendHeader).toHaveBeenCalledWith(
             "Set-Cookie",
             expect.stringContaining("rrst.sid=new-session-id.sig")
         );
@@ -59,7 +60,7 @@ describe("createSessionMiddleware Tests", () => {
 
         await middleware(req, res, vi.fn());
 
-        expect(res.setHeader).toHaveBeenCalledWith("Set-Cookie", expect.stringContaining("Secure"));
+        expect(res.appendHeader).toHaveBeenCalledWith("Set-Cookie", expect.stringContaining("Secure"));
     });
 
     it("loads an existing session when a valid cookie is present", async () => {
@@ -74,7 +75,7 @@ describe("createSessionMiddleware Tests", () => {
 
         expect(mgr.load).toHaveBeenCalledWith("existing-id");
         expect(req.session).toEqual({ uid: "user-1" });
-        expect(res.setHeader).not.toHaveBeenCalled();
+        expect(res.appendHeader).not.toHaveBeenCalled();
     });
 
     it("creates a new session when the cookie signature is invalid", async () => {
@@ -85,7 +86,7 @@ describe("createSessionMiddleware Tests", () => {
         await middleware(req, res, vi.fn());
 
         expect(mgr.load).not.toHaveBeenCalled();
-        expect(res.setHeader).toHaveBeenCalled();
+        expect(res.appendHeader).toHaveBeenCalled();
     });
 
     it("creates a new session when the verified ID has no stored data", async () => {
@@ -99,7 +100,7 @@ describe("createSessionMiddleware Tests", () => {
         await middleware(req, res, vi.fn());
 
         expect(mgr.generateId).toHaveBeenCalled();
-        expect(res.setHeader).toHaveBeenCalled();
+        expect(res.appendHeader).toHaveBeenCalled();
     });
 
     it("saves the session on finish when it has data", async () => {

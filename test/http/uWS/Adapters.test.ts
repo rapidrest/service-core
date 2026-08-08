@@ -180,6 +180,27 @@ describe("UWSResponse Tests", () => {
         expect(res.getHeader("missing")).toBeUndefined();
     });
 
+    it("appendHeader() accumulates multiple values for the same key without clobbering", () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        expect(res.appendHeader("Set-Cookie", "a=1")).toBe(res);
+        res.appendHeader("Set-Cookie", "b=2");
+        expect(res.getHeader("set-cookie")).toEqual(["a=1", "b=2"]);
+        res.end();
+        expect(uwsRes._calls.headers).toEqual([
+            ["set-cookie", "a=1"],
+            ["set-cookie", "b=2"],
+        ]);
+    });
+
+    it("appendHeader() after setHeader() turns a single value into an array", () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        res.setHeader("Set-Cookie", "a=1");
+        res.appendHeader("Set-Cookie", "b=2");
+        expect(res.getHeader("set-cookie")).toEqual(["a=1", "b=2"]);
+    });
+
     it("json() sets content-type and ends with a JSON string", () => {
         const uwsRes = makeUwsRes();
         const res = new UWSResponse(uwsRes);

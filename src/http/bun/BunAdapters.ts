@@ -81,7 +81,7 @@ export class BunRequest implements HttpRequest {
  */
 export class BunResponse implements HttpResponse {
     private _statusCode: number = 200;
-    private _headers: Map<string, string> = new Map();
+    private _headers: Map<string, string | string[]> = new Map();
     private _headersSent: boolean = false;
     private _writableEnded: boolean = false;
     private _streaming: boolean = false;
@@ -137,12 +137,25 @@ export class BunResponse implements HttpResponse {
         return this;
     }
 
-    public setHeader(key: string, value: string | number): this {
-        this._headers.set(key.toLowerCase(), String(value));
+    public setHeader(key: string, value: string | number | string[]): this {
+        this._headers.set(key.toLowerCase(), Array.isArray(value) ? value.map(String) : String(value));
         return this;
     }
 
-    public getHeader(key: string): string | undefined {
+    public appendHeader(key: string, value: string | number): this {
+        const lowerKey = key.toLowerCase();
+        const existing = this._headers.get(lowerKey);
+        if (existing === undefined) {
+            this._headers.set(lowerKey, String(value));
+        } else if (Array.isArray(existing)) {
+            existing.push(String(value));
+        } else {
+            this._headers.set(lowerKey, [existing, String(value)]);
+        }
+        return this;
+    }
+
+    public getHeader(key: string): string | string[] | undefined {
         return this._headers.get(key.toLowerCase());
     }
 
@@ -284,7 +297,14 @@ export class BunResponse implements HttpResponse {
         for (const [key, value] of this._headers.entries()) {
             // Let Response compute content-length itself, same rationale as the uWS adapter.
             if (key === "content-length") continue;
-            headers.set(key, value);
+            // Fetch's Headers keeps repeated `set-cookie` entries distinct (Headers.getSetCookie())
+            // instead of comma-joining them like other headers, so append() is safe here for
+            // multi-value headers such as Set-Cookie set via appendHeader().
+            if (Array.isArray(value)) {
+                for (const v of value) headers.append(key, v);
+            } else {
+                headers.set(key, value);
+            }
         }
         return headers;
     }

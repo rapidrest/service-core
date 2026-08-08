@@ -81,6 +81,22 @@ describe("BunResponse Tests", () => {
         expect(res.getHeader("missing")).toBeUndefined();
     });
 
+    it("appendHeader() accumulates multiple values for the same key without clobbering", () => {
+        const res = new BunResponse(makeReq());
+        expect(res.appendHeader("Set-Cookie", "a=1")).toBe(res);
+        res.appendHeader("Set-Cookie", "b=2");
+        expect(res.getHeader("set-cookie")).toEqual(["a=1", "b=2"]);
+    });
+
+    it("appendHeader() writes multiple distinct Set-Cookie headers on the response", async () => {
+        const res = new BunResponse(makeReq());
+        res.appendHeader("Set-Cookie", "a=1");
+        res.appendHeader("Set-Cookie", "b=2");
+        res.end("body");
+        const response = await res.responseReady;
+        expect(response.headers.getSetCookie()).toEqual(["a=1", "b=2"]);
+    });
+
     it("json() sets content-type and resolves responseReady with a JSON body", async () => {
         const res = new BunResponse(makeReq());
         res.json({ ok: true });

@@ -23,10 +23,6 @@ function buildSessionCookie(mgr: SessionManager, sessionId: string): string {
  * response finishes. Cheap for requests that never touch sessions: no store round-trip unless a
  * valid session cookie was actually sent, and no `Set-Cookie`/store write for sessions that end up
  * empty.
- *
- * NOTE: both HTTP adapters currently back `res.setHeader()` with a single-value map, so only one
- * `Set-Cookie` header can be represented per response. This is the first feature to ever set
- * `Set-Cookie` — safe today, but a second cookie-writing feature would silently clobber this one.
  */
 export function createSessionMiddleware(mgr: SessionManager): RequestHandler {
     return async (req, res, next) => {
@@ -39,7 +35,7 @@ export function createSessionMiddleware(mgr: SessionManager): RequestHandler {
         if (!sessionId || !data) {
             sessionId = mgr.generateId();
             data = {};
-            res.setHeader("Set-Cookie", buildSessionCookie(mgr, sessionId));
+            res.appendHeader("Set-Cookie", buildSessionCookie(mgr, sessionId));
         }
 
         req.session = data;

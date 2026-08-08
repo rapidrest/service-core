@@ -28,6 +28,9 @@ function makeRes(): HttpResponse {
         setHeader() {
             return this;
         },
+        appendHeader() {
+            return this;
+        },
         getHeader() {
             return undefined;
         },
