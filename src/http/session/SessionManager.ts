@@ -58,7 +58,7 @@ export class SessionManager {
         }
 
         this.cookieName = this.options.cookieName ?? "rrst.sid";
-        this.ttlSeconds = this.options.ttl ?? 1800;
+        this.ttlSeconds = this.options.ttl ?? 3600;
         this.cookieSecure = this.options.cookieSecure ?? false;
         this.cookieSameSite = this.options.cookieSameSite ?? "Lax";
         this.cookiePath = this.options.cookiePath ?? "/";

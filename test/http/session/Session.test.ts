@@ -133,11 +133,11 @@ describe("SessionManager Tests", () => {
         await objectFactory.destroy();
     });
 
-    it("defaults ttlSeconds to 1800 when session.ttl is not configured.", async () => {
+    it("defaults ttlSeconds to 3600 when session.ttl is not configured.", async () => {
         const config = { get: (key: string) => (key === "session" ? { secret: "s" } : undefined) };
         const objectFactory = new ObjectFactory(config, new Logger());
         const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
-        expect(mgr.ttlSeconds).toBe(1800);
+        expect(mgr.ttlSeconds).toBe(3600);
         await objectFactory.destroy();
     });
 });
