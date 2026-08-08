@@ -248,7 +248,9 @@ export class ModelUtils {
                     case "gte":
                         return MoreThanOrEqual(value);
                     case "in": {
-                        const args: string[] = value.split(",");
+                        // Split the raw match text, not `value`: a comma-joined list like "1,5" can itself parse
+                        // as a valid `Date` above (e.g. "1,5" -> Jan 5), leaving `value` a Date with no `.split()`.
+                        const args: string[] = matches[2].split(",");
                         return In(args);
                     }
                     case "like":
@@ -260,8 +262,14 @@ export class ModelUtils {
                     case "ne":
                     case "not":
                         return Not(value);
+                    case "nin": {
+                        // See "in" above for why this splits `matches[2]` instead of `value`.
+                        const args: string[] = matches[2].split(",");
+                        return Not(In(args));
+                    }
                     case "range": {
-                        const args: string[] = value.split(",");
+                        // See "in" above for why this splits `matches[2]` instead of `value`.
+                        const args: string[] = matches[2].split(",");
                         if (args.length !== 2) {
                             const msg: string = StringUtils.findAndReplace(ApiErrorMessages.SEARCH_INVALID_RANGE, {
                                 value,
@@ -379,11 +387,14 @@ export class ModelUtils {
                     case "gte":
                         return { $gte: value };
                     case "in": {
-                        const args: string[] = value.split(",");
+                        // Split the raw match text, not `value`: a comma-joined list like "1,5" can itself parse
+                        // as a valid `Date` above (e.g. "1,5" -> Jan 5), leaving `value` a Date with no `.split()`.
+                        const args: string[] = matches[2].split(",");
                         return { $in: args };
                     }
                     case "nin": {
-                        const args: string[] = value.split(",");
+                        // See "in" above for why this splits `matches[2]` instead of `value`.
+                        const args: string[] = matches[2].split(",");
                         return { $nin: args };
                     }
                     case "like": {
@@ -402,7 +413,8 @@ export class ModelUtils {
                     case "not":
                         return { $not: value };
                     case "range": {
-                        const args: string[] = value.split(",");
+                        // See "in" above for why this splits `matches[2]` instead of `value`.
+                        const args: string[] = matches[2].split(",");
                         if (args.length !== 2) {
                             const msg: string = StringUtils.findAndReplace(ApiErrorMessages.SEARCH_INVALID_RANGE, {
                                 value,

@@ -26,6 +26,7 @@ function makeRoute(repoUtilsOverrides: any = {}) {
         create: vi.fn(async (obj: any) => obj),
         findOne: vi.fn(),
         count: vi.fn().mockResolvedValue(0),
+        exists: vi.fn().mockResolvedValue(0),
         find: vi.fn().mockResolvedValue([]),
         update: vi.fn(async (obj: any, existing: any) => ({ ...existing, ...obj })),
         delete: vi.fn(),
@@ -142,10 +143,10 @@ describe("ModelRoute.doExists", () => {
 
     it("resolves 'me' to the authenticated user's uid", async () => {
         const route = makeRoute();
-        route.repoUtils.count.mockResolvedValue(1);
+        route.repoUtils.exists.mockResolvedValue(1);
         const res = { status: vi.fn().mockReturnThis(), setHeader: vi.fn().mockReturnThis() };
         await route.doExists("me", { query: {}, res, user: { uid: "user-1" } });
-        expect(route.repoUtils.searchIdQuery).toHaveBeenCalledWith("user-1", undefined);
+        expect(route.repoUtils.exists).toHaveBeenCalledWith("user-1", expect.objectContaining({ user: { uid: "user-1" } }));
     });
 
     it("throws when 'me' is used without an authenticated user", async () => {

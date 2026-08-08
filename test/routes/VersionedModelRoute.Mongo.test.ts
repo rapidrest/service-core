@@ -205,6 +205,46 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             expect(count).toBe(3);
         });
 
+        it("Can test if document exists (latest version). [MongoDB]", async () => {
+            const user: User = (await createUser("David", "Tennant", 47, 3))[0];
+            const result = await request(server)
+                .head(`${baseUrl}/${user.uid}`)
+                .send();
+            expect(result.status).toBeGreaterThanOrEqual(200);
+            expect(result.status).toBeLessThan(300);
+            expect(result.headers).toHaveProperty("content-length");
+            expect(result.headers["content-length"]).toBe((1).toString());
+        });
+
+        it("Can test if a specific existing version exists. [MongoDB]", async () => {
+            const users: User[] = await createUser("David", "Tennant", 47, 5);
+            const result = await request(server)
+                .head(`${baseUrl}/${users[2].uid}?version=${users[2].version}`)
+                .send();
+            expect(result.status).toBeGreaterThanOrEqual(200);
+            expect(result.status).toBeLessThan(300);
+            expect(result.headers).toHaveProperty("content-length");
+            expect(result.headers["content-length"]).toBe((1).toString());
+        });
+
+        it("Cannot test if a non-existent version exists, even though the id itself exists. [MongoDB]", async () => {
+            // Regression test: exists() must scope its match by version, not just by id - otherwise a request
+            // for a version that was never created would incorrectly report the record as existing just
+            // because *some* version of that uid is present.
+            const user: User = (await createUser("David", "Tennant", 47, 3))[0];
+            const result = await request(server)
+                .head(`${baseUrl}/${user.uid}?version=999`)
+                .send();
+            expect(result.status).toBe(404);
+        });
+
+        it("Can test if document doesn't exist. [MongoDB]", async () => {
+            const result = await request(server)
+                .head(`${baseUrl}/${uuid.v4()}`)
+                .send();
+            expect(result.status).toBe(404);
+        });
+
         it("Can find document by id. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 3))[2];
             const result = await request(server).get(`${baseUrl}/${user.uid}`).send();

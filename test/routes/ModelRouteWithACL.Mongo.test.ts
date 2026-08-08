@@ -312,6 +312,76 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(acl).toBeDefined();
         });
 
+        it("Can test if document exists (admin). [MongoDB]", async () => {
+            const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
+                uid: uuid.v4(),
+                roles: config.get("trusted_roles"),
+                name: "admin",
+            });
+            const result = await request(server)
+                .head(basePath + "/" + user.uid)
+                .set("Authorization", `jwt ${token}`);
+            expect(result.status).toBeGreaterThanOrEqual(200);
+            expect(result.status).toBeLessThan(300);
+            expect(result.headers).toHaveProperty("content-length");
+            expect(result.headers["content-length"]).toBe((1).toString());
+        });
+
+        it("Can test if document exists (me). [MongoDB]", async () => {
+            const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
+                uid: user.uid,
+                name: user.name,
+                roles: [],
+            });
+            const result = await request(server)
+                .head(basePath + "/me")
+                .set("Authorization", `jwt ${token}`);
+            expect(result.status).toBeGreaterThanOrEqual(200);
+            expect(result.status).toBeLessThan(300);
+            expect(result.headers).toHaveProperty("content-length");
+            expect(result.headers["content-length"]).toBe((1).toString());
+        });
+
+        it("Can test if document exists (self). [MongoDB]", async () => {
+            const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
+                uid: user.uid,
+                name: user.name,
+                roles: [],
+            });
+            const result = await request(server)
+                .head(basePath + "/" + user.uid)
+                .set("Authorization", `jwt ${token}`);
+            expect(result.status).toBeGreaterThanOrEqual(200);
+            expect(result.status).toBeLessThan(300);
+            expect(result.headers).toHaveProperty("content-length");
+            expect(result.headers["content-length"]).toBe((1).toString());
+        });
+
+        it("Can test if document exists (other). [MongoDB]", async () => {
+            const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
+            const token = JWTUtils.createTokenSync(config.get("auth"), {
+                uid: uuid.v4(),
+                roles: [],
+                name: "other",
+            });
+            const result = await request(server)
+                .head(basePath + "/" + user.uid)
+                .set("Authorization", `jwt ${token}`);
+            expect(result.status).toBeGreaterThanOrEqual(200);
+            expect(result.status).toBeLessThan(300);
+            expect(result.headers).toHaveProperty("content-length");
+            expect(result.headers["content-length"]).toBe((1).toString());
+        });
+
+        it("Cannot test if document exists (anonymous). [MongoDB]", async () => {
+            const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
+            const result = await request(server).head(basePath + "/" + user.uid);
+            expect(result.status).toBe(403);
+        });
+
         it("Can find document by id (admin). [MongoDB]", async () => {
             const user: ProtectedUser = await createUser({ firstName: "David", lastName: "Tennant", age: 47 });
             const token = JWTUtils.createTokenSync(config.get("auth"), {

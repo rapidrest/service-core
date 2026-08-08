@@ -375,8 +375,11 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        const query: any = this.repoUtils.searchIdQuery(id, options.query.version);
-        const result: number = await this.repoUtils.count(query, { user: options.user, action: ACLAction.EXISTS });
+        const result: number = await this.repoUtils.exists(id, {
+            action: ACLAction.EXISTS,
+            version: options.params?.version || options.query?.version,
+            user: options.user,
+        });
         if (result > 0) {
             return options.res.status(200).setHeader("content-length", result);
         } else {

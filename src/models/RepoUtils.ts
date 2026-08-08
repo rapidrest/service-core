@@ -260,6 +260,61 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
+     * Determines whether an object with the given unique identifier (and, optionally, a specific version) exists
+     * in the datastore. Respects record-level ACLs the same way `count()` does.
+     *
+     * @param id The unique identifier of the object to check for.
+     * @param options The additional options to consider, such as `version` and the requesting `user`.
+     */
+    public async exists(id: string, options?: RepoFindOptions): Promise<number> {
+        if (!this.repo) {
+            throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
+        }
+
+        let count: number = 0;
+        const action: string = options?.action ?? ACLAction.EXISTS;
+
+        // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
+        // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
+        // on top of this, not a replacement for it.
+        if (this.aclUtils?.enabled && !options?.ignoreACL) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action))) {
+                throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+            }
+        }
+
+        const query: any = this.searchIdQuery(id, options?.version);
+
+        // Without an explicit version, `query` matches every historical row sharing this uid on a trackChanges
+        // entity - existence is still a yes/no question about the uid itself, so results are deduped by uid and
+        // the final count clamped to at most 1, rather than reporting the number of matching version rows.
+
+        // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
+        // individually and counted rather than delegating the count to the database.
+        if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
+            let uids: Set<string> = new Set();
+            if (this.repo instanceof MongoRepository) {
+                uids = new Set(await this.repo.distinct("uid", query));
+            } else {
+                (await this.repo.find(query)).forEach((obj: T) => uids.add(obj.uid));
+            }
+
+            for (const uid of uids) {
+                if (await this.aclUtils.hasPermission(options?.user, uid, action)) {
+                    count++;
+                    break;
+                }
+            }
+
+            return count;
+        }
+
+        count = await this.repo.count(query);
+
+        return Math.min(count, 1);
+    }
+
+    /**
      * Stores a new record of the provided object in the datastore. Performs pre-processing, permission checks against
      * the class ACL, cache seeding, telemetry recording and push notifications.
      *
@@ -580,7 +635,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         .toArray();
                 }
             } else {
-                results = await this.repo.find(searchQuery);
+                // `searchQuery.page` (set by `buildSearchQuerySQL`) isn't a TypeORM find option and is silently
+                // ignored by `repo.find()` - it must be translated to `skip` here, the same way the Mongo branch
+                // above translates `page` into its own `skip`, or every SQL page request returns page 0.
+                results = await this.repo.find({ ...searchQuery, skip: page * limit });
             }
 
             // Cache the results for future requests. Don't bother if there were no results.
@@ -661,6 +719,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         sort: { version: -1 },
                     })
                     .next();
+            } else if (this.modelClass.prototype instanceof BaseEntity) {
+                // Without an explicit version, `query` matches every row sharing this uid (all historical
+                // versions, for a trackChanges entity). Order by version desc so the newest one wins, the same
+                // way the Mongo branch above does - otherwise TypeORM's `findOne()` returns whichever matching
+                // row it encounters first, which isn't guaranteed to be the latest. `SimpleEntity` has no
+                // `version` column to order by, so this only applies to `BaseEntity` subclasses.
+                existing = await this.repo.findOne({ ...query, order: { version: "DESC" } });
             } else {
                 existing = await this.repo.findOne(query);
             }
