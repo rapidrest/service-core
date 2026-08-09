@@ -88,6 +88,23 @@ describe("BunResponse Tests", () => {
         expect(res.getHeader("set-cookie")).toEqual(["a=1", "b=2"]);
     });
 
+    it("setHeader() joins an array value into a comma-free multi-token string via map(String)", () => {
+        const res = new BunResponse(makeReq());
+        res.setHeader("x-multi", [1, 2, "three"] as any);
+        expect(res.getHeader("x-multi")).toEqual(["1", "2", "three"]);
+    });
+
+    it("appendHeader() accumulates a third value onto an already-array header", () => {
+        // The first call hits the `existing === undefined` branch and the second hits the
+        // `else` (existing is a plain string) branch, converting it to an array. This third call is
+        // the only way to exercise the `Array.isArray(existing)` branch that pushes onto it directly.
+        const res = new BunResponse(makeReq());
+        res.appendHeader("Set-Cookie", "a=1");
+        res.appendHeader("Set-Cookie", "b=2");
+        res.appendHeader("Set-Cookie", "c=3");
+        expect(res.getHeader("set-cookie")).toEqual(["a=1", "b=2", "c=3"]);
+    });
+
     it("appendHeader() writes multiple distinct Set-Cookie headers on the response", async () => {
         const res = new BunResponse(makeReq());
         res.appendHeader("Set-Cookie", "a=1");
@@ -348,6 +365,39 @@ describe("readBunBody Tests", () => {
                 message: ApiErrorMessages.PAYLOAD_TOO_LARGE,
             });
         }
+    });
+
+    it("does not reject via the fast path when Content-Length is present but under maxBodySize", async () => {
+        // The earlier 413 fast-path test only exercises `Number(declaredLength) > maxBodySize`
+        // being true; this covers the same guard's false side (declaredLength present, but within
+        // budget), which falls through to actually reading the body.
+        const rawReq = new Request("http://localhost/test", {
+            method: "POST",
+            body: "ok",
+            headers: { "content-length": "2", "content-type": "text/plain" },
+        });
+        const req = new BunRequest(rawReq, makeIpSource());
+        const result = await readBunBody(req, rawReq, 1000);
+        expect(result).toEqual({ ok: true });
+        expect(req.rawBody?.toString()).toBe("ok");
+    });
+
+    it("skips a falsy chunk value yielded by the reader without treating it as data", async () => {
+        // Bun/undici readers can in principle yield { done: false, value: undefined } before the
+        // final { done: true } marker; the `if (!value) continue;` guard exists to skip that without
+        // miscounting it toward the byte total or corrupting the concatenated body.
+        const stream = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                controller.enqueue(undefined);
+                controller.enqueue(new TextEncoder().encode("real"));
+                controller.close();
+            },
+        });
+        const rawReq = new Request("http://localhost/test", { method: "POST", body: stream, duplex: "half" } as any);
+        const req = new BunRequest(rawReq, makeIpSource());
+        const result = await readBunBody(req, rawReq);
+        expect(result).toEqual({ ok: true });
+        expect(req.rawBody?.toString()).toBe("real");
     });
 
     it("sets body/rawBody to undefined when there is no request body", async () => {

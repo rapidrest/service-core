@@ -358,10 +358,11 @@ describe("makeWsStubResponse Tests", () => {
         expect(res.writableEnded).toBe(false);
     });
 
-    it("status/setHeader/json/send are chainable/no-op", () => {
+    it("status/setHeader/appendHeader/json/send are chainable/no-op", () => {
         const res = makeWsStubResponse();
         expect(res.status(200)).toBe(res);
         expect(res.setHeader("x", "y")).toBe(res);
+        expect(res.appendHeader("x", "y")).toBe(res);
         expect(res.getHeader("x")).toBeUndefined();
         expect(res.json({})).toBeUndefined();
         expect(res.send("data")).toBeUndefined();

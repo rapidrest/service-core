@@ -185,11 +185,15 @@ describe("UWSResponse Tests", () => {
         const res = new UWSResponse(uwsRes);
         expect(res.appendHeader("Set-Cookie", "a=1")).toBe(res);
         res.appendHeader("Set-Cookie", "b=2");
-        expect(res.getHeader("set-cookie")).toEqual(["a=1", "b=2"]);
+        // A third call exercises the branch where `existing` is already an array (the second call only
+        // exercises turning a single value into an array).
+        res.appendHeader("Set-Cookie", "c=3");
+        expect(res.getHeader("set-cookie")).toEqual(["a=1", "b=2", "c=3"]);
         res.end();
         expect(uwsRes._calls.headers).toEqual([
             ["set-cookie", "a=1"],
             ["set-cookie", "b=2"],
+            ["set-cookie", "c=3"],
         ]);
     });
 
@@ -500,5 +504,39 @@ describe("readBody Tests", () => {
         const promise = readBody(uwsRes as any, req);
         uwsRes.fireData(Buffer.from("small"), true);
         await expect(promise).resolves.toBe(true);
+    });
+
+    it("settles with false instead of hanging forever when the client aborts mid-upload", async () => {
+        const uwsRes = makeUwsResForBody();
+        const req: any = { headers: {} };
+        let triggerAbort: (() => void) | undefined;
+        const res: any = {
+            onAbort: (cb: () => void) => {
+                triggerAbort = cb;
+            },
+        };
+        const promise = readBody(uwsRes as any, req, undefined, res);
+        // A chunk arrives, then the connection drops before the final `isLast` chunk ever comes.
+        uwsRes.fireData(Buffer.from("partial"), false);
+        expect(triggerAbort).toBeDefined();
+        triggerAbort?.();
+        await expect(promise).resolves.toBe(false);
+    });
+
+    it("ignores late data after an abort and does not resolve a second time", async () => {
+        const uwsRes = makeUwsResForBody();
+        const req: any = { headers: { "content-type": "application/json" } };
+        let triggerAbort: (() => void) | undefined;
+        const res: any = {
+            onAbort: (cb: () => void) => {
+                triggerAbort = cb;
+            },
+        };
+        const promise = readBody(uwsRes as any, req, undefined, res);
+        triggerAbort?.();
+        // uWS could theoretically still deliver a queued chunk right after onAborted fires; it must be ignored.
+        uwsRes.fireData(JSON.stringify({ a: 1 }), true);
+        await expect(promise).resolves.toBe(false);
+        expect(req.body).toBeUndefined();
     });
 });

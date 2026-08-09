@@ -81,6 +81,24 @@ describe("ConnectionManager Tests", () => {
         });
     });
 
+    describe("connect() duplicate model registration", () => {
+        it("throws when the same model class is claimed as an entity by two different datastores", async () => {
+            const manager = makeManager();
+            class MyModel {}
+            const models = new Map<string, any>([["MyModel", MyModel]]);
+
+            await expect(
+                manager.connect(
+                    {
+                        ds1: { type: "sqlite", database: ":memory:", host: "localhost", entities: ["MyModel"] },
+                        ds2: { type: "sqlite", database: ":memory:", host: "localhost", entities: ["MyModel"] },
+                    },
+                    models,
+                ),
+            ).rejects.toThrow("Model MyModel already defined as an entity for ds1");
+        });
+    });
+
     describe("disconnect()", () => {
         it("closes a connected MongoConnection and skips one that's already disconnected", async () => {
             const manager = makeManager();

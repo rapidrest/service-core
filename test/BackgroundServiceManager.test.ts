@@ -9,6 +9,69 @@ import MySecondService from "./server/jobs/MySecondService";
 import MyThirdService from "./server/jobs/MyThirdService";
 import { BackgroundService, ObjectFactory } from "../src";
 
+// Not discovered via ClassLoader (defined here rather than under test/server/jobs) so it doesn't get swept
+// into the `serviceClasses` map shared by the "start/stop multiple" test below.
+class RepeatStartService extends BackgroundService {
+    public static instantiations = 0;
+
+    public constructor() {
+        super();
+        RepeatStartService.instantiations++;
+    }
+
+    public get schedule(): string | undefined {
+        return "* * * * * *";
+    }
+
+    public async run(): Promise<void> {
+        // no-op
+    }
+
+    public async start(): Promise<void> {
+        // no-op
+    }
+
+    public async stop(): Promise<void> {
+        // no-op
+    }
+}
+
+class ThrowingRunService extends BackgroundService {
+    public get schedule(): string | undefined {
+        return "* * * * * *";
+    }
+
+    public run(): void {
+        throw new Error("run() always fails");
+    }
+
+    public async start(): Promise<void> {
+        // no-op
+    }
+
+    public async stop(): Promise<void> {
+        // no-op
+    }
+}
+
+class FailingStartService extends BackgroundService {
+    public get schedule(): string | undefined {
+        return undefined;
+    }
+
+    public async run(): Promise<void> {
+        // no-op
+    }
+
+    public async start(): Promise<void> {
+        throw new Error("start() always fails");
+    }
+
+    public async stop(): Promise<void> {
+        // no-op
+    }
+}
+
 vi.setConfig({ testTimeout: 10000 });
 
 describe("BackgroundServiceManager Tests", () => {
@@ -104,5 +167,60 @@ describe("BackgroundServiceManager Tests", () => {
                 resolve();
             }, 5000);
         });
+    });
+
+    it("Does not re-instantiate a scheduled service that has already been started.", async () => {
+        RepeatStartService.instantiations = 0;
+        const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {
+            args: [objectFactory, {}],
+        });
+
+        await manager.start("test.RepeatStartService", RepeatStartService);
+        expect(RepeatStartService.instantiations).toBe(1);
+
+        // A second start() call for the same, already-scheduled service name must return immediately
+        // without instantiating (or scheduling) it again.
+        await manager.start("test.RepeatStartService", RepeatStartService);
+        expect(RepeatStartService.instantiations).toBe(1);
+
+        await manager.stop("test.RepeatStartService");
+    });
+
+    it("Logs rather than crashes when a scheduled service's run() throws.", async () => {
+        const logger: any = Logger();
+        const errorSpy = vi.spyOn(logger, "error");
+
+        const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {
+            args: [objectFactory, {}],
+        });
+
+        await manager.start("test.ThrowingRunService", ThrowingRunService);
+
+        // Schedule fires once per second; wait long enough for at least one failing invocation.
+        await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+
+        expect(
+            errorSpy.mock.calls.some((call) =>
+                String(call[0]).includes("Background service 'test.ThrowingRunService' failed during a scheduled run."),
+            ),
+        ).toBe(true);
+
+        await manager.stop("test.ThrowingRunService");
+        errorSpy.mockRestore();
+    });
+
+    it("Logs rather than crashes when a service fails to start.", async () => {
+        const logger: any = Logger();
+        const errorSpy = vi.spyOn(logger, "error");
+
+        const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {
+            args: [objectFactory, {}],
+        });
+
+        await expect(manager.start("test.FailingStartService", FailingStartService)).resolves.toBeUndefined();
+
+        expect(errorSpy).toHaveBeenCalledWith("Failed to start service: test.FailingStartService");
+
+        errorSpy.mockRestore();
     });
 });

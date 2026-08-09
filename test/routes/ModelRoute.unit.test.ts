@@ -8,13 +8,20 @@ import "reflect-metadata";
 import { EventUtils, JWTUtils, Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
 import config from "../config";
-import { ModelRoute, RepoUtils } from "../../src";
+import { CRUDRoute, ModelRoute, RepoUtils } from "../../src";
 import User from "../server/models/User";
 
 class TestRoute extends ModelRoute<User> {
     protected repoUtilsClass = RepoUtils;
 }
 (TestRoute as any).modelClass = User;
+
+// validateUpdateBulk() is declared on CRUDRoute, one level below ModelRoute, so TestRoute above (which
+// extends ModelRoute directly) doesn't have it — this fixture is specifically for that method.
+class TestCRUDRoute extends CRUDRoute<User> {
+    protected repoUtilsClass = RepoUtils;
+}
+(TestCRUDRoute as any).modelClass = User;
 
 function makeRoute(repoUtilsOverrides: any = {}) {
     const route: any = new TestRoute();
@@ -307,5 +314,34 @@ describe("ModelRoute.doUpdateProperty", () => {
         await route.doUpdateProperty("user-1", "name", "new-name", {});
         const [updateObj] = route.repoUtils.update.mock.calls[0];
         expect(updateObj.version).toBe(5);
+    });
+});
+
+describe("CRUDRoute.validateUpdateBulk", () => {
+    it("throws BULK_UPDATE_FAILURE when at least one item in the batch fails validation", async () => {
+        const route: any = new TestCRUDRoute();
+        route.validateUpdate = vi
+            .fn()
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new Error("invalid item"));
+
+        await expect(
+            route.validateUpdateBulk(
+                [
+                    { uid: "user-1", name: "ok" },
+                    { uid: "user-2", name: "bad" },
+                ],
+                { uid: "actor" },
+            ),
+        ).rejects.toThrow();
+    });
+
+    it("does not throw when every item in the batch passes validation", async () => {
+        const route: any = new TestCRUDRoute();
+        route.validateUpdate = vi.fn().mockResolvedValue(undefined);
+
+        await expect(
+            route.validateUpdateBulk([{ uid: "user-1", name: "ok" }], { uid: "actor" }),
+        ).resolves.toBeUndefined();
     });
 });

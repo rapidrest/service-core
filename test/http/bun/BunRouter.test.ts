@@ -4,6 +4,7 @@
 import { ApiErrorMessages, ApiErrors } from "../../../src/ApiErrors";
 import { DEFAULT_MAX_BODY_SIZE } from "../../../src/http/uWS/Adapters";
 import { BunRouter } from "../../../src/http/bun/BunRouter";
+import { BunResponse } from "../../../src/http/bun/BunAdapters";
 import type { RequestHandler } from "../../../src/http/types";
 
 function makeServer(overrides: Partial<{ requestIP: any; upgrade: any }> = {}) {
@@ -230,6 +231,78 @@ describe("BunRouter HTTP dispatch", () => {
         await dispatch(router, new Request("http://localhost/static/images/a/b/c"));
         expect(captured).toEqual({ bucket: "images" });
     });
+
+    it("registers and matches an OPTIONS route", async () => {
+        const router = new BunRouter();
+        router.options("/x", jsonHandler({ ok: true }));
+        const res = await dispatch(router, new Request("http://localhost/x", { method: "OPTIONS" }));
+        expect(res!.status).toBe(200);
+        expect(await res!.json()).toEqual({ ok: true });
+    });
+
+    it("skips a non-wildcard candidate whose segment count differs from the request", async () => {
+        // matchSegments' length guard (routeSegments.length !== reqSegments.length) must reject the
+        // longer /a/b/c route as a candidate for a request to /a, leaving the shorter route to match.
+        const router = new BunRouter();
+        router.get("/a", jsonHandler({ which: "short" }));
+        router.get("/a/b/c", jsonHandler({ which: "long" }));
+        const res = await dispatch(router, new Request("http://localhost/a"));
+        expect(await res!.json()).toEqual({ which: "short" });
+    });
+
+    it("skips a wildcard candidate whose static prefix does not match the request", async () => {
+        // /other/* has content after its prefix (so it isn't skipped by hasContentAfterPrefix), but
+        // its prefix segment doesn't statically match "static" — matchSegments returns null for it
+        // and matchRoute must continue past it rather than picking it.
+        const router = new BunRouter();
+        router.get("/other/*", jsonHandler({ which: "other" }));
+        router.get("/static/*", jsonHandler({ which: "static" }));
+        const res = await dispatch(router, new Request("http://localhost/static/foo"));
+        expect(await res!.json()).toEqual({ which: "static" });
+    });
+
+    it("keeps the earlier, more specific wildcard match when a lower-specificity wildcard is registered afterward", async () => {
+        const router = new BunRouter();
+        router.get("/static/*", jsonHandler({ which: "static" }));
+        router.get("/*", jsonHandler({ which: "root" }));
+        const res = await dispatch(router, new Request("http://localhost/static/foo"));
+        expect(await res!.json()).toEqual({ which: "static" });
+    });
+
+    it("keeps the earlier, higher-scoring static match when a lower-scoring param route is registered afterward", async () => {
+        const router = new BunRouter();
+        router.get("/users/me", jsonHandler({ which: "static" }));
+        router.get("/users/:id", jsonHandler({ which: "param" }));
+        const res = await dispatch(router, new Request("http://localhost/users/me"));
+        expect(await res!.json()).toEqual({ which: "static" });
+    });
+
+    it("calls res.abortStream() when the middleware chain's own promise rejects (not a per-handler catch)", async () => {
+        // runChain() only rejects its returned promise when something throws OUTSIDE the
+        // per-handler try/catch — specifically the end-of-chain `res.status(500).json({ message:
+        // currentError?.message, ... })` fallback. A handler passing an error object whose `message`
+        // getter throws triggers exactly that, exercising fetchHandler's own `.catch()` (not the
+        // in-chain error handling already covered by the "throws after flushHeaders()" test above).
+        const router = new BunRouter();
+        const abortSpy = vi.spyOn(BunResponse.prototype, "abortStream");
+        const evilError: any = {};
+        Object.defineProperty(evilError, "message", {
+            get() {
+                throw new Error("getter boom");
+            },
+        });
+        router.get("/x", (_req, _res, next) => next(evilError));
+
+        // Deliberately not awaited: res.json() never actually gets called on this path (the throw
+        // happens while building its argument), so responseReady never resolves. We only need to
+        // observe that the rejection was funneled into abortStream() without crashing the process.
+        void (router as any).fetchHandler(new Request("http://localhost/x"), makeServer());
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(abortSpy).toHaveBeenCalledWith(expect.any(Error));
+        abortSpy.mockRestore();
+    });
 });
 
 describe("BunRouter WebSocket upgrade dispatch", () => {
@@ -315,6 +388,32 @@ describe("BunRouter WebSocket upgrade dispatch", () => {
         const result = await dispatch(router, upgradeRequest("/chat", "WebSocket"), server);
         expect(result).toBeUndefined();
         expect(server.upgrade).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips a ws candidate whose segment count differs from the request", async () => {
+        // matchWsRoute's matchSegments call returns null for /chat/deep/path against a 1-segment
+        // request; the loop must continue past it rather than accepting the null score.
+        const router = new BunRouter();
+        router.ws("/chat/deep/path", [(_req, _res, next) => next()]);
+        router.ws("/chat", [(_req, _res, next) => next()]);
+        const server = makeServer();
+        const result = await dispatch(router, upgradeRequest("/chat"), server);
+        expect(result).toBeUndefined();
+        expect(server.upgrade).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the earlier, higher-scoring ws match when a lower-scoring param route is registered afterward", async () => {
+        // Registration order: static (higher score) first, :param (lower score) second. matchWsRoute
+        // must not let the later, lower-scoring candidate override the already-found best match —
+        // exercising the `score > bestScore` false branch.
+        const router = new BunRouter();
+        router.ws("/rooms/general", [(_req, _res, next) => next()]);
+        router.ws("/rooms/:roomId", [(_req, _res, next) => next()]);
+        const server = makeServer();
+        await dispatch(router, upgradeRequest("/rooms/general"), server);
+        const opts = server.upgrade.mock.calls[0][1];
+        // An empty params object proves the static route matched, not the :roomId param route.
+        expect(opts.data.req.params).toEqual({});
     });
 });
 
@@ -560,6 +659,13 @@ describe("BunRouter.listen / close / SSL mapping (globalThis.Bun stubbed)", () =
 
         router.close();
         expect(stopSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to the requested port when the mocked server does not report its own port", async () => {
+        stubBun(vi.fn().mockReturnValue({ stop: vi.fn() })); // no .port property on the fake server
+        const router = new BunRouter();
+        await router.listen("127.0.0.1", 4321);
+        expect(router.listenPort).toBe(4321);
     });
 
     it("close() is a no-op when the router was never listening", () => {

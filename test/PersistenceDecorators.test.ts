@@ -90,9 +90,46 @@ describe("PersistenceDecorators Tests", () => {
             const version = columns.find((c) => c.propertyName === "version");
             expect(version?.options.nullable).toBeUndefined();
         });
+
+        it("falls back to the given value itself when passed a plain prototype object", () => {
+            // getColumnMetadata normally expects a class (constructor function) and reads `clazz.prototype`.
+            // Passing a prototype object directly (which has no `.prototype` of its own) exercises the `?? clazz`
+            // fallback.
+            const columns = getColumnMetadata(Employee.prototype);
+            expect(columns.find((c) => c.propertyName === "email")).toBeDefined();
+        });
+
+        it("skips hierarchy levels that declare no columns of their own", () => {
+            // A subclass that adds no new @Column properties has no own COLUMNS_KEY metadata at all, so
+            // collectOwnMetadata must tolerate an undefined list at that level while still walking further up
+            // to the ancestors that do declare columns.
+            class Manager extends Employee {}
+            const columns = getColumnMetadata(Manager);
+            expect(columns.find((c) => c.propertyName === "email")).toBeDefined();
+            expect(columns.find((c) => c.propertyName === "uid")).toBeDefined();
+        });
     });
 
     describe("Index metadata", () => {
+        it("accepts an options object as the sole argument for a property-level index", () => {
+            class WithOptionsOnly {
+                @Index({ unique: true })
+                @Column()
+                public code: string = "";
+            }
+            const indexes = getIndexMetadata(WithOptionsOnly);
+            const code = indexes.find((i) => i.columns[0] === "code");
+            expect(code).toBeDefined();
+            expect(code?.name).toBeUndefined();
+            expect(code?.options.unique).toBe(true);
+        });
+
+        it("throws when applied to a class with no property names", () => {
+            expect(() => Index({ unique: true })(class NoFields {})).toThrow(
+                /requires a list of property names/,
+            );
+        });
+
         it("collects property and class indexes across the hierarchy", () => {
             const indexes = getIndexMetadata(Person);
             const uid = indexes.find((i) => i.name === "uid");
@@ -123,6 +160,56 @@ describe("PersistenceDecorators Tests", () => {
             expect(email?.columns).toEqual(["email"]);
             expect(email?.options.unique).toBe(true);
         });
+
+        it("supports the @Unique shorthand with an unnamed compound field list", () => {
+            @Unique(["firstName", "lastName"])
+            class UnnamedCompound {
+                @Column({ nullable: true })
+                public firstName?: string;
+                @Column({ nullable: true })
+                public lastName?: string;
+            }
+            const indexes = getIndexMetadata(UnnamedCompound);
+            const compound = indexes.find((i) => i.columns.length === 2);
+            expect(compound).toBeDefined();
+            expect(compound?.name).toBeUndefined();
+            expect(compound?.columns).toEqual(["firstName", "lastName"]);
+            expect(compound?.options.unique).toBe(true);
+        });
+
+        it("supports the @Unique shorthand with a named compound field list", () => {
+            @Unique("full_name_idx", ["firstName", "lastName"])
+            class NamedCompound {
+                @Column({ nullable: true })
+                public firstName?: string;
+                @Column({ nullable: true })
+                public lastName?: string;
+            }
+            const indexes = getIndexMetadata(NamedCompound);
+            const compound = indexes.find((i) => i.name === "full_name_idx");
+            expect(compound).toBeDefined();
+            expect(compound?.columns).toEqual(["firstName", "lastName"]);
+            expect(compound?.options.unique).toBe(true);
+        });
+
+        it("supports the @Unique shorthand with no arguments on a property", () => {
+            class NoArgUnique {
+                @Unique()
+                @Column()
+                public code: string = "";
+            }
+            const indexes = getIndexMetadata(NoArgUnique);
+            const code = indexes.find((i) => i.columns[0] === "code");
+            expect(code).toBeDefined();
+            expect(code?.name).toBeUndefined();
+            expect(code?.options.unique).toBe(true);
+        });
+
+        it("falls back to the class prototype when a plain prototype object is passed to getIndexMetadata", () => {
+            const indexes = getIndexMetadata(Employee.prototype);
+            const email = indexes.find((i) => i.name === "email");
+            expect(email).toBeDefined();
+        });
     });
 
     describe("Entity naming", () => {
@@ -147,6 +234,13 @@ describe("PersistenceDecorators Tests", () => {
             class MyModelClass {}
             expect(getEntityName(MyModelClass)).toBe("my_model_class");
             expect(resolveCollectionName(MyModelClass)).toBe("my_model_class");
+        });
+
+        it("returns undefined when no class in the hierarchy declares @Entity", () => {
+            class GrandParentNoEntity {}
+            class ParentNoEntity extends GrandParentNoEntity {}
+            class ChildNoEntity extends ParentNoEntity {}
+            expect(getEntityName(ChildNoEntity)).toBeUndefined();
         });
     });
 });

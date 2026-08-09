@@ -33,3 +33,52 @@ describe("RepoUtils.init guard clauses", () => {
         await expect(repoUtils.init()).rejects.toThrow("No repository found for class User");
     });
 });
+
+// Every data-access method starts with the same `if (!this.repo) throw INTERNAL_ERROR` guard, for the case
+// where a caller uses a RepoUtils instance before init() has resolved its repository. The full Mongo/SQL
+// integration tests always have a healthy repo by the time these methods run, so this never triggers there.
+describe("RepoUtils methods without a configured repo", () => {
+    const expectInternalError = async (promise: Promise<any>) => {
+        await expect(promise).rejects.toMatchObject({ status: 500 });
+    };
+
+    it("count() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.count({}));
+    });
+
+    it("exists() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.exists("some-uid"));
+    });
+
+    it("create() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.create({}));
+    });
+
+    it("delete() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.delete("some-uid", {}));
+    });
+
+    it("find() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.find({}));
+    });
+
+    it("findOne() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.findOne("some-uid"));
+    });
+
+    it("truncate() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.truncate({}, {}));
+    });
+
+    it("update() throws", async () => {
+        const repoUtils: any = new RepoUtils(User);
+        await expectInternalError(repoUtils.update({}, {} as any));
+    });
+});
