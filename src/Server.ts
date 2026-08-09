@@ -496,7 +496,11 @@ export class Server {
                                 res.status(err.status);
                             }
 
-                            res.json(errs);
+                            // `Error.message` (and `ApiError`'s own `message`) is non-enumerable, so
+                            // `JSON.stringify` silently drops it unless each error is reconstructed with it
+                            // as an explicit own property first — the same fix the single-error branch below
+                            // already applies.
+                            res.json(errs.map((e) => (e ? { ...e, message: e.message } : e)));
                         } else {
                             if (!(err instanceof ApiError)) {
                                 const tmp: ApiError = new ApiError(

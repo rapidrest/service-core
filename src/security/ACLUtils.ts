@@ -256,6 +256,12 @@ export class ACLUtils {
             } catch (err) {
                 // It's okay if this fails because no document exists
             }
+
+            // Without this, a deleted ACL stays readable from the cache for up to `cacheTTL` seconds,
+            // so permissions the deletion was meant to revoke would continue to apply during that window.
+            if (this.cacheClient) {
+                await this.cacheClient.del(`${CACHE_BASE_KEY}.${uid}`);
+            }
         }
     }
 

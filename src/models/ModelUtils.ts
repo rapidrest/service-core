@@ -11,8 +11,10 @@ import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 
 const logger = Logger();
 const REGEX_QUERY_PARAM_VALUE: RegExp = new RegExp(/^([a-zA-Z]+)\((.*)\)$/, "i");
-const REGEX_RESERVED_QUERY_PARAMS: RegExp = new RegExp("(jwt_|oauth_|auth_|cache).*", "i");
-const REGEX_QUERY_LIMITS: RegExp = new RegExp("(limit|page|sort).*", "i");
+// Anchored at the start so these only match the intended reserved parameter names/prefixes and not any
+// field that merely contains one as a substring (e.g. "sortOrder", "rateLimit", "packageId", "homepage").
+const REGEX_RESERVED_QUERY_PARAMS: RegExp = new RegExp("^(jwt_|oauth_|auth_|cache).*", "i");
+const REGEX_QUERY_LIMITS: RegExp = new RegExp("^(limit|page|sort)$", "i");
 const REGEX_QUERY_SORT_STRING: RegExp = new RegExp(/^\{.*\}$/, "i");
 
 // Apparently calling JSON.stringify on RegExp returns an empty set. So the recommended way to
@@ -129,6 +131,11 @@ export class ModelUtils {
      * @param modelClass The class definition of the data model to build a search query for.
      * @param id The unique identifier to search for.
      * @param version The version number of the document to search for.
+     * @param includeDeleted Set to false to exclude soft-deleted `RecoverableBaseEntity` records from matching.
+     * Defaults to true (matches regardless of deleted state) to preserve existing lookup/validation behavior;
+     * callers that expose a record by id to an API client (e.g. `findOne`, `exists`) should pass false so a
+     * soft-deleted record doesn't remain fully readable/resurrectable, the same way `buildSearchQuery` already
+     * excludes deleted records by default for list-style queries.
      * @returns An object that can be passed to a TypeORM `find` function.
      */
     public static buildIdSearchQuery<T extends {}>(
@@ -136,11 +143,12 @@ export class ModelUtils {
         modelClass: any,
         id: any | any[],
         version?: number,
+        includeDeleted: boolean = true,
     ): any {
         if (repo instanceof MongoRepository) {
-            return ModelUtils.buildIdSearchQueryMongo(modelClass, id, version);
+            return ModelUtils.buildIdSearchQueryMongo(modelClass, id, version, includeDeleted);
         } else {
-            return ModelUtils.buildIdSearchQuerySQL(modelClass, id, version);
+            return ModelUtils.buildIdSearchQuerySQL(modelClass, id, version, includeDeleted);
         }
     }
 
@@ -153,8 +161,14 @@ export class ModelUtils {
      * @param version The version number of the document to search for.
      * @returns An object that can be passed to a TypeORM `find` function.
      */
-    public static buildIdSearchQuerySQL(modelClass: any, id: any | any[], version?: number): any {
+    public static buildIdSearchQuerySQL(
+        modelClass: any,
+        id: any | any[],
+        version?: number,
+        includeDeleted: boolean = true,
+    ): any {
         const props: string[] = ModelUtils.getIdPropertyNames(modelClass);
+        const isRecoverable: boolean = new modelClass() instanceof RecoverableBaseEntity;
 
         // Create the where in SQL syntax. We only care about one of the identifier field's matching.
         // e.g. WHERE idField1 = :idField1 OR idField2 = :idField2 ...
@@ -163,6 +177,11 @@ export class ModelUtils {
             const q: any = { [prop]: Array.isArray(id) ? ModelUtils.orm.In(id) : id };
             if (version !== undefined) {
                 q.version = version;
+            }
+            // By default we don't want an id-based lookup to match a soft-deleted recoverable object,
+            // matching the same default `buildSearchQuery` applies to list-style queries.
+            if (isRecoverable && !includeDeleted) {
+                q.deleted = false;
             }
             where.push(q);
         }
@@ -177,10 +196,17 @@ export class ModelUtils {
      * @param modelClass The class definition of the data model to build a search query for.
      * @param id The unique identifier to search for.
      * @param version The version number of the document to search for.
+     * @param includeDeleted Set to true to also match soft-deleted `RecoverableBaseEntity` records.
      * @returns An object that can be passed to a MongoDB `find` function.
      */
-    public static buildIdSearchQueryMongo(modelClass: any, id: any | any[], version?: number): any {
+    public static buildIdSearchQueryMongo(
+        modelClass: any,
+        id: any | any[],
+        version?: number,
+        includeDeleted: boolean = true,
+    ): any {
         const props: string[] = ModelUtils.getIdPropertyNames(modelClass);
+        const isRecoverable: boolean = new modelClass() instanceof RecoverableBaseEntity;
 
         // We want to performa case-insensitive search. We used to convert strings to RegEx but this is _very_
         // slow. Instead, we use case-insenstive indexes that are configured using the `collation` option. Now
@@ -203,6 +229,11 @@ export class ModelUtils {
             const q: any = { [prop]: Array.isArray(id) ? { $in: id } : id };
             if (version !== undefined) {
                 q.version = version;
+            }
+            // By default we don't want an id-based lookup to match a soft-deleted recoverable object,
+            // matching the same default `buildSearchQuery` applies to list-style queries.
+            if (isRecoverable && !includeDeleted) {
+                q.deleted = false;
             }
             query.push(q);
         }
@@ -725,6 +756,8 @@ export class ModelUtils {
 
                         if (typeof value === "number") {
                             sort[key] = value;
+                        } else if (typeof value !== "string") {
+                            return;
                         } else if (value.toUpperCase() === "ASC") {
                             sort[key] = 1;
                         } else if (value.toUpperCase() === "DESC") {

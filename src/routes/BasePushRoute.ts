@@ -150,8 +150,7 @@ export class BasePushRoute {
                         await redis.subscribe(...subd);
                         this.activeSubs.set(user.uid, origSubs.concat(subd));
                         sock.send(JSON.stringify({ id: message.id, type: "SUBSCRIBED", success: true, data: subd }));
-                    }
-                    if (message.type === "UNSUBSCRIBE") {
+                    } else if (message.type === "UNSUBSCRIBE") {
                         const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
                         await redis.unsubscribe(...subs);
                         for (const channel of subs) {

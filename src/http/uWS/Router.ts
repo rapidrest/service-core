@@ -51,7 +51,7 @@ function makeUWSHandler(
         // middleware/route logic against a truncated/oversized body.
         let bodyOk = true;
         try {
-            bodyOk = await readBody(uwsRes, req, maxBodySize);
+            bodyOk = await readBody(uwsRes, req, maxBodySize, res);
         } catch {
             // Non-fatal: body may not exist for GET/HEAD/OPTIONS
         }

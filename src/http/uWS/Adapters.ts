@@ -364,6 +364,7 @@ export function readBody(
     uwsRes: UWSHttpResponse,
     req: UWSRequest,
     maxBodySize: number = DEFAULT_MAX_BODY_SIZE,
+    res?: { onAbort: (callback: () => void) => void },
 ): Promise<boolean> {
     return new Promise((resolve) => {
         if (req.body !== undefined) {
@@ -381,8 +382,19 @@ export function readBody(
             req.body = parseBodyByContentType(raw, String(req.headers["content-type"] || ""));
         };
 
+        // If the client disconnects mid-upload, uWS never delivers a final `isLast` chunk to onData()
+        // below, which would otherwise leave this promise pending forever — permanently leaking the
+        // chunks buffered so far along with the request/response closures awaiting it. There's no
+        // response to send to an already-closed connection, so just settle immediately.
+        res?.onAbort(() => {
+            if (rejected) return;
+            rejected = true;
+            resolve(false);
+        });
+
         uwsRes.onData((chunk, isLast) => {
-            // The response has already been ended below; ignore any further chunks uWS may deliver.
+            // The response has already been ended below (or the connection aborted); ignore any
+            // further chunks uWS may deliver.
             if (rejected) return;
 
             totalLength += chunk.byteLength;

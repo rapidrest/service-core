@@ -283,7 +283,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        const query: any = this.searchIdQuery(id, options?.version);
+        // Excludes soft-deleted records — a deleted object shouldn't report as existing. `exists()` doesn't
+        // go through the shared per-id cache (see findOne()), so this can filter at the query level directly.
+        const query: any = this.searchIdQuery(id, options?.version, false);
 
         // Without an explicit version, `query` matches every historical row sharing this uid on a trackChanges
         // entity - existence is still a yes/no question about the uid itself, so results are deduped by uid and
@@ -478,6 +480,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         const isRecoverable: boolean = this.instantiateObject({}) instanceof RecoverableBaseEntity;
         const isPurge: boolean = isRecoverable ? options.purge || false : true;
+        // Delete must be able to target a record regardless of its current `deleted` state (the default) —
+        // otherwise an already soft-deleted record could never be purged, nor a soft-delete repeated idempotently.
         const query: any = ModelUtils.buildIdSearchQuery(
             this.repo,
             this.modelClass,
@@ -699,6 +703,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         let existing: T | null = null;
+        // Deliberately uses the default (includeDeleted: true) query shape here — this result is cached under
+        // a key shared with create()/update()/find()'s cache-seeding, all of which also use the default shape,
+        // so changing it here alone would desync this read from what those write. Soft-deleted records are
+        // filtered out below instead, after the cache/DB read, regardless of which one produced the result.
         const query: any = this.searchIdQuery(id, options?.version);
         if (!options?.skipCache && this.cacheClient && this.modelClass.cacheTTL) {
             // First attempt to retrieve the object from the cache
@@ -729,6 +737,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             } else {
                 existing = await this.repo.findOne(query);
             }
+        }
+
+        // Never surface a soft-deleted record via an id-based lookup — matches the default the list/search
+        // endpoint already applies. Checked here (after cache or DB resolution) rather than by filtering
+        // `deleted` into the query above, so a cache entry that predates a delete, or was seeded by an
+        // explicit `?deleted=true` list request, can't slip a "deleted" record past this check either.
+        if (existing && (existing as any).deleted === true) {
+            existing = null;
         }
 
         if (existing) {
@@ -852,13 +868,18 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      * Search for existing object based on passed in id and version and product uid.
      *
      * The result of this function is compatible with all `Repository.find()` functions.
+     *
+     * @param includeDeleted Set to false to exclude soft-deleted `RecoverableBaseEntity` records from matching.
+     * Defaults to true; pass false when the result is exposed directly to an API client (e.g. `findOne`, `exists`)
+     * so a soft-deleted record isn't returned as if it still existed.
      */
-    public searchIdQuery(id: string, version?: number | string): any {
+    public searchIdQuery(id: string, version?: number | string, includeDeleted: boolean = true): any {
         return ModelUtils.buildIdSearchQuery(
             this.repo,
             this.modelClass,
             id,
             typeof version === "string" ? parseInt(version, 10) : version,
+            includeDeleted,
         );
     }
 

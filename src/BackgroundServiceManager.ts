@@ -106,7 +106,12 @@ export class BackgroundServiceManager {
 
                 // Schedule the service for background execution
                 if (service.schedule) {
-                    this.jobs[serviceName] = schedule.scheduleJob(service.schedule, service.run.bind(service));
+                    const job: schedule.Job = schedule.scheduleJob(service.schedule, service.run.bind(service));
+                    job.on("error", (err: any) => {
+                        this.logger.error(`Background service '${serviceName}' failed during a scheduled run.`);
+                        this.logger.debug(err);
+                    });
+                    this.jobs[serviceName] = job;
                 } else {
                     // One time execution services are run once and then immediately cleaned up
                     await service.run();
