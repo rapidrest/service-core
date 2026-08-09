@@ -105,6 +105,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     /** The unique identifier of the default ACL for the model type. */
     public defaultACLUid: string = "";
 
+    /**
+     * Serializes concurrent `create()` calls that target the same identifier value(s), keyed by a canonical
+     * string of those values. See `create()` for why this is needed instead of a database-level constraint.
+     */
+    private createLocks: Map<string, Promise<void>> = new Map();
+
     @Logger
     protected logger: any;
 
@@ -200,6 +206,30 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      */
     public get baseCacheKey(): string {
         return "db.cache." + this.modelClass.name;
+    }
+
+    /**
+     * Runs `fn` exclusively with respect to any other call currently queued under the same `key` on this
+     * instance — a call only starts once every call queued ahead of it under that key has fully settled. Used
+     * by `create()` to make its identifier check-then-insert atomic per identifier value, in-process.
+     */
+    private async runExclusive<R>(key: string, fn: () => Promise<R>): Promise<R> {
+        const previous: Promise<void> = this.createLocks.get(key) ?? Promise.resolve();
+        const run: Promise<R> = previous.then(fn);
+        // A version of `run` that never rejects, so it's safe to chain the next caller off of it regardless of
+        // whether this call succeeds or fails.
+        const guard: Promise<void> = run.then(
+            () => undefined,
+            () => undefined,
+        );
+        this.createLocks.set(key, guard);
+        // Once nothing is queued behind this call anymore, drop its entry rather than leaking the map forever.
+        void guard.finally(() => {
+            if (this.createLocks.get(key) === guard) {
+                this.createLocks.delete(key);
+            }
+        });
+        return run;
     }
 
     public async count(query: any, options?: RepoFindOptions): Promise<number> {
@@ -355,60 +385,82 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         const newObj: T = obj instanceof clazz ? (obj as T) : this.instantiateObject(obj, clazz);
+        const repo: Repository<T> | MongoRepository<T> = this.repo;
 
         // Make sure an existing object doesn't already exist with the same identifiers
         const ids: any[] = [];
+        // Identifier values other than `uid` specifically, for use as the in-process lock key below. `uid`
+        // itself is excluded because it defaults to a fresh random value on every call that doesn't supply one
+        // explicitly (see BaseEntity.uid) — keying the lock on it would make concurrent calls for the very same
+        // non-uid identifier (e.g. the same `name`) hash to different lock keys, defeating the lock entirely.
+        const lockIds: any[] = [];
         const idProps: string[] = ModelUtils.getIdPropertyNames(clazz);
         for (const prop of idProps) {
             const val: string = (newObj as any)[prop];
             if (val) {
                 ids.push(val);
+                if (prop !== "uid") {
+                    lockIds.push(val);
+                }
             }
         }
-        const query: any = ModelUtils.buildIdSearchQuery(this.repo, clazz, ids, undefined);
-        const count: number = await this.repo.count(query);
-        if (!this.modelClass.trackChanges && count > 0) {
-            throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
-        } else if (
-            this.modelClass.trackChanges &&
-            count > 0 &&
-            this.modelClass.recordACL &&
-            this.aclUtils?.enabled &&
-            !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE))
-        ) {
-            // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new version).
-            // That's only legitimate for someone who already has update rights on the existing record — generic
-            // class-level CREATE permission isn't enough, otherwise any creator could inject a new "latest
-            // version" of another user's record. Deliberately NOT gated on `options.ignoreACL`: that flag exists
-            // so ModelRoute.doCreate() can skip re-doing the class-level CREATE check it already performed
-            // upstream — it says nothing about this distinct, additional per-record check, which has no
-            // upstream equivalent and must always run.
-            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-        }
 
-        // Override the date and version fields with their defaults
-        if (newObj instanceof BaseEntity) {
-            newObj.dateCreated = new Date();
-            newObj.dateModified = new Date();
-            newObj.version = count;
-        }
-
-        // Are we tracking multiple versions for this object?
-        if (newObj instanceof BaseEntity && this.modelClass.trackChanges === 0) {
-            (newObj as any).version = 0;
-        }
-
-        // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile since T
-        // extends BaseEntity.
+        // The count() pre-check and the save() below are not atomic on their own, so two concurrent create()
+        // calls for the same identifier can both pass the pre-check before either save() commits. Unlike
+        // `uid`, arbitrary identifier fields declared via @Identifier are deliberately NOT required to have a
+        // database-level unique constraint (e.g. child-entity collections and version-history records
+        // legitimately persist multiple documents that share a non-uid identifier value), so there's no
+        // general-purpose database guarantee to fall back on here. Instead, concurrent create() calls that
+        // target the same non-uid identifier value(s) are serialized in-process via runExclusive(): only one
+        // such call runs the check-then-insert at a time, so a later one's count() always observes an earlier
+        // one's completed save(). A model whose only identifier is `uid` needs no such lock — a genuine `uid`
+        // collision (e.g. a client-supplied duplicate) is already caught by the database's own unique index.
         let saved: any;
         try {
-            saved = await this.repo.save(newObj);
+            saved = await this.runExclusive(lockIds.length > 0 ? JSON.stringify(lockIds) : crypto.randomUUID(), async () => {
+                const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, ids, undefined);
+                const count: number = await repo.count(query);
+                if (!this.modelClass.trackChanges && count > 0) {
+                    throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+                } else if (
+                    this.modelClass.trackChanges &&
+                    count > 0 &&
+                    this.modelClass.recordACL &&
+                    this.aclUtils?.enabled &&
+                    !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE))
+                ) {
+                    // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new
+                    // version). That's only legitimate for someone who already has update rights on the
+                    // existing record — generic class-level CREATE permission isn't enough, otherwise any
+                    // creator could inject a new "latest version" of another user's record. Deliberately NOT
+                    // gated on `options.ignoreACL`: that flag exists so ModelRoute.doCreate() can skip
+                    // re-doing the class-level CREATE check it already performed upstream — it says nothing
+                    // about this distinct, additional per-record check, which has no upstream equivalent and
+                    // must always run.
+                    throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+                }
+
+                // Override the date and version fields with their defaults
+                if (newObj instanceof BaseEntity) {
+                    newObj.dateCreated = new Date();
+                    newObj.dateModified = new Date();
+                    newObj.version = count;
+                }
+
+                // Are we tracking multiple versions for this object?
+                if (newObj instanceof BaseEntity && this.modelClass.trackChanges === 0) {
+                    (newObj as any).version = 0;
+                }
+
+                // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile
+                // since T extends BaseEntity.
+                return await repo.save(newObj);
+            });
         } catch (err: any) {
-            // The count() check above is only a fast-path pre-check — it's inherently racy, since another
-            // concurrent create() for the same identifier can pass it before this save() commits. The real
-            // guarantee comes from BaseMongoEntity's unique (uid, version) index (see its own comment):
-            // when two creates race past the count() check, the database itself rejects the loser here with
-            // a duplicate-key error, which we translate to the same error the pre-check reports.
+            // A duplicate-key error can still legitimately occur here for identifier fields that DO have a
+            // database-level unique constraint (namely `uid`, via BaseMongoEntity's (uid, version) index) —
+            // e.g. a client explicitly supplying a `uid` that collides with an existing record. Translate that
+            // the same way the pre-check above reports it.
             if (err?.code === 11000) {
                 throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
             }
