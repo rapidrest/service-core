@@ -348,10 +348,14 @@ export function Response(target: any, propertyKey: string, index: number) {
  * window. Default is `-1`.
  */
 export function RequiresElevation(lastStart: number = -1) {
-    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        let route: any = getRouteMetadata(target, propertyKey);
-        route.requiresElevation = lastStart;
-        Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+    return function (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
+        if (propertyKey) {
+            let route: any = getRouteMetadata(target, propertyKey);
+            route.requiresElevation = lastStart;
+            Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+        } else {
+            Reflect.defineMetadata("rrst:requiresElevation", lastStart, target.prototype);
+        }
     };
 }
 

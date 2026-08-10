@@ -141,7 +141,7 @@ describe("RouteDecorators Tests", () => {
     });
 
     describe("@RequiresElevation", () => {
-        it("set requiresElevation to true", () => {
+        it("set requiresElevation to -1 for decorated method", () => {
             class Foo {
                 @RequiresElevation()
                 public handler(): void {
@@ -150,6 +150,39 @@ describe("RouteDecorators Tests", () => {
             }
             const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
             expect(route.requiresElevation).toBe(-1);
+        });
+
+        it("set requiresElevation to 60 for decorated method", () => {
+            class Foo {
+                @RequiresElevation(60)
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.requiresElevation).toBe(60);
+        });
+
+        it("set requiresElevation to -1 for decorated class", () => {
+            @RequiresElevation()
+            class Foo {
+                public handler(): void {
+                    return;
+                }
+            }
+            const requiresElevation: any = Reflect.getMetadata("rrst:requiresElevation", Foo.prototype);
+            expect(requiresElevation).toBe(-1);
+        });
+
+        it("set requiresElevation to 60 for decorated class", () => {
+            @RequiresElevation(60)
+            class Foo {
+                public handler(): void {
+                    return;
+                }
+            }
+            const requiresElevation: any = Reflect.getMetadata("rrst:requiresElevation", Foo.prototype);
+            expect(requiresElevation).toBe(60);
         });
     });
 

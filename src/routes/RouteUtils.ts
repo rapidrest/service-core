@@ -236,16 +236,10 @@ export class RouteUtils {
             let metadata: any = Reflect.getMetadata("rrst:route", route, key) || {};
             if (value && metadata) {
                 let { authRequired } = metadata;
-                const {
-                    after,
-                    before,
-                    methods,
-                    requiredRoles,
-                    requiredScopes,
-                    requiresElevation,
-                    requiresTrustedRole,
-                    validator,
-                } = metadata;
+                const { after, before, methods, requiredRoles, requiredScopes, requiresTrustedRole, validator } =
+                    metadata;
+                const requiresElevation =
+                    metadata.requiresElevation ?? Reflect.getMetadata("rrst:requiresElevation", route);
                 let { authStrategies } = metadata;
                 let verbMap: Map<string, string> = methods as Map<string, string>;
 
