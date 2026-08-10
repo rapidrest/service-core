@@ -343,6 +343,19 @@ export function Response(target: any, propertyKey: string, index: number) {
 }
 
 /**
+ * Indicates that elevated user permissions is required to perform the action. Optionally, set a `lastStart` which is the number
+ * of seconds that the user has most recently confirmed elevation. A negative value indicates until the end of the elevated
+ * window. Default is `-1`.
+ */
+export function RequiresElevation(lastStart: number = -1) {
+    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+        let route: any = getRouteMetadata(target, propertyKey);
+        route.requiresElevation = lastStart;
+        Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+    };
+}
+
+/**
  * Indicates that the client must be an authenticated user with at least one of the specified role(s) to process the
  * request.
  *
@@ -369,6 +382,18 @@ export function RequiresScope(scopes: string | string[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         let route: any = getRouteMetadata(target, propertyKey);
         route.requiredScopes = Array.isArray(scopes) ? scopes : [scopes];
+        Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+    };
+}
+
+/**
+ * Indicates that the client must be an authenticated user with at least one trusted role(s) to process the
+ * request.
+ */
+export function RequiresTrustedRole() {
+    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+        let route: any = getRouteMetadata(target, propertyKey);
+        route.requiresTrustedRole = true;
         Reflect.defineMetadata("rrst:route", route, target, propertyKey);
     };
 }

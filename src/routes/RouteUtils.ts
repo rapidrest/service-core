@@ -32,6 +32,39 @@ export class RouteUtils {
     @Logger
     private logger?: any;
 
+    @Config("trusted_roles", ["admin"])
+    protected trustedRoles: string[] = ["admin"];
+
+    /**
+     * Creates a middleware function that checks if the user has elevated privileges and if not
+     * throws the `AUTH_REQUIRES_ELEVATION` error.
+     */
+    public checkElevation(lastStart: number = -1): RequestHandler {
+        return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+            if (!req.user) {
+                return next(new ApiError(ApiErrors.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED));
+            }
+
+            const err: ApiError = new ApiError(
+                ApiErrors.AUTH_REQUIRES_ELEVATION,
+                403,
+                ApiErrorMessages.AUTH_REQUIRES_ELEVATION,
+            );
+
+            // Does the user have elevated privs?
+            if (req.user.elevated && req.user.elevated > 0) {
+                // Is the user's elevated privs within the specified window?
+                if (lastStart > 0 && Date.now() - req.user.elevated >= lastStart * 1000) {
+                    return next(err);
+                }
+
+                return next();
+            }
+
+            return next(err);
+        };
+    }
+
     /**
      * Creates a middleware function that verifies the incoming request is from a valid user with at least
      * one of the specified roles.
@@ -203,7 +236,16 @@ export class RouteUtils {
             let metadata: any = Reflect.getMetadata("rrst:route", route, key) || {};
             if (value && metadata) {
                 let { authRequired } = metadata;
-                const { after, before, methods, requiredRoles, requiredScopes, validator } = metadata;
+                const {
+                    after,
+                    before,
+                    methods,
+                    requiredRoles,
+                    requiredScopes,
+                    requiresElevation,
+                    requiresTrustedRole,
+                    validator,
+                } = metadata;
                 let { authStrategies } = metadata;
                 let verbMap: Map<string, string> = methods as Map<string, string>;
 
@@ -226,17 +268,24 @@ export class RouteUtils {
                 // 1. Auth Strategies
                 // 2. Required Roles
                 // 3. Required Scopes
-                // 4. Required Permissions (Path Matching)
-                // 5. Validator Function
-                // 6. Before Functions
-                // 7. Decorated Function
-                // 8. After Functions
+                // 4. Requires Elevation
+                // 5. Required Permissions (Path Matching)
+                // 6. Validator Function
+                // 7. Before Functions
+                // 8. Decorated Function
+                // 9. After Functions
                 let middleware: Array<RequestHandler> = new Array();
+                if (requiresTrustedRole) {
+                    middleware.push(this.checkRequiredRoles(this.trustedRoles));
+                }
                 if (requiredRoles) {
                     middleware.push(this.checkRequiredRoles(requiredRoles));
                 }
                 if (requiredScopes) {
                     middleware.push(this.checkRequiredScopes(requiredScopes));
+                }
+                if (requiresElevation) {
+                    middleware.push(this.checkElevation(requiresElevation));
                 }
                 if (this.aclUtils?.enabled) {
                     const aclUid: string | undefined = acl?.uid || defaultAcl?.uid;

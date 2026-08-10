@@ -131,7 +131,7 @@ export class AuthMiddleware {
     public authWebSocket(required: boolean): RequestHandler {
         return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
             const sock: any = (req as RequestWS).websocket || req.socket;
-            const user: JWTUser | undefined = req.user as JWTUser;
+            const user: JWTUser | undefined = req.user;
 
             // Pre-upgrade auth already set req.user — no LOGIN handshake needed
             if (user && user.uid) {

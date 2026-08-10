@@ -1,6 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
+import { JWTUser } from "@rapidrest/core";
 
 /**
  * Framework-agnostic HTTP request interface. Mirrors the Express `Request` surface used throughout
@@ -26,7 +27,7 @@ export interface HttpRequest {
     /** Minimal socket interface; populated with remote address for IP extraction. */
     socket: { remoteAddress?: string };
     /** Set by JWT auth middleware after successful token verification. */
-    user?: any;
+    user?: JWTUser;
     /** Full decoded JWT payload, set by JWT auth middleware. */
     authPayload?: any;
     /** Raw JWT token string, set by JWT auth middleware. */

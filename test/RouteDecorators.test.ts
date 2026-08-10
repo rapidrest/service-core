@@ -9,8 +9,10 @@ import {
     Method,
     Options,
     Patch,
+    RequiresElevation,
     RequiresRole,
     RequiresScope,
+    RequiresTrustedRole,
 } from "../src/decorators/RouteDecorators";
 
 describe("RouteDecorators Tests", () => {
@@ -138,6 +140,19 @@ describe("RouteDecorators Tests", () => {
         });
     });
 
+    describe("@RequiresElevation", () => {
+        it("set requiresElevation to true", () => {
+            class Foo {
+                @RequiresElevation()
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.requiresElevation).toBe(-1);
+        });
+    });
+
     describe("@RequiresRole", () => {
         it("accepts an array of roles", () => {
             class Foo {
@@ -161,6 +176,19 @@ describe("RouteDecorators Tests", () => {
             }
             const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
             expect(route.requiredScopes).toEqual(["read", "write"]);
+        });
+    });
+
+    describe("@RequiresTrustedRole", () => {
+        it("set requiresTrustedRole to true", () => {
+            class Foo {
+                @RequiresTrustedRole()
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.requiresTrustedRole).toBeTruthy();
         });
     });
 });

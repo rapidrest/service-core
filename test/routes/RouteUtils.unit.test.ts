@@ -13,6 +13,7 @@ import {
     Header,
     Protect,
     Query,
+    RequiresElevation,
     RequiresRole,
     RequiresScope,
     Route,
@@ -22,9 +23,11 @@ import {
 
 function makeApp() {
     const registered: Record<string, any> = {};
-    const verbStub = (verb: string) => (path: string, ...handlers: any[]) => {
-        registered[`${verb} ${path}`] = handlers;
-    };
+    const verbStub =
+        (verb: string) =>
+        (path: string, ...handlers: any[]) => {
+            registered[`${verb} ${path}`] = handlers;
+        };
     return {
         get: verbStub("get"),
         post: verbStub("post"),
@@ -62,6 +65,48 @@ function makeRes(): any {
         send: vi.fn().mockReturnThis(),
     };
 }
+
+describe("RouteUtils.checkElevation", () => {
+    it("calls next() when the user is elevated", () => {
+        const routeUtils = new RouteUtils();
+        const handler = routeUtils.checkElevation();
+        const next = vi.fn();
+        handler(makeReq({ user: { uid: "u1", elevated: Date.now() - 1000 } }), makeRes(), next);
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    it("calls next() when the user is elevated within a valid start window", () => {
+        const routeUtils = new RouteUtils();
+        const handler = routeUtils.checkElevation(60);
+        const next = vi.fn();
+        handler(makeReq({ user: { uid: "u1", elevated: Date.now() } }), makeRes(), next);
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    it("calls next(err) when the user's elevated value is undefined", () => {
+        const routeUtils = new RouteUtils();
+        const handler = routeUtils.checkElevation();
+        const next = vi.fn();
+        handler(makeReq({ user: { uid: "u1" } }), makeRes(), next);
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it("calls next(err) when the user's elevated value is invalid", () => {
+        const routeUtils = new RouteUtils();
+        const handler = routeUtils.checkElevation();
+        const next = vi.fn();
+        handler(makeReq({ user: { uid: "u1", elevated: -1 } }), makeRes(), next);
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it("calls next(err) when the user's elevated value is outside the start window", () => {
+        const routeUtils = new RouteUtils();
+        const handler = routeUtils.checkElevation(60);
+        const next = vi.fn();
+        handler(makeReq({ user: { uid: "u1", elevated: Date.now() - 61000 } }), makeRes(), next);
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+});
 
 describe("RouteUtils.checkRequiredPerms", () => {
     it("calls next() immediately when ACL enforcement is disabled", async () => {
@@ -195,6 +240,12 @@ describe("RouteUtils.wrapMiddleware argument resolution", () => {
             return { ok: true };
         }
 
+        @RequiresElevation()
+        @Get("/elevation")
+        public withElevation() {
+            return { ok: true };
+        }
+
         @RequiresRole("admin")
         @Get("/roles")
         public withRoles() {
@@ -288,7 +339,7 @@ describe("RouteUtils.registerRoute", () => {
         }
         const routeUtils = new RouteUtils();
         await expect(routeUtils.registerRoute(makeApp(), new NoPathRoute())).rejects.toThrow(
-            "Route must specify a path"
+            "Route must specify a path",
         );
     });
 
@@ -398,6 +449,22 @@ describe("RouteUtils.registerRoute", () => {
         const app = makeApp();
         await routeUtils.registerRoute(app, new ScopedRoute());
         expect(app._registered["get /scoped"]).toBeDefined();
+    });
+
+    it("registers requires-elevation middleware when @RequiresElevation is present", async () => {
+        @Route("/elevated")
+        class ElevatedRoute {
+            @RequiresElevation()
+            @Get()
+            public find() {
+                return {};
+            }
+        }
+        const routeUtils = new RouteUtils();
+        (routeUtils as any).logger = makeLogger();
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new ElevatedRoute());
+        expect(app._registered["get /elevated"]).toBeDefined();
     });
 
     it("rejects with 401 when authentication is required and fails", async () => {
