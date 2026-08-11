@@ -278,7 +278,7 @@ export class RouteUtils {
                 if (requiredScopes) {
                     middleware.push(this.checkRequiredScopes(requiredScopes));
                 }
-                if (requiresElevation) {
+                if (requiresElevation !== undefined) {
                     middleware.push(this.checkElevation(requiresElevation));
                 }
                 if (this.aclUtils?.enabled) {
@@ -333,15 +333,16 @@ export class RouteUtils {
                                 return {};
                             };
 
-                            if (this.authMiddleware) {
-                                middleware.unshift(this.authMiddleware.authWebSocket(authRequired));
-                            }
-
-                            // Set authRequired to false since we enforce it in the authWebSocket function
-                            authRequired = false;
+                            // Build a per-path copy of the middleware chain. `middleware` is shared across
+                            // every verb/basePath combination for this decorated method (and, once
+                            // registered, held by reference by the router), so mutating it in place here
+                            // would corrupt other registrations sharing the same array.
+                            const wsMiddleware: Array<RequestHandler> = this.authMiddleware
+                                ? [this.authMiddleware.authWebSocket(authRequired), ...middleware]
+                                : [...middleware];
 
                             // Register with the HttpRouter's ws() method; trailing slash handled internally
-                            app.ws(path, middleware, undefined, upgradeAuth);
+                            app.ws(path, wsMiddleware, undefined, upgradeAuth);
 
                             // Update our OpenAPI spec — WebSocket upgrade is a GET request
                             this.apiSpec.addRoute(key, path, "get", metadata, docs, route, true);

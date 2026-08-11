@@ -239,17 +239,20 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         let count: number = 0;
         const action: string = options?.action ?? ACLAction.COUNT;
+        // Request-scoped so the class-level check below and the per-record loop further down share
+        // a single cache instead of each record paying a separate Redis/DB round trip.
+        const reqCache: Map<string, AccessControlList | undefined> = new Map();
 
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
         // on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action))) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, reqCache))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
 
-        const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options);
+        const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options?.user);
 
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
@@ -265,13 +268,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 (await this.repo.find(searchQuery)).forEach((obj: T) => uids.push(obj.uid));
             }
 
-            for (const uid of uids) {
-                if (await this.aclUtils.hasPermission(options?.user, uid, action)) {
-                    count++;
-                }
-            }
-
-            return count;
+            const permitted: boolean[] = await Promise.all(
+                uids.map((uid) => this.aclUtils!.hasPermission(options?.user, uid, action, reqCache)),
+            );
+            return permitted.filter(Boolean).length;
         }
 
         if (this.repo instanceof MongoRepository) {
@@ -675,7 +675,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // If the query wasn't cached retrieve from the database
         if (results.length === 0) {
-            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options);
+            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options?.user);
 
             if (this.repo instanceof MongoRepository) {
                 const skip: number = page * limit;
@@ -940,16 +940,20 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
+        // Request-scoped so the class-level check below and the per-record loop further down share
+        // a single cache instead of each record paying a separate Redis/DB round trip.
+        const reqCache: Map<string, AccessControlList | undefined> = new Map();
+
         // Check user permissions. Don't check if record-level ACLs are used as this will be done
         // per record later.
         if (this.aclUtils?.enabled && !options.ignoreACL && !this.modelClass.recordACL) {
-            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.TRUNCATE))) {
+            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.TRUNCATE, reqCache))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
 
         try {
-            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options);
+            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options?.user);
             let uids: Array<string> = [];
             if (this.repo instanceof MongoRepository) {
                 if (Array.isArray(searchQuery)) {
@@ -968,13 +972,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // each one. We will remove any from our list that the user does not have permission to
                 // truncate.
                 if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-                    finalUids = [];
-                    for (const uid of uids) {
-                        if (!options.ignoreACL) {
-                            if (await this.aclUtils.hasPermission(options.user, uid, ACLAction.TRUNCATE)) {
-                                finalUids.push(uid);
-                            }
-                        }
+                    if (options.ignoreACL) {
+                        finalUids = [];
+                    } else {
+                        const permitted: boolean[] = await Promise.all(
+                            uids.map((uid) => this.aclUtils!.hasPermission(options.user, uid, ACLAction.TRUNCATE, reqCache)),
+                        );
+                        finalUids = uids.filter((_uid, i) => permitted[i]);
                     }
                 }
 

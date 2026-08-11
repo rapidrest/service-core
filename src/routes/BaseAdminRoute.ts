@@ -4,7 +4,16 @@
 import { ApiError, ObjectDecorators, UserUtils, type JWTUser } from "@rapidrest/core";
 import { Redis, ScanStream } from "ioredis";
 import Transport from "winston-transport";
-import { Auth, ContentType, Get, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
+import {
+    Auth,
+    ContentType,
+    Get,
+    RequiresElevation,
+    RequiresTrustedRole,
+    Socket,
+    User,
+    WebSocket,
+} from "../decorators/RouteDecorators.js";
 import { RedisConnection } from "../decorators/DatabaseDecorators.js";
 import { type IWebSocketShim } from "../http/IWebSocketShim.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
@@ -36,7 +45,7 @@ export class RedisTransport extends Transport {
 
 /**
  * The `BaseAdminRoute` class provides a base set of endpoints that gives trusted users the ability to perform common adminstrative actions
- * with the server.
+ * with the server. Note that this route class requires elevated user privileges to perform any action.
  *
  * Exposed endpoints:
  *
@@ -62,6 +71,7 @@ export class RedisTransport extends Transport {
  * @author Jean-Philippe Steinmetz
  */
 @Summary("Admin routes supporting cache-clearing, restarting, logs and release notes")
+@RequiresElevation()
 export class BaseAdminRoute {
     /** A map of user uid's to active sockets. */
     protected activeSockets: Map<string, any[]> = new Map();
@@ -139,6 +149,7 @@ export class BaseAdminRoute {
     @Auth(["jwt"])
     @Get("/clear-cache")
     @Returns([null])
+    @RequiresTrustedRole()
     public async clearCache(@User user?: JWTUser): Promise<void> {
         if (!user || !UserUtils.hasRoles(user, this.trustedRoles)) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
@@ -170,6 +181,7 @@ export class BaseAdminRoute {
     @Description("Establishes a connection to the live log socket.")
     @Auth(["jwt"])
     @WebSocket("/logs")
+    @RequiresTrustedRole()
     public async logs(@Socket socket: IWebSocketShim, @User user: JWTUser): Promise<void> {
         if (!UserUtils.hasRoles(user, this.trustedRoles)) {
             socket.close(1002, ApiErrors.AUTH_PERMISSION_FAILURE);
@@ -240,6 +252,7 @@ export class BaseAdminRoute {
     @Get("/release-notes")
     @ContentType("text/x-rst")
     @Returns([String])
+    @RequiresTrustedRole()
     public getReleaseNotes(@User user?: JWTUser): string | undefined {
         if (user && user.uid && UserUtils.hasRoles(user, this.trustedRoles)) {
             return this.releaseNotes;
@@ -253,6 +266,7 @@ export class BaseAdminRoute {
     @Auth(["jwt"])
     @Get("/restart")
     @Returns([null])
+    @RequiresTrustedRole()
     public restart(@User user?: JWTUser): void {
         if (!user || !UserUtils.hasRoles(user, this.trustedRoles)) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);

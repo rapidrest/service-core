@@ -434,6 +434,10 @@ export class ACLUtils {
                     // Copy over the new records from code
                     existing.records = defaultAcl.records;
                     defaultAcl = existing;
+
+                    // The user-defined override record was already created on a previous run. Look it
+                    // up so callers still receive a valid ACL to register routes against instead of `null`.
+                    result = (await this.findACL(acl.uid)) ?? null;
                 } else {
                     // Create the user-defined override record
                     result = await this.saveACL({

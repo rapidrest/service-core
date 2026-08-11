@@ -35,6 +35,14 @@ export class ConnectionManager {
     }
 
     /**
+     * Redacts the userinfo (credentials) portion of a connection URI for safe logging, regardless of
+     * whether the URI came from a `url` config field or was built from separate username/password fields.
+     */
+    private redactUri(uri: string): string {
+        return uri.replace(/:\/\/[^@/]+@/, "://****@");
+    }
+
+    /**
      * Dynamically imports the given optional peer dependency, throwing a helpful error if it is not installed.
      *
      * @param pkg The name of the package to import.
@@ -76,7 +84,7 @@ export class ConnectionManager {
                 datastore.name = name;
                 const url: string = this.buildConnectionUri(datastore);
 
-                this.logger.info(`Connecting to database ${name} [${url.replace(datastore.username, "****").replace(datastore.password, "****")}]...`);
+                this.logger.info(`Connecting to database ${name} [${this.redactUri(url)}]...`);
 
                 if (datastore.type === "redis") {
                     connection = new Redis(url);
