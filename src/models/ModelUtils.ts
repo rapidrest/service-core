@@ -788,7 +788,9 @@ export class ModelUtils {
                     validSubQueryResult && orResults.push(validSubQueryResult);
                 }
 
-                queries[0] = { $or: orResults };
+                // Merge into whatever conditions earlier keys (including the injected soft-delete filter)
+                // already placed on queries[0] — replacing it outright would silently discard them.
+                queries[0] = { ...queries[0], $or: orResults };
 
                 continue;
             }

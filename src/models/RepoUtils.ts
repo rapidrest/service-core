@@ -510,6 +510,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             await this.aclUtils.saveACL(acl);
         }
 
+        // Process the result to remove any properties that have been scoped with @RequiresScope that the user
+        // does not have access to. Done after caching (the cache must retain the full object for other
+        // requests) but before the result is returned or broadcast to push subscribers.
+        ObjectUtils.deleteScopedProps(result, options?.user, this.modelClass);
+
         if (!options?.skipPush) {
             let channels: string[] = [result.uid].concat(options?.pushChannels || []);
             this.notificationUtils?.sendMessage(channels, this.modelClass.name, "create", result);
@@ -973,7 +978,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // truncate.
                 if (this.aclUtils?.enabled && this.modelClass.recordACL) {
                     if (options.ignoreACL) {
-                        finalUids = [];
+                        // Caller has already authorized this truncate; skip the per-record permission
+                        // narrowing entirely rather than defaulting to an empty (i.e. no-op) delete set.
+                        finalUids = uids;
                     } else {
                         const permitted: boolean[] = await Promise.all(
                             uids.map((uid) => this.aclUtils!.hasPermission(options.user, uid, ACLAction.TRUNCATE, reqCache)),
@@ -1185,6 +1192,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             );
         }
 
+        // Process the result to remove any properties that have been scoped with @RequiresScope that the user
+        // does not have access to. Done after caching (the cache must retain the full object for other
+        // requests) but before the result is returned or broadcast to push subscribers.
+        ObjectUtils.deleteScopedProps(result, options?.user, this.modelClass);
+
         if (!options?.skipPush) {
             let channels: string[] = [result.uid].concat(options?.pushChannels || []);
             this.notificationUtils?.sendMessage(channels, this.modelClass.name, "update", result);
@@ -1240,7 +1252,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 }
             }
         } catch (err: any) {
-            throw new ApiError(ApiErrorMessages.INVALID_REQUEST, 400, err.message);
+            throw new ApiError(ApiErrors.INVALID_REQUEST, 400, err.message);
         }
     }
 }

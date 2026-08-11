@@ -270,6 +270,7 @@ export class Server {
                     await this.classLoader.load();
                 } catch (e) {
                     reject(`[server-core|Server.ts]**ERR @ start, loading service classes: ${e}`);
+                    return;
                 }
 
                 // Register all found classes with the object factory
@@ -440,9 +441,6 @@ export class Server {
                         this.objectFactory.instances.forEach((obj: any) => {
                             this.eventListenerManager?.register(obj);
                         });
-                        allRoutes.forEach((obj: any) => {
-                            this.eventListenerManager?.register(obj);
-                        });
                     }
                 }
 
@@ -458,6 +456,9 @@ export class Server {
                             const route: any = await this.objectFactory.newInstance(fqn, { name: "default" });
                             await this.routeUtils.registerRoute(this.app, route);
                             allRoutes.push(route);
+                            // Routes are instantiated after the EventListenerManager registration pass above,
+                            // so any `@OnEvent` handlers they declare must be registered here instead.
+                            this.eventListenerManager?.register(route);
                         }
                     }
                 } catch (err) {

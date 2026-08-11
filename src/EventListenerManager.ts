@@ -88,6 +88,11 @@ export class EventListenerManager {
      * Handler function for events that arrive from redis.
      */
     private onEvent(evt: Event): void {
+        if (!evt || typeof evt.type !== "string") {
+            this.logger.error("EventManager: Received event with no valid type; ignoring.");
+            return;
+        }
+
         // The registered event types can be regular expression patterns so we
         // need to test each one against our type in order to idenity which
         // handlers to send to.

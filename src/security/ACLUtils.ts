@@ -122,6 +122,7 @@ export class ACLUtils {
                     delete: ACLAction.DELETE,
                     get: ACLAction.READ,
                     head: ACLAction.COUNT,
+                    patch: ACLAction.UPDATE,
                     post: ACLAction.CREATE,
                     put: ACLAction.UPDATE,
                 };

@@ -51,6 +51,7 @@ describe("AdminRoute Tests", () => {
             },
         ],
         roles: config.get("trusted_roles"),
+        elevated: Date.now(),
     };
     const adminToken = JWTUtils.createTokenSync(config.get("auth"), admin);
     const user: any = {

@@ -21,7 +21,7 @@ import {
     Validate,
 } from "../decorators/RouteDecorators.js";
 import { ModelRoute, type UpdateObject } from "./ModelRoute.js";
-import { ApiErrorMessages } from "../ApiErrors.js";
+import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 
 /**
  * The `CRUDRoute` provides a base implementation of all CRUD endpoint behaviors that `ModelRoute` offers for a given
@@ -87,7 +87,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         const result = await Promise.allSettled(promises);
         const errors = result.filter((p) => p.status === "rejected").map((r) => r.reason);
         if (errors.length > 0) {
-            throw new ApiError(ApiErrorMessages.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
+            throw new ApiError(ApiErrors.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
         }
     }
 
@@ -186,7 +186,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
         const result = await Promise.allSettled(promises);
         const errors = result.filter((p) => p.status === "rejected").map((r) => r.reason);
         if (errors.length > 0) {
-            throw new ApiError(ApiErrorMessages.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
+            throw new ApiError(ApiErrors.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
         }
     }
 

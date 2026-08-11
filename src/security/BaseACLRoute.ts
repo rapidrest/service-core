@@ -5,7 +5,7 @@ import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { ACLAction, type AccessControlList } from "./AccessControlList.js";
 import { ApiError, UserUtils, type JWTUser } from "@rapidrest/core";
 import type { UpdateObject } from "../routes/ModelRoute.js";
-import { ApiErrorMessages } from "../ApiErrors.js";
+import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { Before, Param, Query, Request, Response, User } from "../decorators/RouteDecorators.js";
 import { CRUDRoute } from "../routes/CRUDRoute.js";
 
@@ -54,13 +54,13 @@ import { CRUDRoute } from "../routes/CRUDRoute.js";
 export abstract class BaseACLRoute<T extends AccessControlList> extends CRUDRoute<T> {
     protected async checkPerms(@Param() params: any, @User user: JWTUser): Promise<void> {
         if (!user) {
-            throw new ApiError(ApiErrorMessages.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
+            throw new ApiError(ApiErrors.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
         }
         if (
             !UserUtils.hasRoles(user, this.config.get("trusted_roles")) &&
             !(params.id && (await this.aclUtils?.hasPermission(user, params.id, ACLAction.FULL)))
         ) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
     }
 
@@ -72,7 +72,7 @@ export abstract class BaseACLRoute<T extends AccessControlList> extends CRUDRout
      */
     protected checkNotDefault(@Param("id") id: string): void {
         if (id && id.startsWith("default_")) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
     }
 
@@ -83,13 +83,13 @@ export abstract class BaseACLRoute<T extends AccessControlList> extends CRUDRout
      */
     protected checkPermsBulk(objs: UpdateObject<T>[], @User user: JWTUser): void {
         if (!user) {
-            throw new ApiError(ApiErrorMessages.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
+            throw new ApiError(ApiErrors.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED);
         }
         if (!UserUtils.hasRoles(user, this.config.get("trusted_roles"))) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
         if (objs?.some((obj) => obj.uid && obj.uid.startsWith("default_"))) {
-            throw new ApiError(ApiErrorMessages.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
     }
 

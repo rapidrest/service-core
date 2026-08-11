@@ -122,8 +122,8 @@ export class JWTStrategy {
             const headers: string[] = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
 
             // Loop through the headers looking for Authentication and our scheme
-            for (const header in headers) {
-                const parts: string[] = headers[header].split(" ");
+            for (const header of headers) {
+                const parts: string[] = header.split(" ");
                 if (parts.length !== 2) {
                     continue;
                 }
@@ -133,6 +133,7 @@ export class JWTStrategy {
                 }
 
                 authToken = parts[1];
+                break;
             }
         }
 

@@ -224,7 +224,10 @@ export class BaseAdminRoute {
 
                 // Remove the socket from our tracked list
                 const socks: any[] = this.activeSockets.get(user.uid) || [];
-                socks.splice(socks.indexOf(socket), 1);
+                const idx: number = socks.indexOf(socket);
+                if (idx !== -1) {
+                    socks.splice(idx, 1);
+                }
                 this.activeSockets.set(user.uid, socks);
             });
 
@@ -241,7 +244,10 @@ export class BaseAdminRoute {
 
             // Remove the socket from our tracked list
             const socks: any[] = this.activeSockets.get(user.uid) || [];
-            socks.splice(socks.indexOf(socket), 1);
+            const idx: number = socks.indexOf(socket);
+            if (idx !== -1) {
+                socks.splice(idx, 1);
+            }
             this.activeSockets.set(user.uid, socks);
         }
     }

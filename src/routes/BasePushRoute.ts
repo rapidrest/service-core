@@ -154,7 +154,10 @@ export class BasePushRoute {
                         const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
                         await redis.unsubscribe(...subs);
                         for (const channel of subs) {
-                            origSubs.splice(origSubs.indexOf(channel), 1);
+                            const idx: number = origSubs.indexOf(channel);
+                            if (idx !== -1) {
+                                origSubs.splice(idx, 1);
+                            }
                         }
                         this.activeSubs.set(user.uid, origSubs);
                         sock.send(JSON.stringify({ id: message.id, type: "UNSUBSCRIBED", success: true, data: subs }));
@@ -180,7 +183,10 @@ export class BasePushRoute {
 
             // Remove the socket from our tracked list
             const socks: ws[] = this.activeSocks.get(user.uid) || [];
-            socks.splice(socks.indexOf(sock), 1);
+            const idx: number = socks.indexOf(sock);
+            if (idx !== -1) {
+                socks.splice(idx, 1);
+            }
 
             // Once the user has no other open connections, drop their tracked state entirely rather than
             // leaving a stale (activeSocks) or permanently-growing (activeSubs) entry behind — otherwise
