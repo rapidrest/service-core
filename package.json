@@ -61,7 +61,7 @@
         }
     },
     "devDependencies": {
-        "@rapidrest/core": "^1.14.0",
+        "@rapidrest/core": "^1.15.0",
         "@simplewebauthn/server": "^13.3.2",
         "@swc/core": "^1.15.41",
         "@types/bun": "^1.3.14",
