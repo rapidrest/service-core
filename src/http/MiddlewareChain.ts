@@ -89,9 +89,12 @@ export async function runChain(handlers: RequestHandler[], req: HttpRequest, res
 
     // End of chain with unhandled error
     if (currentError && !res.writableEnded) {
-        res.status(500).json({
+        const status: number = typeof currentError?.status === "number" ? currentError.status : 500;
+        const code: string | undefined = typeof currentError?.code === "string" ? currentError.code : undefined;
+        res.status(status).json({
             message: currentError?.message || "Internal Server Error",
-            status: 500,
+            status,
+            ...(code !== undefined ? { code } : {}),
         });
     }
 }
@@ -127,10 +130,18 @@ export function extractParamNames(routePath: string): string[] {
  * Builds a stub `HttpResponse` used for WebSocket routes: the framework middleware chain runs
  * against a WebSocket "request" that has no real HTTP response to write to, so all writes are
  * no-ops other than tracking `writableEnded`.
+ *
+ * @param onUnhandledError Invoked when `runChain()` reaches the end of the chain with an
+ * unhandled error and falls back to `res.status(...).json(...)` — the only way that fallback
+ * (or any other middleware) can signal an error for a WS connection, since there is no real
+ * response to write to. The router's `ws()` open handler uses this to close the socket the same
+ * way route handlers do themselves (a `1002` close carrying the error's short code), instead of
+ * silently doing nothing.
  */
-export function makeWsStubResponse(): HttpResponse {
+export function makeWsStubResponse(onUnhandledError?: (status: number, payload: any) => void): HttpResponse {
     const finishHandlers: Array<() => void | Promise<void>> = [];
     let finished = false;
+    let lastStatus = 101;
     const fireFinish = () => {
         if (finished) return;
         finished = true;
@@ -146,7 +157,8 @@ export function makeWsStubResponse(): HttpResponse {
         statusCode: 101,
         headersSent: true,
         writableEnded: false,
-        status() {
+        status(code: number) {
+            lastStatus = code;
             return this;
         },
         setHeader() {
@@ -158,8 +170,8 @@ export function makeWsStubResponse(): HttpResponse {
         getHeader() {
             return undefined;
         },
-        json() {
-            return;
+        json(payload?: any) {
+            onUnhandledError?.(lastStatus, payload);
         },
         send() {
             return;

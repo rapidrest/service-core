@@ -138,7 +138,7 @@ describe("HttpRouter", () => {
     });
 
     describe("ws() open handler", () => {
-        it("swallows an error from ws.close() when the client disconnected while a handler was awaiting", async () => {
+        it("swallows an error from ws.end() when the client disconnected while a handler was awaiting", async () => {
             const fakeApp: any = makeFakeUwsApp();
             const router = new HttpRouter(fakeApp);
             // The handler never marks the connection as handled, so `open` will attempt to close it.
@@ -147,13 +147,55 @@ describe("HttpRouter", () => {
 
             const fakeWs: any = {
                 getUserData: () => userData,
-                close: () => {
+                // Bare (no-error) fallback close uses `end()` — a proper WebSocket close handshake —
+                // rather than uWS's abrupt `close()`. See Router.ts's open handler for why.
+                end: () => {
                     throw new Error("Invalid access of closed uWS.WebSocket");
                 },
             };
             const userData: any = { req: { headers: {} } };
 
             await expect(behavior.open(fakeWs)).resolves.toBeUndefined();
+        });
+
+        it("closes with 1002 and the error's code when a middleware rejects with no downstream handler to catch it", async () => {
+            const fakeApp: any = makeFakeUwsApp();
+            const router = new HttpRouter(fakeApp);
+            const err = { code: "api-102", status: 403, message: "User does not have permission to perform this action." };
+            router.ws("/chat", [(_req: any, _res: any, next: any) => next(err)]);
+            const behavior = fakeApp._wsBehaviors[0];
+
+            const fakeWs: any = {
+                getUserData: () => userData,
+                end: vi.fn(),
+            };
+            const userData: any = { req: { headers: {} } };
+
+            await behavior.open(fakeWs);
+
+            // The bare fallback close() must not also fire once the error path has already closed the socket.
+            expect(fakeWs.end).toHaveBeenCalledTimes(1);
+            expect(fakeWs.end).toHaveBeenCalledWith(1002, "api-102");
+        });
+
+        it("falls back to the error's message, then a generic message, when it has no code", async () => {
+            const fakeApp: any = makeFakeUwsApp();
+            const router = new HttpRouter(fakeApp);
+            router.ws("/chat-message-only", [(_req: any, _res: any, next: any) => next({ message: "boom" })]);
+            router.ws("/chat-neither", [(_req: any, _res: any, next: any) => next({})]);
+
+            // Each ws() registration pushes twice (bare path + trailing-slash variant), so the
+            // second route's behavior lands at index 2, not 1.
+            const withMessage = fakeApp._wsBehaviors[0];
+            const withNeither = fakeApp._wsBehaviors[2];
+
+            const wsA: any = { getUserData: () => ({ req: { headers: {} } }), end: vi.fn() };
+            await withMessage.open(wsA);
+            expect(wsA.end).toHaveBeenCalledWith(1002, "boom");
+
+            const wsB: any = { getUserData: () => ({ req: { headers: {} } }), end: vi.fn() };
+            await withNeither.open(wsB);
+            expect(wsB.end).toHaveBeenCalledWith(1002, "Internal Server Error");
         });
     });
 });

@@ -481,6 +481,37 @@ describe("BunRouter websocketConfig lifecycle", () => {
             });
             await expect((router as any).websocketConfig.open(ws)).resolves.toBeUndefined();
         });
+
+        it("closes with 1002 and the error's code when a middleware rejects with no downstream handler to catch it", async () => {
+            const router = new BunRouter();
+            const err = { code: "api-102", status: 403, message: "User does not have permission to perform this action." };
+            const ws = makeFakeWs({
+                data: {
+                    req: {},
+                    handlers: [(_req: any, _res: any, next: any) => next(err)],
+                },
+            });
+            await (router as any).websocketConfig.open(ws);
+            // The bare fallback close() must not also fire once the error path has already closed the socket.
+            expect(ws.close).toHaveBeenCalledTimes(1);
+            expect(ws.close).toHaveBeenCalledWith(1002, "api-102");
+        });
+
+        it("falls back to the error's message, then a generic message, when it has no code", async () => {
+            const router = new BunRouter();
+
+            const wsWithMessage = makeFakeWs({
+                data: { req: {}, handlers: [(_req: any, _res: any, next: any) => next({ message: "boom" })] },
+            });
+            await (router as any).websocketConfig.open(wsWithMessage);
+            expect(wsWithMessage.close).toHaveBeenCalledWith(1002, "boom");
+
+            const wsWithNeither = makeFakeWs({
+                data: { req: {}, handlers: [(_req: any, _res: any, next: any) => next({})] },
+            });
+            await (router as any).websocketConfig.open(wsWithNeither);
+            expect(wsWithNeither.close).toHaveBeenCalledWith(1002, "Internal Server Error");
+        });
     });
 
     describe("message", () => {
@@ -572,10 +603,10 @@ describe("BunRouter.listen / close / SSL mapping (globalThis.Bun stubbed)", () =
         await router.listen("127.0.0.1", 0);
 
         // With no error-handling middleware registered, runChain's own unhandled-error fallback
-        // converts the NOT_FOUND ApiError into a raw 500 — this is pre-existing runChain behavior
-        // (shared with the uWS router), not something specific to the Bun adapter.
+        // reports the NOT_FOUND ApiError's own status/code — this is shared runChain behavior
+        // (also used by the uWS router), not something specific to the Bun adapter.
         const res = await dispatch(router, new Request("http://localhost/nope"));
-        expect(res!.status).toBe(500);
+        expect(res!.status).toBe(404);
         const body = await res!.json();
         expect(body.message).toBe(ApiErrorMessages.NOT_FOUND);
     });
@@ -591,7 +622,7 @@ describe("BunRouter.listen / close / SSL mapping (globalThis.Bun stubbed)", () =
 
         // POST has no app-defined root wildcard, so it still gets the injected fallback.
         const postRes = await dispatch(router, new Request("http://localhost/anything", { method: "POST" }));
-        expect(postRes!.status).toBe(500);
+        expect(postRes!.status).toBe(404);
     });
 
     it("maps the ssl config to Bun's tls option via Bun.file()", async () => {

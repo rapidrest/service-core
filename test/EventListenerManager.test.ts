@@ -84,6 +84,26 @@ describe("EventListenerManager Tests", () => {
         expect(() => redis.emit("message", "channel1", "not-json")).not.toThrow();
     });
 
+    it("logs and continues when a well-formed event has no valid type field", async () => {
+        // Regression test: `onEvent()` used to call `evt.type.match(...)` with no guard, throwing an
+        // uncaught TypeError (and crashing the process) for any well-formed event missing `type`.
+        const redis = makeRedis();
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+
+        const received: any[] = [];
+        class Handler {
+            @OnEvent("user.created")
+            public onCreated(evt: any) {
+                received.push(evt);
+            }
+        }
+        manager.register(new Handler());
+
+        expect(() => redis.emit("message", "channel1", JSON.stringify({ data: {} }))).not.toThrow();
+        expect(received).toEqual([]);
+    });
+
     it("isolates a handler that throws synchronously so other handlers still run", async () => {
         // Regression test: a synchronous throw from a handler used to propagate up through onEvent() and
         // get caught by the *message parsing* try/catch, mislabeling a handler bug as "could not parse"

@@ -371,7 +371,13 @@ export class BunRouter implements IHttpRouter {
             req.websocket = shim;
             req.wsHandled = false;
 
-            const stubRes = makeWsStubResponse();
+            // A middleware that rejects (e.g. checkRequiredRoles/checkElevation/checkRequiredPerms) with
+            // no downstream handler to translate that into a close has nowhere else to signal it — mirror
+            // the convention route handlers use themselves: close with 1002 and the error's short code.
+            const stubRes = makeWsStubResponse((status, payload) => {
+                req.wsHandled = true;
+                shim.close(1002, payload?.code || payload?.message || "Internal Server Error");
+            });
             await runChain(data.handlers, req, stubRes);
 
             // Guard against the client disconnecting while runChain was awaiting (e.g. authWebSocket

@@ -272,20 +272,31 @@ export class HttpRouter implements IHttpRouter {
                 req.websocket = shim;
                 req.wsHandled = false;
 
-                // Create a stub response (WebSocket responses don't use HTTP res)
-                const stubRes: HttpResponse = makeWsStubResponse();
+                // Create a stub response (WebSocket responses don't use HTTP res). A middleware that
+                // rejects (e.g. checkRequiredRoles/checkElevation/checkRequiredPerms) with no downstream
+                // handler to translate that into a close has nowhere else to signal it — mirror the
+                // convention route handlers use themselves: close with 1002 and the error's short code.
+                const stubRes: HttpResponse = makeWsStubResponse((status, payload) => {
+                    req.wsHandled = true;
+                    shim.close(1002, payload?.code || payload?.message || "Internal Server Error");
+                });
 
                 await runChain(handlers, req, stubRes);
 
                 // If no handler marked wsHandled, close the connection.
                 // Guard against the client disconnecting while runChain was awaiting
                 // (e.g. authWebSocket waiting for a LOGIN frame): the uWS handle is
-                // invalid once the close callback fires, so calling ws.close() would
+                // invalid once the close callback fires, so calling ws.end() would
                 // throw "Invalid access of closed uWS.WebSocket" as an unhandled
                 // rejection from this async open handler.
+                //
+                // Uses `ws.end()`, not `ws.close()` — uWS's `close()` is an abrupt disconnect with no
+                // close handshake (surfaces to clients as a connection reset), while `end()` performs a
+                // proper WebSocket close. `shim.close()` already calls `end()` internally; called directly
+                // here (rather than through the shim) since no code/reason applies to this bare fallback.
                 if (!req.wsHandled && shim.readyState !== 3) {
                     try {
-                        ws.close();
+                        ws.end();
                     } catch {
                         // Client already disconnected — nothing to do
                     }

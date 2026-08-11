@@ -142,5 +142,22 @@ describe("BasePushRoute Tests (unit)", () => {
 
             expect(route.logger.debug).toHaveBeenCalledWith("Failed to forward message to u1");
         });
+
+        it("leaves existing subscriptions untouched when UNSUBSCRIBE names a channel the client isn't subscribed to", async () => {
+            // Regression test: `origSubs.splice(origSubs.indexOf(channel), 1)` used to delete the *last*
+            // tracked subscription whenever `channel` wasn't found (indexOf returns -1, splice(-1, 1)
+            // removes the last element) instead of leaving the list untouched.
+            const route = makeRoute();
+            const user = { uid: "u1" };
+            const sock = makeSock();
+
+            await route.connect(sock, user);
+            expect(route.activeSubs.get("u1")).toEqual(["u1"]);
+
+            const onMessage = sock.on.mock.calls.find(([event]: [string]) => event === "message")![1];
+            await onMessage(JSON.stringify({ id: 1, type: "UNSUBSCRIBE", data: "not-subscribed" }), false);
+
+            expect(route.activeSubs.get("u1")).toEqual(["u1"]);
+        });
     });
 });
