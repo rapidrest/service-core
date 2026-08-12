@@ -1,6 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
+import { ReadOnly } from "../decorators/ModelDecorators.js";
 import { Column } from "../decorators/PersistenceDecorators.js";
 import { BaseEntity } from "./BaseEntity.js";
 
@@ -14,8 +15,11 @@ import { BaseEntity } from "./BaseEntity.js";
  */
 export abstract class RecoverableBaseEntity extends BaseEntity {
     /**
-     * Indicates if the document has been soft deleted.
+     * Indicates if the document has been soft deleted. Only `RepoUtils.delete()` (gated on `ACLAction.DELETE`)
+     * may change this — `@ReadOnly` prevents it from being set via the ordinary create/update paths, which are
+     * only gated on `ACLAction.CREATE`/`UPDATE`.
      */
+    @ReadOnly
     @Column()
     public deleted: boolean = false;
 

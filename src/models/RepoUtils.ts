@@ -415,6 +415,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // such call runs the check-then-insert at a time, so a later one's count() always observes an earlier
         // one's completed save(). A model whose only identifier is `uid` needs no such lock — a genuine `uid`
         // collision (e.g. a client-supplied duplicate) is already caught by the database's own unique index.
+        // Populated inside the runExclusive callback below (if applicable) and reused after save() to seed the
+        // new record's ACL — see the collision guard there for why this can't simply be re-looked-up afterward.
+        let existingAclForCreate: AccessControlList | undefined;
+
         let saved: any;
         try {
             saved = await this.runExclusive(lockIds.length > 0 ? JSON.stringify(lockIds) : crypto.randomUUID(), async () => {
@@ -438,6 +442,21 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     // about this distinct, additional per-record check, which has no upstream equivalent and
                     // must always run.
                     throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+                }
+
+                if (this.aclUtils?.enabled && this.modelClass.recordACL) {
+                    existingAclForCreate = await this.aclUtils.findACL((newObj as any).uid);
+                    // AccessControlLists are stored in a single global collection keyed only by `uid`, shared
+                    // across every model — there is no per-model namespacing. `count === 0` here means no prior
+                    // row exists for this model under this uid, so this is a genuinely new record for this
+                    // model; if an ACL already exists at that uid regardless, it can only belong to an unrelated
+                    // model or record that happens to share the (possibly client-supplied, see BaseEntity.uid)
+                    // uid value. Silently adopting it below would grant the creator full CRUD on whatever that
+                    // foreign ACL protects. The legitimate trackChanges "new version" case (count > 0) is
+                    // unaffected — its permission to reuse the existing ACL was already verified above.
+                    if (count === 0 && existingAclForCreate) {
+                        throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+                    }
                 }
 
                 // Override the date and version fields with their defaults
@@ -476,12 +495,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-            // Reuse an existing ACL (and its real version/records) if one already exists for this uid — e.g.
-            // when creating a new version of a trackChanges record — rather than building a fresh, version-less
-            // object from scratch. Building fresh here would let saveACL()'s optimistic-lock version check pass
-            // by coincidence (a never-updated ACL is also version 0), silently discarding the real records.
-            const existingAcl: AccessControlList | undefined = await this.aclUtils.findACL(result.uid);
-            const acl: AccessControlList = existingAcl || {
+            // Reuse the existing ACL (and its real version/records) looked up above if this is a legitimate
+            // trackChanges "new version" — rather than building a fresh, version-less object from scratch.
+            // Building fresh here would let saveACL()'s optimistic-lock version check pass by coincidence (a
+            // never-updated ACL is also version 0), silently discarding the real records. `existingAclForCreate`
+            // is intentionally not re-fetched here: the collision guard above already established that either
+            // it's undefined (genuinely new uid) or it legitimately belongs to this exact record.
+            const acl: AccessControlList = existingAclForCreate || {
                 uid: result.uid,
                 parentUid: options?.acl?.parentUid || this.defaultACLUid,
                 records: options?.acl?.records || [],
