@@ -143,6 +143,35 @@ describe("BasePushRoute Tests (unit)", () => {
             expect(route.logger.debug).toHaveBeenCalledWith("Failed to forward message to u1");
         });
 
+        it("does not lose either subscription when two SUBSCRIBE messages race for the same user", async () => {
+            // Regression test for a TOCTOU race: both messages used to read the same stale `activeSubs`
+            // snapshot before either committed, so the second commit would silently clobber the first's
+            // addition instead of merging with it. hasPermission resolves on a delay so the two concurrent
+            // onMessage() calls actually interleave instead of one finishing before the other starts.
+            const route = makeRoute({
+                aclUtils: {
+                    hasPermission: vi.fn().mockImplementation(
+                        () => new Promise((resolve) => setTimeout(() => resolve(true), 5)),
+                    ),
+                },
+            });
+            const user = { uid: "u1" };
+            const sock = makeSock();
+
+            await route.connect(sock, user);
+            expect(route.activeSubs.get("u1")).toEqual(["u1"]);
+
+            const onMessage = sock.on.mock.calls.find(([event]: [string]) => event === "message")![1];
+
+            const p1 = onMessage(JSON.stringify({ id: 1, type: "SUBSCRIBE", data: "channelA" }), false);
+            const p2 = onMessage(JSON.stringify({ id: 2, type: "SUBSCRIBE", data: "channelB" }), false);
+            await Promise.all([p1, p2]);
+
+            const finalSubs: string[] = route.activeSubs.get("u1");
+            expect(finalSubs).toEqual(expect.arrayContaining(["u1", "channelA", "channelB"]));
+            expect(finalSubs.length).toBe(3);
+        });
+
         it("leaves existing subscriptions untouched when UNSUBSCRIBE names a channel the client isn't subscribed to", async () => {
             // Regression test: `origSubs.splice(origSubs.indexOf(channel), 1)` used to delete the *last*
             // tracked subscription whenever `channel` wasn't found (indexOf returns -1, splice(-1, 1)

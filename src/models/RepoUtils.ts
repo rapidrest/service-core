@@ -331,11 +331,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 (await this.repo.find(query)).forEach((obj: T) => uids.add(obj.uid));
             }
 
-            for (const uid of uids) {
-                if (await this.aclUtils.hasPermission(options?.user, uid, action)) {
-                    count++;
-                    break;
-                }
+            const permitted: boolean[] = await Promise.all(
+                Array.from(uids).map((uid) => this.aclUtils!.hasPermission(options?.user, uid, action)),
+            );
+            if (permitted.some(Boolean)) {
+                count++;
             }
 
             return count;
@@ -421,60 +421,67 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         let saved: any;
         try {
-            saved = await this.runExclusive(lockIds.length > 0 ? JSON.stringify(lockIds) : crypto.randomUUID(), async () => {
-                const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, ids, undefined);
-                const count: number = await repo.count(query);
-                if (!this.modelClass.trackChanges && count > 0) {
-                    throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
-                } else if (
-                    this.modelClass.trackChanges &&
-                    count > 0 &&
-                    this.modelClass.recordACL &&
-                    this.aclUtils?.enabled &&
-                    !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE))
-                ) {
-                    // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new
-                    // version). That's only legitimate for someone who already has update rights on the
-                    // existing record — generic class-level CREATE permission isn't enough, otherwise any
-                    // creator could inject a new "latest version" of another user's record. Deliberately NOT
-                    // gated on `options.ignoreACL`: that flag exists so ModelRoute.doCreate() can skip
-                    // re-doing the class-level CREATE check it already performed upstream — it says nothing
-                    // about this distinct, additional per-record check, which has no upstream equivalent and
-                    // must always run.
-                    throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
-                }
-
-                if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-                    existingAclForCreate = await this.aclUtils.findACL((newObj as any).uid);
-                    // AccessControlLists are stored in a single global collection keyed only by `uid`, shared
-                    // across every model — there is no per-model namespacing. `count === 0` here means no prior
-                    // row exists for this model under this uid, so this is a genuinely new record for this
-                    // model; if an ACL already exists at that uid regardless, it can only belong to an unrelated
-                    // model or record that happens to share the (possibly client-supplied, see BaseEntity.uid)
-                    // uid value. Silently adopting it below would grant the creator full CRUD on whatever that
-                    // foreign ACL protects. The legitimate trackChanges "new version" case (count > 0) is
-                    // unaffected — its permission to reuse the existing ACL was already verified above.
-                    if (count === 0 && existingAclForCreate) {
+            saved = await this.runExclusive(
+                lockIds.length > 0 ? JSON.stringify(lockIds) : crypto.randomUUID(),
+                async () => {
+                    const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, ids, undefined);
+                    const count: number = await repo.count(query);
+                    if (!this.modelClass.trackChanges && count > 0) {
                         throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+                    } else if (
+                        this.modelClass.trackChanges &&
+                        count > 0 &&
+                        this.modelClass.recordACL &&
+                        this.aclUtils?.enabled &&
+                        !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE))
+                    ) {
+                        // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new
+                        // version). That's only legitimate for someone who already has update rights on the
+                        // existing record — generic class-level CREATE permission isn't enough, otherwise any
+                        // creator could inject a new "latest version" of another user's record. Deliberately NOT
+                        // gated on `options.ignoreACL`: that flag exists so ModelRoute.doCreate() can skip
+                        // re-doing the class-level CREATE check it already performed upstream — it says nothing
+                        // about this distinct, additional per-record check, which has no upstream equivalent and
+                        // must always run.
+                        throw new ApiError(
+                            ApiErrors.AUTH_PERMISSION_FAILURE,
+                            403,
+                            ApiErrorMessages.AUTH_PERMISSION_FAILURE,
+                        );
                     }
-                }
 
-                // Override the date and version fields with their defaults
-                if (newObj instanceof BaseEntity) {
-                    newObj.dateCreated = new Date();
-                    newObj.dateModified = new Date();
-                    newObj.version = count;
-                }
+                    if (this.aclUtils?.enabled && this.modelClass.recordACL) {
+                        existingAclForCreate = await this.aclUtils.findACL((newObj as any).uid);
+                        // AccessControlLists are stored in a single global collection keyed only by `uid`, shared
+                        // across every model — there is no per-model namespacing. `count === 0` here means no prior
+                        // row exists for this model under this uid, so this is a genuinely new record for this
+                        // model; if an ACL already exists at that uid regardless, it can only belong to an unrelated
+                        // model or record that happens to share the (possibly client-supplied, see BaseEntity.uid)
+                        // uid value. Silently adopting it below would grant the creator full CRUD on whatever that
+                        // foreign ACL protects. The legitimate trackChanges "new version" case (count > 0) is
+                        // unaffected — its permission to reuse the existing ACL was already verified above.
+                        if (count === 0 && existingAclForCreate) {
+                            throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+                        }
+                    }
 
-                // Are we tracking multiple versions for this object?
-                if (newObj instanceof BaseEntity && this.modelClass.trackChanges === 0) {
-                    (newObj as any).version = 0;
-                }
+                    // Override the date and version fields with their defaults
+                    if (newObj instanceof BaseEntity) {
+                        newObj.dateCreated = new Date();
+                        newObj.dateModified = new Date();
+                        newObj.version = count;
+                    }
 
-                // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile
-                // since T extends BaseEntity.
-                return await repo.save(newObj);
-            });
+                    // Are we tracking multiple versions for this object?
+                    if (newObj instanceof BaseEntity && this.modelClass.trackChanges === 0) {
+                        (newObj as any).version = 0;
+                    }
+
+                    // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile
+                    // since T extends BaseEntity.
+                    return await repo.save(newObj);
+                },
+            );
         } catch (err: any) {
             // A duplicate-key error can still legitimately occur here for identifier fields that DO have a
             // database-level unique constraint (namely `uid`, via BaseMongoEntity's (uid, version) index) —
@@ -700,7 +707,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // If the query wasn't cached retrieve from the database
         if (results.length === 0) {
-            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options?.user);
+            const searchQuery: any = ModelUtils.buildSearchQuery(
+                this.modelClass,
+                this.repo,
+                query,
+                true,
+                options?.user,
+            );
 
             if (this.repo instanceof MongoRepository) {
                 const skip: number = page * limit;
@@ -978,7 +991,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         try {
-            const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options?.user);
+            const searchQuery: any = ModelUtils.buildSearchQuery(
+                this.modelClass,
+                this.repo,
+                query,
+                true,
+                options?.user,
+            );
             let uids: Array<string> = [];
             if (this.repo instanceof MongoRepository) {
                 if (Array.isArray(searchQuery)) {
@@ -1003,7 +1022,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         finalUids = uids;
                     } else {
                         const permitted: boolean[] = await Promise.all(
-                            uids.map((uid) => this.aclUtils!.hasPermission(options.user, uid, ACLAction.TRUNCATE, reqCache)),
+                            uids.map((uid) =>
+                                this.aclUtils!.hasPermission(options.user, uid, ACLAction.TRUNCATE, reqCache),
+                            ),
                         );
                         finalUids = uids.filter((_uid, i) => permitted[i]);
                     }

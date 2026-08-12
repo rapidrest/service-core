@@ -54,6 +54,34 @@ class ThrowingRunService extends BackgroundService {
     }
 }
 
+// A run() that outlasts its own schedule interval, used to verify overlapping scheduled ticks don't trigger
+// concurrent invocations of the same service.
+class SlowService extends BackgroundService {
+    public static concurrentRuns = 0;
+    public static maxConcurrentRuns = 0;
+    public static totalRuns = 0;
+
+    public get schedule(): string | undefined {
+        return "* * * * * *";
+    }
+
+    public async run(): Promise<void> {
+        SlowService.totalRuns++;
+        SlowService.concurrentRuns++;
+        SlowService.maxConcurrentRuns = Math.max(SlowService.maxConcurrentRuns, SlowService.concurrentRuns);
+        await new Promise<void>((resolve) => setTimeout(resolve, 2500));
+        SlowService.concurrentRuns--;
+    }
+
+    public async start(): Promise<void> {
+        // no-op
+    }
+
+    public async stop(): Promise<void> {
+        // no-op
+    }
+}
+
 class FailingStartService extends BackgroundService {
     public get schedule(): string | undefined {
         return undefined;
@@ -207,6 +235,27 @@ describe("BackgroundServiceManager Tests", () => {
 
         await manager.stop("test.ThrowingRunService");
         errorSpy.mockRestore();
+    });
+
+    it("Skips an overlapping scheduled run rather than executing run() concurrently.", async () => {
+        SlowService.concurrentRuns = 0;
+        SlowService.maxConcurrentRuns = 0;
+        SlowService.totalRuns = 0;
+
+        const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {
+            args: [objectFactory, {}],
+        });
+
+        await manager.start("test.SlowService", SlowService);
+
+        // Schedule fires every second; run() takes 2.5s. Without the overlap guard, ticks at t=1s and t=2s
+        // would each start a second/third concurrent run() before the first (started at t=0) finishes.
+        await new Promise<void>((resolve) => setTimeout(resolve, 3500));
+
+        await manager.stop("test.SlowService");
+
+        expect(SlowService.maxConcurrentRuns).toBe(1);
+        expect(SlowService.totalRuns).toBeLessThan(3);
     });
 
     it("Logs rather than crashes when a service fails to start.", async () => {

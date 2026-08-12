@@ -643,6 +643,44 @@ describe("ModelUtils Tests", () => {
             const query = ModelUtils.buildSearchQueryMongo(undefined, request.query, true, request.user);
             expect(query).toEqual({ $match: {} });
         });
+
+        it("Pads a shorter multi-valued param with its own last value instead of dropping it from extra OR branches.", () => {
+            const request: any = {};
+            request.query = {
+                a: ["one", "two", "three"],
+                b: ["ex", "why"],
+            };
+
+            const query = ModelUtils.buildSearchQueryMongo(undefined, request.query, true, request.user);
+            expect(query).toEqual({
+                $match: {
+                    $or: [
+                        { a: "one", b: "ex" },
+                        { a: "two", b: "why" },
+                        { a: "three", b: "why" },
+                    ],
+                },
+            });
+        });
+
+        it("Pads a shorter multi-valued param regardless of key order.", () => {
+            const request: any = {};
+            request.query = {
+                b: ["ex", "why"],
+                a: ["one", "two", "three"],
+            };
+
+            const query = ModelUtils.buildSearchQueryMongo(undefined, request.query, true, request.user);
+            expect(query).toEqual({
+                $match: {
+                    $or: [
+                        { b: "ex", a: "one" },
+                        { b: "why", a: "two" },
+                        { b: "why", a: "three" },
+                    ],
+                },
+            });
+        });
     });
 
     describe("SQL Tests", () => {
@@ -1236,6 +1274,25 @@ describe("ModelUtils Tests", () => {
                         param2: Between(0, 100),
                         param3: Equal("hello"),
                     },
+                ],
+                page: 0,
+                take: 100,
+            });
+        });
+
+        it("Pads a shorter multi-valued param with its own last value instead of dropping it from extra OR branches.", () => {
+            const request: any = {};
+            request.query = {
+                a: ["one", "two", "three"],
+                b: ["ex", "why"],
+            };
+
+            const query = ModelUtils.buildSearchQuerySQL(undefined, request.query, true, request.user);
+            expect(query).toEqual({
+                where: [
+                    { a: Equal("one"), b: Equal("ex") },
+                    { a: Equal("two"), b: Equal("why") },
+                    { a: Equal("three"), b: Equal("why") },
                 ],
                 page: 0,
                 take: 100,

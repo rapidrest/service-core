@@ -42,6 +42,9 @@ export class BasePushRoute {
     /** A map of active subscription uids to users. */
     private activeSubs: Map<string, string[]> = new Map();
 
+    /** Per-user in-process locks (see `runExclusive`) guarding read-modify-write access to `activeSubs`. */
+    private subLocks: Map<string, Promise<void>> = new Map();
+
     @Logger
     private logger: any;
 
@@ -66,6 +69,29 @@ export class BasePushRoute {
         } else {
             this.logger.warn("Could not initialize the push notification publisher. The `events` datastore is not configured.");
         }
+    }
+
+    /**
+     * Runs `fn` exclusively with respect to any other call currently queued under the same `key` on this
+     * instance — a call only starts once every call queued ahead of it under that key has fully settled. Used
+     * to serialize SUBSCRIBE/UNSUBSCRIBE handling per user so two messages arriving close together (on the same
+     * or different concurrent sockets for that user) can't both read the same stale `activeSubs` snapshot and
+     * clobber (or exceed the cap on) each other's committed subscription list.
+     */
+    private async runExclusive<R>(key: string, fn: () => Promise<R>): Promise<R> {
+        const previous: Promise<void> = this.subLocks.get(key) ?? Promise.resolve();
+        const run: Promise<R> = previous.then(fn);
+        const guard: Promise<void> = run.then(
+            () => undefined,
+            () => undefined,
+        );
+        this.subLocks.set(key, guard);
+        void guard.finally(() => {
+            if (this.subLocks.get(key) === guard) {
+                this.subLocks.delete(key);
+            }
+        });
+        return run;
     }
 
     @Summary("Push connect")
@@ -129,38 +155,52 @@ export class BasePushRoute {
                 try {
                     // Decode the incoming message
                     const message: any = JSON.parse(data);
-                    const origSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
 
                     if (message.type === "SUBSCRIBE") {
-                        const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
-                        const subd: string[] = [];
-                        // Check that the user has permission for each requested channel, up to the per-user
-                        // subscription cap — once the budget is exhausted further requested channels are
-                        // silently dropped from the approved set, same as a channel lacking ACL permission.
-                        let remaining: number = this.maxSubscriptionsPerUser - origSubs.length;
-                        for (const channel of subs) {
-                            if (remaining <= 0) break;
-                            if (await this.aclUtils?.hasPermission(user, channel, ACLAction.READ)) {
-                                subd.push(channel);
-                                remaining--;
+                        // Serialized per user: reading `activeSubs` and later committing the updated list must
+                        // be atomic with respect to any other concurrent SUBSCRIBE/UNSUBSCRIBE for this same
+                        // user (e.g. from a second open socket), or two messages could both compute their
+                        // approved/remaining-budget delta off the same stale snapshot and the second commit
+                        // would silently clobber the first's.
+                        await this.runExclusive(user.uid, async () => {
+                            const origSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
+                            const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
+                            const subd: string[] = [];
+                            // Check that the user has permission for each requested channel, up to the per-user
+                            // subscription cap — once the budget is exhausted further requested channels are
+                            // silently dropped from the approved set, same as a channel lacking ACL permission.
+                            let remaining: number = this.maxSubscriptionsPerUser - origSubs.length;
+                            for (const channel of subs) {
+                                if (remaining <= 0) break;
+                                if (await this.aclUtils?.hasPermission(user, channel, ACLAction.READ)) {
+                                    subd.push(channel);
+                                    remaining--;
+                                }
                             }
-                        }
 
-                        // Subscribe to all approved channels
-                        await redis.subscribe(...subd);
-                        this.activeSubs.set(user.uid, origSubs.concat(subd));
-                        sock.send(JSON.stringify({ id: message.id, type: "SUBSCRIBED", success: true, data: subd }));
+                            // Subscribe to all approved channels
+                            await redis.subscribe(...subd);
+                            this.activeSubs.set(user.uid, origSubs.concat(subd));
+                            sock.send(
+                                JSON.stringify({ id: message.id, type: "SUBSCRIBED", success: true, data: subd }),
+                            );
+                        });
                     } else if (message.type === "UNSUBSCRIBE") {
-                        const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
-                        await redis.unsubscribe(...subs);
-                        for (const channel of subs) {
-                            const idx: number = origSubs.indexOf(channel);
-                            if (idx !== -1) {
-                                origSubs.splice(idx, 1);
+                        await this.runExclusive(user.uid, async () => {
+                            const origSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
+                            const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
+                            await redis.unsubscribe(...subs);
+                            for (const channel of subs) {
+                                const idx: number = origSubs.indexOf(channel);
+                                if (idx !== -1) {
+                                    origSubs.splice(idx, 1);
+                                }
                             }
-                        }
-                        this.activeSubs.set(user.uid, origSubs);
-                        sock.send(JSON.stringify({ id: message.id, type: "UNSUBSCRIBED", success: true, data: subs }));
+                            this.activeSubs.set(user.uid, origSubs);
+                            sock.send(
+                                JSON.stringify({ id: message.id, type: "UNSUBSCRIBED", success: true, data: subs }),
+                            );
+                        });
                     } else {
                         this.logger.debug(`Received invalid message from user ${user.uid}.`);
                     }

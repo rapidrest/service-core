@@ -9,6 +9,7 @@ import {
     Method,
     Options,
     Patch,
+    Protect,
     RequiresElevation,
     RequiresRole,
     RequiresScope,
@@ -209,6 +210,22 @@ describe("RouteDecorators Tests", () => {
             }
             const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
             expect(route.requiredScopes).toEqual(["read", "write"]);
+        });
+    });
+
+    describe("@Protect", () => {
+        it("does not mutate a shared ACL template's uid when applied to more than one class", () => {
+            const sharedAcl = { records: [{ userOrRoleId: ".*", actions: [] }] };
+
+            @Protect(sharedAcl as any)
+            class SharedFirstRoute {}
+            @Protect(sharedAcl as any)
+            class SharedSecondRoute {}
+
+            const aclFirst: any = Reflect.getMetadata("rrst:acl", SharedFirstRoute.prototype);
+            const aclSecond: any = Reflect.getMetadata("rrst:acl", SharedSecondRoute.prototype);
+            expect(aclFirst.uid).toBe("SharedFirstRoute");
+            expect(aclSecond.uid).toBe("SharedSecondRoute");
         });
     });
 

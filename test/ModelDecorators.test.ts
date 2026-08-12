@@ -22,6 +22,18 @@ describe("ModelDecorators Tests", () => {
             const classACL: any = Reflect.getMetadata("rrst:classACL", MyOtherProtectedModel);
             expect(classACL.uid).toBe("custom-uid");
         });
+
+        it("does not mutate a shared ACL template's uid when applied to more than one class", () => {
+            const sharedAcl = { records: [{ userOrRoleId: ".*", actions: [] }] };
+
+            @Protect(sharedAcl as any)
+            class SharedFirstModel {}
+            @Protect(sharedAcl as any)
+            class SharedSecondModel {}
+
+            expect((SharedFirstModel as any).classACL.uid).toBe("SharedFirstModel");
+            expect((SharedSecondModel as any).classACL.uid).toBe("SharedSecondModel");
+        });
     });
 
     describe("@Shard", () => {

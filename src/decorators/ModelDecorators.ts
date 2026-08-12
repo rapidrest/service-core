@@ -141,15 +141,19 @@ export function Protect(
     recordACL: boolean = false,
 ) {
     return function (target: any) {
-        if (!classACL.uid || classACL.uid === "<ClassName>") {
-            classACL.uid = target.name;
+        // Clone rather than mutate the caller-supplied ACL: applying @Protect(sharedAcl) to more than one class
+        // without an explicit `uid` must not let a later class's default uid overwrite an earlier class's `uid`
+        // on the very same shared object (classACL is stored by reference on each decorated class).
+        const resolvedACL: PartialACL = { ...classACL };
+        if (!resolvedACL.uid || resolvedACL.uid === "<ClassName>") {
+            resolvedACL.uid = target.name;
         }
 
-        Reflect.defineMetadata("rrst:classACL", classACL, target);
+        Reflect.defineMetadata("rrst:classACL", resolvedACL, target);
         Object.defineProperty(target, "classACL", {
             enumerable: true,
             writable: false,
-            value: classACL,
+            value: resolvedACL,
         });
         Reflect.defineMetadata("rrst:recordACL", recordACL, target);
         Object.defineProperty(target, "recordACL", {

@@ -635,16 +635,18 @@ export class ModelUtils {
             }
 
             if (Array.isArray(query[key])) {
-                // Add each value in the array to each corresponding query
-                let i = 0;
-                for (const value of query[key]) {
+                // Add each value in the array to each corresponding query. Multi-valued keys are "zipped"
+                // together via `numQueries` above; if this key's array is shorter than another key's, pad the
+                // remaining branches by repeating this key's own last value rather than leaving the key unset —
+                // an unset key would match ANY value, silently dropping this filter from those branches.
+                const values: string[] = query[key];
+                for (let i = 0; i < numQueries; i++) {
                     if (!result.where[i]) {
                         result.where[i] = {};
                     }
 
+                    const value: string = i < values.length ? values[i] : values[values.length - 1];
                     result.where[i][key] = ModelUtils.getQueryParamValue(value);
-
-                    i++;
                 }
             } else {
                 // Add the parameter to every query
@@ -706,6 +708,24 @@ export class ModelUtils {
         let sort: any = undefined;
 
         // logger?.debug(`Query params: ${JSON.stringify(queryParams)}`);
+
+        // Query parameters can be a single value or multiple. In the case of multiple we want to perform an OR
+        // operation for each value, "zipped" together with any other multi-valued parameters (see the equivalent
+        // two-pass logic in buildSearchQuerySQL) — so first determine how many OR branches we need in total and
+        // pre-allocate them, before any key gets applied to a subset of branches.
+        let numQueries = 1;
+        for (const key in query) {
+            if (key === "$or" || key.match(REGEX_RESERVED_QUERY_PARAMS) || key.match(REGEX_QUERY_LIMITS)) {
+                continue;
+            }
+            const value: any = query[key];
+            if (Array.isArray(value) && value.length > numQueries) {
+                numQueries = value.length;
+            }
+        }
+        for (let i = 1; i < numQueries; i++) {
+            queries[i] = {};
+        }
 
         for (const key in query) {
             // Ignore reserved query parameters
@@ -789,30 +809,29 @@ export class ModelUtils {
                 }
 
                 // Merge into whatever conditions earlier keys (including the injected soft-delete filter)
-                // already placed on queries[0] — replacing it outright would silently discard them.
-                queries[0] = { ...queries[0], $or: orResults };
+                // already placed on each branch — replacing outright would silently discard them, and merging
+                // only into queries[0] would silently drop the $or constraint from any other zipped branch.
+                for (let i = 0; i < numQueries; i++) {
+                    queries[i] = { ...queries[i], $or: orResults };
+                }
 
                 continue;
             }
 
             if (Array.isArray(query[key])) {
-                // Add each value in the array to each corresponding query. Injection safety is already enforced
+                // Add each value in the array to each corresponding query, zipped per `numQueries` above. If
+                // this key's array is shorter than another key's, pad the remaining branches by repeating this
+                // key's own last value rather than leaving the key unset — an unset key would match ANY value,
+                // silently dropping this filter from those branches. Injection safety is already enforced
                 // inside getQueryParamValueMongo() itself, at the point the client-supplied value is parsed.
-                const conditions: any[] = [];
-                for (let i = 0; i < query[key].length; i++) {
-                    const value: any = ModelUtils.getQueryParamValueMongo(query[key][i]);
-
-                    if (!queries[i]) {
-                        queries[i] = {
-                            ...queries[0],
-                        };
-                    }
-
-                    queries[i][key] = value;
+                const values: any[] = query[key];
+                for (let i = 0; i < numQueries; i++) {
+                    const raw: any = i < values.length ? values[i] : values[values.length - 1];
+                    queries[i][key] = ModelUtils.getQueryParamValueMongo(raw);
                 }
             } else {
                 const value: any = ModelUtils.getQueryParamValueMongo(query[key]);
-                for (let i = 0; i < queries.length; i++) {
+                for (let i = 0; i < numQueries; i++) {
                     queries[i][key] = value;
                 }
             }

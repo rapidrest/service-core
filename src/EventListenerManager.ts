@@ -22,6 +22,9 @@ export class EventListenerManager {
     private readonly logger: any;
     private readonly objectFactory: ObjectFactory;
     private handlers: Map<string, Function[]> = new Map();
+    // Compiled RegExp per registered handler-type key, populated lazily in onEvent() and reused across every
+    // dispatch — avoids recompiling a pattern from scratch for every incoming event.
+    private readonly typePatterns: Map<string, RegExp> = new Map();
     private readonly redis: Redis;
 
     constructor(objectFactory: ObjectFactory, redis: Redis) {
@@ -82,6 +85,7 @@ export class EventListenerManager {
     public async destroy(): Promise<void> {
         await this.redis.unsubscribe(...this.channels);
         this.handlers.clear();
+        this.typePatterns.clear();
     }
 
     /**
@@ -98,7 +102,12 @@ export class EventListenerManager {
         // handlers to send to.
         for (const entry of this.handlers.entries()) {
             // We'll perform regex comparisons with case-insentivity to make it easier
-            if (evt.type.match(new RegExp(entry[0], "i"))) {
+            let pattern: RegExp | undefined = this.typePatterns.get(entry[0]);
+            if (!pattern) {
+                pattern = new RegExp(entry[0], "i");
+                this.typePatterns.set(entry[0], pattern);
+            }
+            if (evt.type.match(pattern)) {
                 const handlers: Function[] = entry[1];
                 if (handlers) {
                     for (const handler of handlers) {

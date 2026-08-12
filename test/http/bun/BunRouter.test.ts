@@ -65,6 +65,18 @@ describe("BunRouter HTTP dispatch", () => {
         expect(nested!.status).toBe(200);
     });
 
+    it("a bare /* route matches the root path \"/\" itself, not just nested paths", async () => {
+        const router = new BunRouter();
+        router.get("/*", jsonHandler({ from: "root-wildcard" }));
+
+        const root = await dispatch(router, new Request("http://localhost/"));
+        expect(root!.status).toBe(200);
+        expect(await root!.json()).toEqual({ from: "root-wildcard" });
+
+        const nested = await dispatch(router, new Request("http://localhost/anything"));
+        expect(nested!.status).toBe(200);
+    });
+
     it("picks the longest-prefix wildcard among multiple matching wildcards", async () => {
         const router = new BunRouter();
         router.get("/*", jsonHandler({ which: "root" }));

@@ -7,7 +7,7 @@ import dayjs from "dayjs";
 import { createRequire } from "module";
 import type { AuthResult } from "./AuthStrategy.js";
 import { NetUtils } from "../NetUtils.js";
-const { Config, Init } = ObjectDecorators;
+const { Config, Init, Logger } = ObjectDecorators;
 const _require = createRequire(process.cwd() + "/package.json");
 const duration = _require("dayjs/plugin/duration");
 dayjs.extend(duration);
@@ -65,6 +65,9 @@ export class JWTStrategy {
     @Config("auth")
     private config: any;
 
+    @Logger
+    private logger: any;
+
     public readonly name: string = "jwt";
 
     private options: JWTStrategyOptions;
@@ -78,6 +81,18 @@ export class JWTStrategy {
 
     @Init
     private init(): void {
+        // Signed-cookie verification was never implemented (req.signedCookies is always `{}` in both HTTP
+        // adapters — see getAuthToken() below), so enabling this option silently disables cookie-based
+        // authentication entirely rather than adding the extra verification an operator would expect from the
+        // name. Warn loudly at startup instead of letting that be discovered as a confusing runtime auth failure.
+        if (this.options.cookieSecure) {
+            this.logger?.warn(
+                "JWTStrategyOptions.cookieSecure is enabled, but signed-cookie verification is not implemented. " +
+                    "Cookie-based authentication is disabled while this option is set to true — set it to false " +
+                    "to authenticate via the plain `jwt` cookie instead.",
+            );
+        }
+
         // Defense-in-depth only: the underlying jsonwebtoken library already restricts verification to
         // algorithms compatible with the configured key's type when `options.algorithms` is left unset, so
         // this isn't currently exploitable. Pinning it explicitly for the common case of a plain symmetric
@@ -139,8 +154,10 @@ export class JWTStrategy {
 
         // Check the cookie header — lowest precedence, so only consulted if neither the query parameter
         // nor the header supplied a token above.
+        // TODO Decrypt the signed cookie — until this is implemented, req.signedCookies is always `{}` (see
+        // both HTTP adapters), so this branch never finds a token; init() warns at startup when cookieSecure
+        // is enabled so that's not a silent failure.
         if (!authToken && this.options.cookieSecure && this.options.cookieName && req.signedCookies) {
-            // TODO Decrypt the signed cookie
             const cookieToken = req.signedCookies[this.options.cookieName];
             if (cookieToken) {
                 authToken = cookieToken;

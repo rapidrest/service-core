@@ -299,13 +299,17 @@ export function Protect(
     },
 ) {
     return function (target: any, propertyKey?: string) {
-        if (!acl.uid || acl.uid === "<UniqueName>") {
-            acl.uid = propertyKey ? `${target.constructor.name}.${propertyKey}` : `${target.name}`;
+        // Clone rather than mutate the caller-supplied ACL: applying @Protect(sharedAcl) to more than one
+        // class/method without an explicit `uid` must not let a later application's default uid overwrite an
+        // earlier one's `uid` on the very same shared object (the object is stored by reference in metadata).
+        const resolvedACL: PartialACL = { ...acl };
+        if (!resolvedACL.uid || resolvedACL.uid === "<UniqueName>") {
+            resolvedACL.uid = propertyKey ? `${target.constructor.name}.${propertyKey}` : `${target.name}`;
         }
         if (propertyKey) {
-            Reflect.defineMetadata("rrst:acl", acl, target, propertyKey);
+            Reflect.defineMetadata("rrst:acl", resolvedACL, target, propertyKey);
         } else {
-            Reflect.defineMetadata("rrst:acl", acl, target.prototype);
+            Reflect.defineMetadata("rrst:acl", resolvedACL, target.prototype);
         }
     };
 }

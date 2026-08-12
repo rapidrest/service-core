@@ -290,7 +290,10 @@ export class BunRouter implements IHttpRouter {
 
     private readonly fetchHandler = async (rawReq: Request, server: Bun.Server<any>): Promise<Response | undefined> => {
         const url = new URL(rawReq.url);
-        const reqHasTrailingSlash = url.pathname.length > 1 && url.pathname.endsWith("/");
+        // Deliberately no `length > 1` guard here (unlike normalizePath's trailing-slash strip): the bare root
+        // path "/" IS a trailing slash relative to an empty wildcard prefix (a `/*` route registered at the
+        // app root), so it must count as one or that route's wildcard boundary check would never match "/".
+        const reqHasTrailingSlash = url.pathname.endsWith("/");
         const normalizedPath = normalizePath(url.pathname);
         const reqSegments = splitPath(normalizedPath);
 

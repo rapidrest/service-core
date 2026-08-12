@@ -42,6 +42,9 @@ export class BackgroundServiceManager {
     @Logger
     private readonly logger: any;
     private objectFactory: ObjectFactory;
+    // Tracks which scheduled services currently have a `run()` in flight, so a new scheduled tick that fires
+    // before the previous one finished can be skipped instead of starting an overlapping, concurrent run.
+    private runningJobs: Set<string> = new Set();
     private services: any = {};
 
     constructor(objectFactory: ObjectFactory, classes: {}) {
@@ -104,9 +107,25 @@ export class BackgroundServiceManager {
                 // Initialize the service
                 await service.start();
 
-                // Schedule the service for background execution
+                // Schedule the service for background execution. Guard against overlapping runs: node-schedule
+                // fires on every tick regardless of whether the previous invocation's `run()` has settled, so a
+                // service whose `run()` occasionally outlasts its own interval would otherwise get a second,
+                // concurrent invocation racing the first against the same external resources/DB writes.
                 if (service.schedule) {
-                    const job: schedule.Job = schedule.scheduleJob(service.schedule, service.run.bind(service));
+                    const job: schedule.Job = schedule.scheduleJob(service.schedule, async () => {
+                        if (this.runningJobs.has(serviceName)) {
+                            this.logger.warn(
+                                `Background service '${serviceName}' is still running from a previous scheduled tick; skipping this invocation to avoid an overlapping run.`,
+                            );
+                            return;
+                        }
+                        this.runningJobs.add(serviceName);
+                        try {
+                            await service.run();
+                        } finally {
+                            this.runningJobs.delete(serviceName);
+                        }
+                    });
                     job.on("error", (err: any) => {
                         this.logger.error(`Background service '${serviceName}' failed during a scheduled run.`);
                         this.logger.debug(err);

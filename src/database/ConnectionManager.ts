@@ -67,74 +67,92 @@ export class ConnectionManager {
      */
     public async connect(datastores: any, models: Map<string, any>): Promise<void> {
         const processedModels: Map<string, string> = new Map();
-        // Go through each datastore in the configuration and attempt to make a connection
+
+        const pending: Promise<void>[] = [];
         for (const name in datastores) {
-            const datastore: any = datastores[name];
-
-            // It's possible that the connection was already configured during a previous run. In that case we will
-            // attempt to reconnect instead of creating a new connection.
-            let connection: DataSource | MongoConnection | Redis | undefined = this.connections.get(name);
-
-            if (connection && isSqlDataSource(connection) && !(connection as DataSource).isInitialized) {
-                this.logger.info(`Reconnecting to database ${name}...`);
-                await (connection as DataSource).initialize();
-            }
-
-            if (!connection) {
-                datastore.name = name;
-                const url: string = this.buildConnectionUri(datastore);
-
-                this.logger.info(`Connecting to database ${name} [${this.redactUri(url)}]...`);
-
-                if (datastore.type === "redis") {
-                    connection = new Redis(url);
-                } else {
-                    // Make an array of all entities associated with this connection
-                    const entities: any[] = [];
-                    for (const className of models.keys()) {
-                        // Get the class type
-                        const clazz = models.get(className);
-                        const ds: string = Reflect.getMetadata("rrst:datastore", clazz);
-                        // Search for the associated datastore with the model via either config or @Model decorator
-                        if (ds === name || (datastore.entities && datastore.entities.includes(className))) {
-                            const processedDatastore = processedModels.get(clazz.name);
-                            if (processedDatastore) {
-                                throw new Error(
-                                    `Model ${clazz.name} already defined as an entity for ${processedDatastore}`
-                                );
-                            }
-                            clazz.datastore = name;
-                            entities.push(clazz);
-                            processedModels.set(clazz.name, name);
-                        }
-                    }
-
-                    if (datastore.type === "mongodb" || datastore.type === "mongodb+srv") {
-                        // Connect using the native MongoDB driver
-                        const { MongoClient } = await this.importOptionalDependency("mongodb", name, datastore.type);
-                        const client = new MongoClient(url, datastore.clientOptions);
-                        await client.connect();
-                        const db = client.db(datastore.database);
-                        connection = new MongoConnection(name, client, db, entities);
-
-                        // Perform structure synchronization when requested
-                        if (datastore.synchronize) {
-                            const schemaSync: MongoSchemaSync = new MongoSchemaSync(db, this.logger);
-                            await schemaSync.synchronize(entities);
-                        }
-                    } else {
-                        // Connect using TypeORM
-                        await this.importOptionalDependency("typeorm", name, datastore.type);
-                        const orm = await import("./TypeOrmSupport.js");
-                        connection = await orm.connect(name, datastore, entities, url);
-                    }
-                }
-            }
-
-            this.connections.set(name, connection);
+            pending.push(this.connectDatastore(name, datastores[name], models, processedModels));
         }
+        await Promise.all(pending);
 
         this.logger.info(`Successfully connected to all configured databases.`);
+    }
+
+    /**
+     * Establishes (or reconnects) a single configured datastore connection and stores it in `this.connections`.
+     *
+     * @param name The configured name of the datastore.
+     * @param datastore The datastore's configuration.
+     * @param models A map of model names and associated class definitions to establish database connections for.
+     * @param processedModels Tracks which datastore each model class has already been claimed as an entity for,
+     * shared across every concurrent call from `connect()` so a model claimed by two datastores is still caught.
+     */
+    private async connectDatastore(
+        name: string,
+        datastore: any,
+        models: Map<string, any>,
+        processedModels: Map<string, string>,
+    ): Promise<void> {
+        // It's possible that the connection was already configured during a previous run. In that case we will
+        // attempt to reconnect instead of creating a new connection.
+        let connection: DataSource | MongoConnection | Redis | undefined = this.connections.get(name);
+
+        if (connection && isSqlDataSource(connection) && !(connection as DataSource).isInitialized) {
+            this.logger.info(`Reconnecting to database ${name}...`);
+            await (connection as DataSource).initialize();
+        }
+
+        if (!connection) {
+            datastore.name = name;
+            const url: string = this.buildConnectionUri(datastore);
+
+            this.logger.info(`Connecting to database ${name} [${this.redactUri(url)}]...`);
+
+            if (datastore.type === "redis") {
+                connection = new Redis(url);
+            } else {
+                // Make an array of all entities associated with this connection
+                const entities: any[] = [];
+                for (const className of models.keys()) {
+                    // Get the class type
+                    const clazz = models.get(className);
+                    const ds: string = Reflect.getMetadata("rrst:datastore", clazz);
+                    // Search for the associated datastore with the model via either config or @Model decorator
+                    if (ds === name || (datastore.entities && datastore.entities.includes(className))) {
+                        const processedDatastore = processedModels.get(clazz.name);
+                        if (processedDatastore) {
+                            throw new Error(
+                                `Model ${clazz.name} already defined as an entity for ${processedDatastore}`,
+                            );
+                        }
+                        clazz.datastore = name;
+                        entities.push(clazz);
+                        processedModels.set(clazz.name, name);
+                    }
+                }
+
+                if (datastore.type === "mongodb" || datastore.type === "mongodb+srv") {
+                    // Connect using the native MongoDB driver
+                    const { MongoClient } = await this.importOptionalDependency("mongodb", name, datastore.type);
+                    const client = new MongoClient(url, datastore.clientOptions);
+                    await client.connect();
+                    const db = client.db(datastore.database);
+                    connection = new MongoConnection(name, client, db, entities);
+
+                    // Perform structure synchronization when requested
+                    if (datastore.synchronize) {
+                        const schemaSync: MongoSchemaSync = new MongoSchemaSync(db, this.logger);
+                        await schemaSync.synchronize(entities);
+                    }
+                } else {
+                    // Connect using TypeORM
+                    await this.importOptionalDependency("typeorm", name, datastore.type);
+                    const orm = await import("./TypeOrmSupport.js");
+                    connection = await orm.connect(name, datastore, entities, url);
+                }
+            }
+        }
+
+        this.connections.set(name, connection);
     }
 
     /**

@@ -238,3 +238,23 @@ describe("JWTStrategy session updates", () => {
         expect(req.session.lastLogin).toBe(111);
     });
 });
+
+describe("JWTStrategy.init", () => {
+    it("warns that cookie auth is disabled when cookieSecure is enabled, since signed-cookie verification isn't implemented", () => {
+        const strategy: any = makeStrategy({ cookieSecure: true });
+        strategy.logger = { warn: vi.fn() };
+
+        strategy.init();
+
+        expect(strategy.logger.warn).toHaveBeenCalledWith(expect.stringContaining("cookieSecure"));
+    });
+
+    it("does not warn when cookieSecure is left at its default (false)", () => {
+        const strategy: any = makeStrategy();
+        strategy.logger = { warn: vi.fn() };
+
+        strategy.init();
+
+        expect(strategy.logger.warn).not.toHaveBeenCalled();
+    });
+});
