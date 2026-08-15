@@ -428,7 +428,7 @@ export class Server {
                     await this.serviceManager.startAll();
                 }
 
-                // Initialize the EventListenerManager
+                // Initialize the EventListenerManager.
                 const redis: any = this.connectionManager?.connections.get("events");
                 if (redis) {
                     this.logger.info("Initializing event manager...");
@@ -436,12 +436,6 @@ export class Server {
                         name: "default",
                         args: [this.objectFactory, redis],
                     });
-                    if (this.eventListenerManager) {
-                        await this.eventListenerManager.init();
-                        this.objectFactory.instances.forEach((obj: any) => {
-                            this.eventListenerManager?.register(obj);
-                        });
-                    }
                 }
 
                 // Perform automatic discovery of all other routes

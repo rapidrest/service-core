@@ -20,7 +20,7 @@ The \`ACLRecord\` interface describes a single permissions entry in an \`AccessC
 \`actions\` is an arbitrary list of action strings (e.g. \`"create"\`, \`"read"\`, \`"publish"\`). The sentinel value \`"*"\` grants every action and supersedes all others.`)
 export class ACLRecordSQL implements ACLRecord {
     @Description(
-        "The unique identiifer of the user or role that the record will apply to. This can also be a regular expression to match multiple users or roles.",
+        'The unique identifier of the user or role that the record will apply to. The wildcard values "*" and ".*" match any authenticated user; no other regular expression matching is supported — any other value must match a user or role id exactly.',
     )
     @Column()
     @Index("userOrRoleId")

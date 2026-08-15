@@ -232,6 +232,55 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         return run;
     }
 
+    /**
+     * Retrieves every uid matching the given (already-built) search query, ignoring any pagination `take`/`page`
+     * baked into it by `ModelUtils.buildSearchQuery`. Used by `count`/`exists`/`truncate`, which must narrow by
+     * record-level ACLs against the *entire* matching set rather than a single page of it — applying the default
+     * `take` here would silently undercount, under-check existence for, or under-delete a large result set.
+     */
+    private async findAllUids(searchQuery: any): Promise<string[]> {
+        if (this.repo instanceof MongoRepository) {
+            if (Array.isArray(searchQuery)) {
+                return await this.repo.distinct("uid", searchQuery[0].$match);
+            }
+            return await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
+        }
+
+        // Only the uid column is needed, and pagination must not clip the result set here.
+        const uidQuery: any = { ...searchQuery, select: ["uid"] };
+        delete uidQuery.take;
+        delete uidQuery.page;
+        const rows: T[] = await this.repo!.find(uidQuery);
+        return rows.map((obj: T) => obj.uid);
+    }
+
+    /**
+     * Filters the given uids down to those the user has `action` permission for, checking in bounded-size
+     * batches rather than a single unbounded `Promise.all` so a large matching set can't fire an unbounded
+     * number of concurrent permission-check round trips at once.
+     */
+    private async filterPermittedUids(
+        uids: string[],
+        user: JWTUser | undefined,
+        action: string,
+        reqCache?: Map<string, AccessControlList | undefined>,
+    ): Promise<string[]> {
+        const batchSize = 100;
+        const permitted: string[] = [];
+        for (let i = 0; i < uids.length; i += batchSize) {
+            const batch: string[] = uids.slice(i, i + batchSize);
+            const results: boolean[] = await Promise.all(
+                batch.map((uid) => this.aclUtils!.hasPermission(user, uid, action, reqCache)),
+            );
+            for (let j = 0; j < batch.length; j++) {
+                if (results[j]) {
+                    permitted.push(batch[j]);
+                }
+            }
+        }
+        return permitted;
+    }
+
     public async count(query: any, options?: RepoFindOptions): Promise<number> {
         if (!this.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
@@ -257,21 +306,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
-            let uids: string[] = [];
-            if (this.repo instanceof MongoRepository) {
-                if (Array.isArray(searchQuery)) {
-                    uids = await this.repo.distinct("uid", searchQuery[0].$match);
-                } else {
-                    uids = await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
-                }
-            } else {
-                (await this.repo.find(searchQuery)).forEach((obj: T) => uids.push(obj.uid));
-            }
-
-            const permitted: boolean[] = await Promise.all(
-                uids.map((uid) => this.aclUtils!.hasPermission(options?.user, uid, action, reqCache)),
-            );
-            return permitted.filter(Boolean).length;
+            const uids: string[] = await this.findAllUids(searchQuery);
+            const permitted: string[] = await this.filterPermittedUids(uids, options?.user, action, reqCache);
+            return permitted.length;
         }
 
         if (this.repo instanceof MongoRepository) {
@@ -324,17 +361,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
-            let uids: Set<string> = new Set();
-            if (this.repo instanceof MongoRepository) {
-                uids = new Set(await this.repo.distinct("uid", query));
-            } else {
-                (await this.repo.find(query)).forEach((obj: T) => uids.add(obj.uid));
-            }
-
-            const permitted: boolean[] = await Promise.all(
-                Array.from(uids).map((uid) => this.aclUtils!.hasPermission(options?.user, uid, action)),
-            );
-            if (permitted.some(Boolean)) {
+            const uids: string[] = await this.findAllUids(query);
+            const permitted: string[] = await this.filterPermittedUids(uids, options?.user, action);
+            if (permitted.length > 0) {
                 count++;
             }
 
@@ -451,6 +480,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     }
 
                     if (this.aclUtils?.enabled && this.modelClass.recordACL) {
+                        // Best-effort fast-fail only: this lock is scoped to this model's own RepoUtils instance
+                        // (keyed on non-uid identifiers, or a fresh random key when uid is the only identifier —
+                        // see `lockIds` above), so it cannot by itself prevent a *different* model's concurrent
+                        // create() for the same uid from also observing "no ACL yet" here. The actual race is
+                        // closed by the re-check under `aclUtils.runExclusiveForUid()` below, once the model row
+                        // has been saved and every model racing for this uid is serialized against each other.
                         existingAclForCreate = await this.aclUtils.findACL((newObj as any).uid);
                         // AccessControlLists are stored in a single global collection keyed only by `uid`, shared
                         // across every model — there is no per-model namespacing. `count === 0` here means no prior
@@ -502,39 +537,53 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-            // Reuse the existing ACL (and its real version/records) looked up above if this is a legitimate
-            // trackChanges "new version" — rather than building a fresh, version-less object from scratch.
-            // Building fresh here would let saveACL()'s optimistic-lock version check pass by coincidence (a
-            // never-updated ACL is also version 0), silently discarding the real records. `existingAclForCreate`
-            // is intentionally not re-fetched here: the collision guard above already established that either
-            // it's undefined (genuinely new uid) or it legitimately belongs to this exact record.
-            const acl: AccessControlList = existingAclForCreate || {
-                uid: result.uid,
-                parentUid: options?.acl?.parentUid || this.defaultACLUid,
-                records: options?.acl?.records || [],
-            };
+            // Serialize the "does an ACL already exist for this uid, and if not, claim it" sequence against
+            // every other model's concurrent create() calls for the same uid. The check above is only a
+            // best-effort fast-fail (see comment there), so it's re-verified here under a lock that's actually
+            // shared across every model, closing the window where two different models could otherwise both
+            // observe "no ACL yet" and each claim/overwrite the same ACL record.
+            await this.aclUtils.runExclusiveForUid(result.uid, async () => {
+                // Re-check for a foreign ACL now that we hold the shared per-uid lock, unless the pre-check
+                // above already found (and was entitled to reuse) this exact record's own existing ACL.
+                if (!existingAclForCreate) {
+                    existingAclForCreate = await this.aclUtils!.findACL(result.uid);
+                    if (existingAclForCreate) {
+                        throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+                    }
+                }
 
-            // Look for an existing record for the creator
-            let found: boolean = !!this.aclUtils.getRecord(acl, options?.user);
+                // Reuse the existing ACL (and its real version/records) looked up above if this is a legitimate
+                // trackChanges "new version" — rather than building a fresh, version-less object from scratch.
+                // Building fresh here would let saveACL()'s optimistic-lock version check pass by coincidence (a
+                // never-updated ACL is also version 0), silently discarding the real records.
+                const acl: AccessControlList = existingAclForCreate || {
+                    uid: result.uid,
+                    parentUid: options?.acl?.parentUid || this.defaultACLUid,
+                    records: options?.acl?.records || [],
+                };
 
-            // Always grant the creator CRUD access, unless the user is a superuser.
-            if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
-                acl.records.push({
-                    userOrRoleId: options.user.uid,
-                    actions: [
-                        ACLAction.COUNT,
-                        ACLAction.CREATE,
-                        ACLAction.DELETE,
-                        ACLAction.EXISTS,
-                        ACLAction.READ,
-                        ACLAction.LIST,
-                        ACLAction.TRUNCATE,
-                        ACLAction.UPDATE,
-                    ],
-                });
-            }
+                // Look for an existing record for the creator
+                let found: boolean = !!this.aclUtils!.getRecord(acl, options?.user);
 
-            await this.aclUtils.saveACL(acl);
+                // Always grant the creator CRUD access, unless the user is a superuser.
+                if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
+                    acl.records.push({
+                        userOrRoleId: options.user.uid,
+                        actions: [
+                            ACLAction.COUNT,
+                            ACLAction.CREATE,
+                            ACLAction.DELETE,
+                            ACLAction.EXISTS,
+                            ACLAction.READ,
+                            ACLAction.LIST,
+                            ACLAction.TRUNCATE,
+                            ACLAction.UPDATE,
+                        ],
+                    });
+                }
+
+                await this.aclUtils!.saveACL(acl);
+            });
         }
 
         // Process the result to remove any properties that have been scoped with @RequiresScope that the user
@@ -998,16 +1047,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 true,
                 options?.user,
             );
-            let uids: Array<string> = [];
-            if (this.repo instanceof MongoRepository) {
-                if (Array.isArray(searchQuery)) {
-                    uids = await this.repo.distinct("uid", searchQuery[0].$match);
-                } else {
-                    uids = await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
-                }
-            } else {
-                (await this.repo.find(searchQuery)).forEach((obj: T) => uids.push(obj.uid));
-            }
+            const uids: Array<string> = await this.findAllUids(searchQuery);
 
             if (uids.length > 0) {
                 let finalUids: string[] = uids;
@@ -1021,12 +1061,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         // narrowing entirely rather than defaulting to an empty (i.e. no-op) delete set.
                         finalUids = uids;
                     } else {
-                        const permitted: boolean[] = await Promise.all(
-                            uids.map((uid) =>
-                                this.aclUtils!.hasPermission(options.user, uid, ACLAction.TRUNCATE, reqCache),
-                            ),
-                        );
-                        finalUids = uids.filter((_uid, i) => permitted[i]);
+                        finalUids = await this.filterPermittedUids(uids, options.user, ACLAction.TRUNCATE, reqCache);
                     }
                 }
 

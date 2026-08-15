@@ -31,6 +31,9 @@ export class ACLUtils {
     @Config("trusted_roles", ["admin"])
     private trustedRoles: string[] = ["admin"];
 
+    /** Per-uid in-process locks (see `runExclusiveForUid`) guarding the create-time "claim this ACL uid" check. */
+    private readonly uidLocks: Map<string, Promise<void>> = new Map();
+
     private get cacheClient(): Redis | undefined {
         return this.connMgr?.connections.get("cache") as Redis | undefined;
     }
@@ -394,6 +397,32 @@ export class ACLUtils {
         }
 
         return result;
+    }
+
+    /**
+     * Runs `fn` exclusively with respect to any other call currently queued under the same ACL `uid` on this
+     * (application-wide, shared-singleton) `ACLUtils` instance — a call only starts once every call queued
+     * ahead of it under that uid has fully settled. ACLs are stored in a single global collection keyed only
+     * by uid, with no per-model namespacing, so the "does an ACL already exist for this uid, and if not, claim
+     * it" sequence in `RepoUtils.create()` must be serialized across *every* model's concurrent create() calls,
+     * not just calls on one model's own `RepoUtils` instance — otherwise two different models racing to create
+     * a record under the same (possibly client-supplied) uid could both observe "no ACL yet" and each claim or
+     * overwrite the same ACL record.
+     */
+    public async runExclusiveForUid<R>(uid: string, fn: () => Promise<R>): Promise<R> {
+        const previous: Promise<void> = this.uidLocks.get(uid) ?? Promise.resolve();
+        const run: Promise<R> = previous.then(fn);
+        const guard: Promise<void> = run.then(
+            () => undefined,
+            () => undefined,
+        );
+        this.uidLocks.set(uid, guard);
+        void guard.finally(() => {
+            if (this.uidLocks.get(uid) === guard) {
+                this.uidLocks.delete(uid);
+            }
+        });
+        return run;
     }
 
     /**

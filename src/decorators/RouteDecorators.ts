@@ -302,7 +302,10 @@ export function Protect(
         // Clone rather than mutate the caller-supplied ACL: applying @Protect(sharedAcl) to more than one
         // class/method without an explicit `uid` must not let a later application's default uid overwrite an
         // earlier one's `uid` on the very same shared object (the object is stored by reference in metadata).
-        const resolvedACL: PartialACL = { ...acl };
+        const resolvedACL: PartialACL = {
+            ...acl,
+            records: acl.records.map((record) => ({ ...record, actions: [...record.actions] })),
+        };
         if (!resolvedACL.uid || resolvedACL.uid === "<UniqueName>") {
             resolvedACL.uid = propertyKey ? `${target.constructor.name}.${propertyKey}` : `${target.name}`;
         }

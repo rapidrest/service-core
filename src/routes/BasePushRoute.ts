@@ -99,45 +99,57 @@ export class BasePushRoute {
     @Auth(["jwt"])
     @WebSocket()
     public async connect(@Socket sock: ws, @User user: any): Promise<void> {
-        // Cap the number of concurrent connections a single user may hold, to prevent an authenticated user
-        // from exhausting server resources by opening unbounded sockets.
-        if ((this.activeSocks.get(user.uid)?.length ?? 0) >= this.maxSocketsPerUser) {
-            this.logger.debug(`User ${user.uid} exceeded the maximum of ${this.maxSocketsPerUser} concurrent push connections.`);
+        // The socket cap check, the subscribe, and the activeSocks/activeSubs bookkeeping below must all happen
+        // atomically with respect to any other concurrent connect()/SUBSCRIBE/UNSUBSCRIBE for this same user
+        // (e.g. a burst of connections opened milliseconds apart), or two calls could both read the same
+        // pre-commit state: bypassing the per-user socket cap, or clobbering each other's committed
+        // subscription list the same way the message handlers below already guard against via `runExclusive`.
+        const redis: Redis | undefined = await this.runExclusive(user.uid, async () => {
+            // Cap the number of concurrent connections a single user may hold, to prevent an authenticated user
+            // from exhausting server resources by opening unbounded sockets.
+            if ((this.activeSocks.get(user.uid)?.length ?? 0) >= this.maxSocketsPerUser) {
+                this.logger.debug(`User ${user.uid} exceeded the maximum of ${this.maxSocketsPerUser} concurrent push connections.`);
+                return undefined;
+            }
+
+            // Establish a new redis pub/sub client for this connection
+            const conn: Redis = new Redis(this.redisConfig.url, this.redisConfig.options);
+
+            // On a first-ever connection there's nothing stored yet, so just the user's own identity channel
+            // (always implicitly permitted, same as the SUBSCRIBE message handler below never ACL-checks it).
+            // On a *re*connection, activeSubs may hold channels approved during a previous session — permission
+            // can have been revoked since then, so every channel other than the identity one is re-checked here
+            // rather than trusted as still-valid.
+            const storedSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
+            const subs: string[] = [];
+            for (const channel of storedSubs) {
+                if (channel === user.uid || (await this.aclUtils?.hasPermission(user, channel, ACLAction.READ))) {
+                    subs.push(channel);
+                }
+            }
+            try {
+                await conn.subscribe(...subs);
+                this.logger.info(`User ${user.uid} successfully subscribed to push channels: ${subs}`);
+                sock.send(JSON.stringify({ id: 0, type: "SUBSCRIBED", success: true, data: subs }));
+                this.activeSubs.set(user.uid, subs);
+            } catch (err) {
+                this.logger.error(`Failed to subscribe to push channels: user: ${user.uid}, subs: ${subs}`);
+                this.logger.debug(err);
+            }
+
+            // Track the socket so it doesn't get automatically cleaned up.
+            if (!this.activeSocks.has(user.uid)) {
+                this.activeSocks.set(user.uid, []);
+            }
+            this.activeSocks.get(user.uid)!.push(sock);
+
+            return conn;
+        });
+
+        if (!redis) {
             sock.close(1008, "Too many concurrent connections.");
             return;
         }
-
-        // Establish a new redis pub/sub client for this connection
-        const redis: Redis = new Redis(this.redisConfig.url, this.redisConfig.options);
-
-        // On a first-ever connection there's nothing stored yet, so just the user's own identity channel
-        // (always implicitly permitted, same as the SUBSCRIBE message handler below never ACL-checks it).
-        // On a *re*connection, activeSubs may hold channels approved during a previous session — permission
-        // can have been revoked since then, so every channel other than the identity one is re-checked here
-        // rather than trusted as still-valid.
-        const storedSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
-        const subs: string[] = [];
-        for (const channel of storedSubs) {
-            if (channel === user.uid || (await this.aclUtils?.hasPermission(user, channel, ACLAction.READ))) {
-                subs.push(channel);
-            }
-        }
-        try {
-            await redis.subscribe(...subs);
-            this.logger.info(`User ${user.uid} successfully subscribed to push channels: ${subs}`);
-            sock.send(JSON.stringify({ id: 0, type: "SUBSCRIBED", success: true, data: subs }));
-            this.activeSubs.set(user.uid, subs);
-        } catch (err) {
-            this.logger.error(`Failed to subscribe to push channels: user: ${user.uid}, subs: ${subs}`);
-            this.logger.debug(err);
-        }
-
-        // Track the socket so it doesn't get automatically cleaned up. Uses an atomic get-or-create so two
-        // concurrent connect() calls for a brand-new uid can't clobber each other's tracked array.
-        if (!this.activeSocks.has(user.uid)) {
-            this.activeSocks.set(user.uid, []);
-        }
-        this.activeSocks.get(user.uid)!.push(sock);
 
         // Set up the outgoing message forwarding handler to the client
         redis.on("message", (channel: string, message: string) => {
