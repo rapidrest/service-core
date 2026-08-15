@@ -66,6 +66,7 @@ describe("AdminRoute Tests", () => {
                 name: "Persona2",
             },
         ],
+        elevated: Date.now(),
     };
     const authToken = JWTUtils.createTokenSync(config.get("auth"), user);
 
@@ -111,7 +112,7 @@ describe("AdminRoute Tests", () => {
     it("Cannot connect to logs with auth header using untrusted user.", async () => {
         await requestws(server)
             .ws(basePath + "/logs", { headers: { Authorization: `jwt ${authToken}` } })
-            .expectClosed(1002, "api-102");
+            .expectClosed(1002, "api-103");
     });
 
     it("Can connect to logs with LOGIN message.", async () => {
@@ -129,13 +130,11 @@ describe("AdminRoute Tests", () => {
             .ws(basePath + "/logs")
             .sendJson({ id: 0, type: "LOGIN", data: authToken })
             .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
-            .expectClosed(1002, "api-102");
+            .expectClosed(1002, "api-103");
     });
 
     it("Cannot clear the cache without a trusted role.", async () => {
-        const result = await request(server)
-            .get(`${basePath}/clear-cache`)
-            .set("Authorization", `jwt ${authToken}`);
+        const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${authToken}`);
         expect(result.status).toBe(403);
     });
 
@@ -145,9 +144,7 @@ describe("AdminRoute Tests", () => {
         await cacheClient.set("db.cache.bar", "2");
         await cacheClient.set("unrelated-key", "3");
 
-        const result = await request(server)
-            .get(`${basePath}/clear-cache`)
-            .set("Authorization", `jwt ${adminToken}`);
+        const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
         expect(result.status).toBe(204);
 
         expect(await cacheClient.get("db.cache.foo")).toBeNull();
@@ -156,30 +153,22 @@ describe("AdminRoute Tests", () => {
     });
 
     it("Can clear the cache when there are no matching keys.", async () => {
-        const result = await request(server)
-            .get(`${basePath}/clear-cache`)
-            .set("Authorization", `jwt ${adminToken}`);
+        const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
         expect(result.status).toBe(204);
     });
 
     it("Cannot get release notes without a trusted role.", async () => {
-        const result = await request(server)
-            .get(`${basePath}/release-notes`)
-            .set("Authorization", `jwt ${authToken}`);
+        const result = await request(server).get(`${basePath}/release-notes`).set("Authorization", `jwt ${authToken}`);
         expect(result.status).toBe(403);
     });
 
     it("Can get release notes with a trusted role.", async () => {
-        const result = await request(server)
-            .get(`${basePath}/release-notes`)
-            .set("Authorization", `jwt ${adminToken}`);
+        const result = await request(server).get(`${basePath}/release-notes`).set("Authorization", `jwt ${adminToken}`);
         expect(result.status).toBe(204);
     });
 
     it("Cannot restart without a trusted role.", async () => {
-        const result = await request(server)
-            .get(`${basePath}/restart`)
-            .set("Authorization", `jwt ${authToken}`);
+        const result = await request(server).get(`${basePath}/restart`).set("Authorization", `jwt ${authToken}`);
         expect(result.status).toBe(403);
     });
 
@@ -190,9 +179,7 @@ describe("AdminRoute Tests", () => {
         // that exercises that code path without actually tearing down the test process.
         const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
         try {
-            const result = await request(server)
-                .get(`${basePath}/restart`)
-                .set("Authorization", `jwt ${adminToken}`);
+            const result = await request(server).get(`${basePath}/restart`).set("Authorization", `jwt ${adminToken}`);
             expect(result.status).toBe(204);
             await vi.waitFor(() => expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGINT"));
         } finally {

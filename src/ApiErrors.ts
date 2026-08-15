@@ -17,7 +17,8 @@ export enum ApiErrors {
     AUTH_REQUIRED = "api-100",
     AUTH_FAILED = "api-101",
     AUTH_PERMISSION_FAILURE = "api-102",
-    AUTH_REQUIRES_ELEVATION = "api-103",
+    AUTH_REQUIRES_TRUSTED_ROLE = "api-103",
+    AUTH_REQUIRES_ELEVATION = "api-104",
 }
 
 /**
@@ -39,5 +40,6 @@ export enum ApiErrorMessages {
     AUTH_REQUIRED = "Authorization is required to access this resource.",
     AUTH_FAILED = "Invalid or missing authentication token.",
     AUTH_PERMISSION_FAILURE = "User does not have permission to perform this action.",
+    AUTH_REQUIRES_TRUSTED_ROLE = "User does not have permission to perform this action.",
     AUTH_REQUIRES_ELEVATION = "This operation requires elevation.",
 }

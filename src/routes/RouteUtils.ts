@@ -114,6 +114,27 @@ export class RouteUtils {
     }
 
     /**
+     * Creates a middleware function that verifies the incoming request is from a valid user with at least
+     * one of the trusted roles.
+     */
+    public checkTrusedRoles(): RequestHandler {
+        return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+            let foundRole: boolean = UserUtils.hasRoles(req.user, this.trustedRoles);
+
+            if (foundRole) {
+                return next();
+            } else {
+                const err: ApiError = new ApiError(
+                    ApiErrors.AUTH_REQUIRES_TRUSTED_ROLE,
+                    403,
+                    ApiErrorMessages.AUTH_REQUIRES_TRUSTED_ROLE,
+                );
+                return next(err);
+            }
+        };
+    }
+
+    /**
      * Creates a middleware function that verifies the incoming request's token carries at least one of the
      * specified scopes. This is a coarse, token-level pre-check that runs before the per-resource ACL check —
      * see `RequiresScope`.
@@ -259,27 +280,27 @@ export class RouteUtils {
 
                 // Prepare the list of middleware to apply for the given endpoint.
                 // The order of operations for middleware is:
-                // 1. Auth Strategies
-                // 2. Required Roles
-                // 3. Required Scopes
-                // 4. Requires Elevation
+                // 1. Requires Elevation
+                // 2. Auth Strategies
+                // 3. Required Roles
+                // 4. Required Scopes
                 // 5. Required Permissions (Path Matching)
                 // 6. Validator Function
                 // 7. Before Functions
                 // 8. Decorated Function
                 // 9. After Functions
                 let middleware: Array<RequestHandler> = new Array();
+                if (requiresElevation !== undefined) {
+                    middleware.push(this.checkElevation(requiresElevation));
+                }
                 if (requiresTrustedRole) {
-                    middleware.push(this.checkRequiredRoles(this.trustedRoles));
+                    middleware.push(this.checkTrusedRoles());
                 }
                 if (requiredRoles) {
                     middleware.push(this.checkRequiredRoles(requiredRoles));
                 }
                 if (requiredScopes) {
                     middleware.push(this.checkRequiredScopes(requiredScopes));
-                }
-                if (requiresElevation !== undefined) {
-                    middleware.push(this.checkElevation(requiresElevation));
                 }
                 if (this.aclUtils?.enabled) {
                     const aclUid: string | undefined = acl?.uid || defaultAcl?.uid;
