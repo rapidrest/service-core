@@ -696,7 +696,7 @@ export class ModelUtils {
      * @param {any} query The search query parameters to include.
      * @param {bool} exactMatch Set to true to create a query where parameters are to be matched exactly, otherwise set to false to use a 'contains' search.
      * @param {any} user The user that is performing the request.
-     * @returns {object} The TypeORM compatible query object.
+     * @returns {object} The MongoDB compatible query object.
      */
     public static buildSearchQueryMongo(
         modelClass: any,
