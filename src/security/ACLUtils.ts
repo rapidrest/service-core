@@ -52,7 +52,7 @@ export class ACLUtils {
     private init() {
         if (this.enabled) {
             if (!this.repo) {
-                throw new Error("Failed to initialize ACLUtils. Did you forget to configure the `acl` datastore?");
+                throw new Error("Failed to initialize ACLUtils. Did you forget to configure the `acl` datasource?");
             }
             this.logger?.info("RBAC system is enabled and ready.");
         } else {
@@ -83,7 +83,7 @@ export class ACLUtils {
 
     /**
      * Validates that the user has permission to perform the request operation against the URL path for the
-     * provided request. If ACLUtils has not been initialized or the `acl` datastore has not been configured
+     * provided request. If ACLUtils has not been initialized or the `acl` datasource has not been configured
      * then always returns `true`.
      *
      * @param uid The uid of the access control list to verify against.
@@ -477,7 +477,7 @@ export class ACLUtils {
                     });
                 }
 
-                // Always save the ACL into the datastore
+                // Always save the ACL into the datasource
                 await this.saveACL(defaultAcl);
                 attempts = maxAttempts;
             } catch (err) {

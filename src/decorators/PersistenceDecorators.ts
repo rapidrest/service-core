@@ -10,21 +10,21 @@ import { snakeCase } from "../database/NamingUtils.js";
  * @see https://www.mongodb.com/docs/v7.0/reference/collation/#std-label-collation
  */
 export interface CollationOptions {
-    locale: string,
-    caseLevel?: boolean,
-    caseFirst?: string,
-    strength?: number,
-    numericOrdering?: boolean,
-    alternate?: string,
-    maxVariable?: string,
-    backwards?: boolean
+    locale: string;
+    caseLevel?: boolean;
+    caseFirst?: string;
+    strength?: number;
+    numericOrdering?: boolean;
+    alternate?: string;
+    maxVariable?: string;
+    backwards?: boolean;
 }
 
 /**
  * The set of options available when declaring a persisted column/property via the `@Column` decorator.
  */
 export interface ColumnOptions {
-    /** The name of the column in the datastore. Defaults to the property name. */
+    /** The name of the column in the datasource. Defaults to the property name. */
     name?: string;
     /** Set to `true` if the column may store `null`/`undefined` values. */
     nullable?: boolean;
@@ -124,7 +124,7 @@ function collectOwnMetadata(key: string, target: any): any[][] {
 }
 
 /**
- * Indicates that the decorated property will be persisted as a column/property in the datastore.
+ * Indicates that the decorated property will be persisted as a column/property in the datasource.
  *
  * @param options The options describing the column.
  */
@@ -140,7 +140,7 @@ export function Column(options: ColumnOptions = {}) {
 }
 
 /**
- * Indicates that the decorated property is a primary key column in the datastore.
+ * Indicates that the decorated property is a primary key column in the datasource.
  *
  * @param options The options describing the column.
  */
@@ -169,7 +169,11 @@ export function PrimaryColumn(options: ColumnOptions = {}) {
 export function Index(nameOrOptions?: string | IndexOptions, options?: IndexOptions): PropertyDecorator;
 export function Index(fields: string[], options?: IndexOptions): ClassDecorator;
 export function Index(name: string, fields: string[], options?: IndexOptions): ClassDecorator;
-export function Index(nameOrFieldsOrOptions?: string | string[] | IndexOptions, fieldsOrOptions?: string[] | IndexOptions, maybeOptions?: IndexOptions): any {
+export function Index(
+    nameOrFieldsOrOptions?: string | string[] | IndexOptions,
+    fieldsOrOptions?: string[] | IndexOptions,
+    maybeOptions?: IndexOptions,
+): any {
     // Normalize the various overload signatures
     const name: string | undefined = typeof nameOrFieldsOrOptions === "string" ? nameOrFieldsOrOptions : undefined;
     const fields: string[] | undefined = Array.isArray(nameOrFieldsOrOptions)
@@ -226,7 +230,7 @@ export function Unique(nameOrFields?: string | string[], maybeFields?: string[])
 /* eslint-enable no-redeclare */
 
 /**
- * Indicates that the class describes an entity that is persisted to a datastore.
+ * Indicates that the class describes an entity that is persisted to a datasource.
  *
  * @param options The options to set.
  */

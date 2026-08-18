@@ -609,7 +609,7 @@ export class OpenApiSpec {
     public createSchemaClass(clazz: any): oa.SchemaObject {
         const baseClass: any = Object.getPrototypeOf(clazz);
         const cache: any = Reflect.getMetadata("rrst:cacheTTL", clazz);
-        const datastore: any = Reflect.getMetadata("rrst:datastore", clazz);
+        const datasource: any = Reflect.getMetadata("rrst:datasource", clazz);
         const defaults: any = new clazz();
         const shardConfig: any = Reflect.getMetadata("rrst:shardConfig", clazz);
         const trackChanges: any = Reflect.getMetadata("rrst:trackChanges", clazz);
@@ -628,8 +628,8 @@ export class OpenApiSpec {
         if (cache) {
             result["x-cache"] = cache;
         }
-        if (datastore) {
-            result["x-datastore"] = datastore;
+        if (datasource) {
+            result["x-datasource"] = datasource;
         }
         if (shardConfig) {
             result["x-shard"] = shardConfig;

@@ -70,7 +70,7 @@ describe("BaseAdminRoute.init edge cases", () => {
         expect(route.logger.warn).toHaveBeenCalledWith("Cache is disabled.");
     });
 
-    it("logs a warning when the logs datastore is not configured", async () => {
+    it("logs a warning when the logs datasource is not configured", async () => {
         const route: any = new BaseAdminRoute();
         route.logger = makeLogger();
         route.cacheClient = undefined;
@@ -78,7 +78,7 @@ describe("BaseAdminRoute.init edge cases", () => {
         route.logsConnConfig = null;
         await route.init();
         expect(route.logger.warn).toHaveBeenCalledWith(
-            "Could not initialize `/admin/logs` route. The `logs` datastore is not not configured."
+            "Could not initialize `/admin/logs` route. The `logs` datasource is not not configured.",
         );
     });
 });
@@ -166,7 +166,7 @@ describe("BaseAdminRoute admin channel message handler", () => {
 });
 
 describe("BaseAdminRoute.logs edge cases", () => {
-    it("closes the socket when the logs datastore is not configured", async () => {
+    it("closes the socket when the logs datasource is not configured", async () => {
         const route: any = new BaseAdminRoute();
         route.trustedRoles = ["admin"];
         route.logsConnConfig = null;
@@ -175,7 +175,7 @@ describe("BaseAdminRoute.logs edge cases", () => {
         await route.logs(socket, { uid: "u1", roles: ["admin"] });
         expect(socket.close).toHaveBeenCalledWith(1002, expect.anything());
         expect(route.logger.error).toHaveBeenCalledWith(
-            "Failed to establish logs connection. `logs` connection config is not set."
+            "Failed to establish logs connection. `logs` connection config is not set.",
         );
     });
 
@@ -188,9 +188,7 @@ describe("BaseAdminRoute.logs edge cases", () => {
         const socket = { close: vi.fn(), send: vi.fn(), on: vi.fn() };
         await route.logs(socket, { uid: "u1", roles: ["admin"] });
         expect(socket.close).toHaveBeenCalledWith(1002, expect.anything());
-        expect(route.logger.error).toHaveBeenCalledWith(
-            "Failed to establish logs connection. serviceName is not set."
-        );
+        expect(route.logger.error).toHaveBeenCalledWith("Failed to establish logs connection. serviceName is not set.");
     });
 
     it("logs and closes the socket when subscribing to the logs channel fails", async () => {

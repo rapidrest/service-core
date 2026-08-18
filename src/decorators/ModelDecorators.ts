@@ -39,7 +39,7 @@ export function Cache(ttl: number = 30) {
 }
 
 /**
- * Indicates that a class is a child entity to some parent. Child entities will inherit all datastore configuration
+ * Indicates that a class is a child entity to some parent. Child entities will inherit all datasource configuration
  * of the parent, including cache settings.
  */
 export function ChildEntity() {
@@ -66,17 +66,17 @@ export function ChildEntity() {
 }
 
 /**
- * Indicates that the class describes an entity that will be persisted in the datastore with the given name.
+ * Indicates that the class describes an entity that will be persisted in the datasource with the given name.
  *
- * @param datastore The name of the datastore to store records of the decorated class.
+ * @param datasource The name of the datasource to store records of the decorated class.
  */
-export function DataStore(datastore: string) {
+export function DataStore(datasource: string) {
     return function (target: any) {
-        Reflect.defineMetadata("rrst:datastore", datastore, target);
-        Object.defineProperty(target, "datastore", {
+        Reflect.defineMetadata("rrst:datasource", datasource, target);
+        Object.defineProperty(target, "datasource", {
             enumerable: true,
             writable: true,
-            value: datastore,
+            value: datasource,
         });
     };
 }

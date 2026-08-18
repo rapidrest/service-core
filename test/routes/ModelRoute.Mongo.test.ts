@@ -781,7 +781,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             }
         });
 
-        it("Can truncate datastore [MongoDB].", async () => {
+        it("Can truncate datasource [MongoDB].", async () => {
             const users: User[] = await createUsers(20, "Doctor");
             await createUsers(5, "Skywalker");
             const result = await request(server).delete("/users");
@@ -791,7 +791,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(count).toBe(0);
         });
 
-        it("Can truncate datastore with criteria (eq) [MongoDB].", async () => {
+        it("Can truncate datasource with criteria (eq) [MongoDB].", async () => {
             const users: User[] = await createUsers(20, "Doctor");
             await createUsers(5, "Skywalker");
             const result = await request(server).delete("/users?lastName=Doctor");

@@ -38,7 +38,7 @@ describe("ConnectionManager Tests", () => {
 
         it("throws when neither type nor host is configured and no url is given", () => {
             const manager = makeManager();
-            expect(() => manager.buildConnectionUri({})).toThrow(/Invalid datastore config/);
+            expect(() => manager.buildConnectionUri({})).toThrow(/Invalid datasource config/);
         });
 
         it("builds a URI from discrete config fields, including credentials and options", () => {
@@ -55,7 +55,7 @@ describe("ConnectionManager Tests", () => {
             expect(uri).toBe("mongodb://user:pass@localhost:27017/mydb?retryWrites=true");
         });
 
-        it("prefers an explicit protocol over the datastore type for the URI scheme", () => {
+        it("prefers an explicit protocol over the datasource type for the URI scheme", () => {
             const manager = makeManager();
             const uri = manager.buildConnectionUri({ type: "mongodb", protocol: "mongodb+srv", host: "localhost" });
             expect(uri).toBe("mongodb+srv://localhost");
@@ -152,7 +152,11 @@ describe("ConnectionManager Tests", () => {
             const initialized: any = { getRepository: vi.fn(), isInitialized: true, destroy: initializedDestroy };
 
             const notInitializedDestroy = vi.fn().mockResolvedValue(undefined);
-            const notInitialized: any = { getRepository: vi.fn(), isInitialized: false, destroy: notInitializedDestroy };
+            const notInitialized: any = {
+                getRepository: vi.fn(),
+                isInitialized: false,
+                destroy: notInitializedDestroy,
+            };
 
             manager.connections.set("sqlA", initialized);
             manager.connections.set("sqlB", notInitialized);

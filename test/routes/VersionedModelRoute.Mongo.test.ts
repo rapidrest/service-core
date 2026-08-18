@@ -207,9 +207,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can test if document exists (latest version). [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47, 3))[0];
-            const result = await request(server)
-                .head(`${baseUrl}/${user.uid}`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${user.uid}`).send();
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result.headers).toHaveProperty("content-length");
@@ -218,9 +216,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
 
         it("Can test if a specific existing version exists. [MongoDB]", async () => {
             const users: User[] = await createUser("David", "Tennant", 47, 5);
-            const result = await request(server)
-                .head(`${baseUrl}/${users[2].uid}?version=${users[2].version}`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${users[2].uid}?version=${users[2].version}`).send();
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result.headers).toHaveProperty("content-length");
@@ -232,16 +228,12 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             // for a version that was never created would incorrectly report the record as existing just
             // because *some* version of that uid is present.
             const user: User = (await createUser("David", "Tennant", 47, 3))[0];
-            const result = await request(server)
-                .head(`${baseUrl}/${user.uid}?version=999`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${user.uid}?version=999`).send();
             expect(result.status).toBe(404);
         });
 
         it("Can test if document doesn't exist. [MongoDB]", async () => {
-            const result = await request(server)
-                .head(`${baseUrl}/${uuid.v4()}`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${uuid.v4()}`).send();
             expect(result.status).toBe(404);
         });
 
@@ -348,7 +340,7 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             }
         });
 
-        it("Can truncate datastore [MongoDB].", async () => {
+        it("Can truncate datasource [MongoDB].", async () => {
             const users: User[] = await createUsers(25);
             const result = await request(server).delete(baseUrl);
             expect(result.status).toBe(204);

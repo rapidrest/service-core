@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 // NOTE: This is the only module in the library that is permitted to import the optional `typeorm` package at
-// runtime. It is loaded dynamically by `ConnectionManager` if (and only if) a SQL datastore is configured.
+// runtime. It is loaded dynamically by `ConnectionManager` if (and only if) a SQL datasource is configured.
 import * as typeorm from "typeorm";
 import { pendingTypeOrmColumns } from "../decorators/ModelDecorators.js";
 import { ColumnInfo, IndexInfo } from "../decorators/PersistenceDecorators.js";
@@ -169,19 +169,24 @@ function registerIndex(storage: any, target: any, index: IndexInfo): void {
     });
 }
 
-/** Tracks active DataSource instances by datastore name to support reconnection. */
+/** Tracks active DataSource instances by datasource name to support reconnection. */
 const dataSources = new Map<string, typeorm.DataSource>();
 
 /**
- * Establishes a TypeORM connection for the given SQL datastore configuration. If a connection with the given name
+ * Establishes a TypeORM connection for the given SQL datasource configuration. If a connection with the given name
  * already exists it is reused (and reconnected if necessary).
  *
- * @param name The name of the datastore to connect to.
- * @param datastore The datastore configuration to pass to TypeORM.
+ * @param name The name of the datasource to connect to.
+ * @param datasource The datasource configuration to pass to TypeORM.
  * @param entities The list of entity classes assigned to this connection.
  * @param url The connection URL of the database.
  */
-export async function connect(name: string, datastore: any, entities: any[], url: string): Promise<typeorm.DataSource> {
+export async function connect(
+    name: string,
+    datasource: any,
+    entities: any[],
+    url: string,
+): Promise<typeorm.DataSource> {
     // Make TypeORM's query operators available to query building utilities
     ModelUtils.setTypeOrm(typeorm);
 
@@ -196,13 +201,13 @@ export async function connect(name: string, datastore: any, entities: any[], url
         }
     } else {
         connection = new typeorm.DataSource({
-            ...datastore,
+            ...datasource,
             entities,
             url,
         });
         await connection.initialize();
         dataSources.set(name, connection);
-        if (datastore.runMigrations) {
+        if (datasource.runMigrations) {
             await connection.runMigrations();
         }
     }

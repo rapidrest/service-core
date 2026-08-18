@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level tests for BasePushRoute's error/edge-case branches that PushRoute.test.ts's
-// real-server integration tests don't reach: the `events` datastore being unconfigured, a
+// real-server integration tests don't reach: the `events` datasource being unconfigured, a
 // redis.subscribe() failure during connect(), and a failed message-forward callback. Constructs
 // BasePushRoute directly with manually-set fields, the same approach ACLUtils.unit.test.ts uses,
 // rather than spinning up a full Server/ObjectFactory/Mongo/Redis stack for these narrow cases.
@@ -67,16 +67,16 @@ describe("BasePushRoute Tests (unit)", () => {
     });
 
     describe("init", () => {
-        it("warns and leaves redisPub unset when the `events` datastore is not configured", () => {
+        it("warns and leaves redisPub unset when the `events` datasource is not configured", () => {
             const route = makeRoute({ redisConfig: undefined });
             route.init();
             expect(route.logger.warn).toHaveBeenCalledWith(
-                "Could not initialize the push notification publisher. The `events` datastore is not configured.",
+                "Could not initialize the push notification publisher. The `events` datasource is not configured.",
             );
             expect(route.redisPub).toBeUndefined();
         });
 
-        it("initializes redisPub when the `events` datastore is configured", () => {
+        it("initializes redisPub when the `events` datasource is configured", () => {
             const route = makeRoute();
             route.init();
             expect(route.redisPub).toBeDefined();
@@ -85,13 +85,13 @@ describe("BasePushRoute Tests (unit)", () => {
     });
 
     describe("send", () => {
-        it("throws a 500 instead of publishing when the `events` datastore isn't configured", async () => {
+        it("throws a 500 instead of publishing when the `events` datasource isn't configured", async () => {
             const route = makeRoute({ redisConfig: undefined });
             route.init();
             const user = { uid: "u1" };
             await expect(route.send("channel1", { message: "hi" }, user)).rejects.toMatchObject({ status: 500 });
             expect(route.logger.error).toHaveBeenCalledWith(
-                "Failed to send push message to channel channel1. The `events` datastore is not configured.",
+                "Failed to send push message to channel channel1. The `events` datasource is not configured.",
             );
         });
 
@@ -150,9 +150,9 @@ describe("BasePushRoute Tests (unit)", () => {
             // onMessage() calls actually interleave instead of one finishing before the other starts.
             const route = makeRoute({
                 aclUtils: {
-                    hasPermission: vi.fn().mockImplementation(
-                        () => new Promise((resolve) => setTimeout(() => resolve(true), 5)),
-                    ),
+                    hasPermission: vi
+                        .fn()
+                        .mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(true), 5))),
                 },
             });
             const user = { uid: "u1" };

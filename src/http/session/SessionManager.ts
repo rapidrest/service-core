@@ -2,18 +2,18 @@
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import * as crypto from "crypto";
-import type { Redis } from "ioredis";
+import type * as ioredis from "ioredis";
 import { MemoryStore, ObjectDecorators } from "@rapidrest/core";
 import { DatabaseDecorators } from "../../decorators/index.js";
 import { RedisSessionStore } from "./RedisSessionStore.js";
 import type { SessionStore } from "./SessionStore.js";
 import { ObjectFactory } from "../../ObjectFactory.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
-const { RedisConnection } = DatabaseDecorators;
+const { Redis } = DatabaseDecorators;
 
 /**
  * Owns session-ID generation/signing and store selection (in-memory by default, Redis-backed when
- * a `cache` datastore connection is available and `session.store` isn't forced to `"memory"`).
+ * a `cache` datasource connection is available and `session.store` isn't forced to `"memory"`).
  * Registered by `Server.ts` only when a `session` config block is present.
  *
  * @author Jean-Philippe Steinmetz
@@ -26,8 +26,8 @@ export class SessionManager {
     private globalCookieSecret?: string;
 
     /** The redis client used as a session store when configured. Special-cased to not throw if absent. */
-    @RedisConnection("cache")
-    private cacheClient?: Redis;
+    @Redis("cache", false)
+    private cacheClient?: ioredis.Redis;
 
     @Logger
     private logger?: any;
@@ -64,7 +64,7 @@ export class SessionManager {
         this.cookiePath = this.options.cookiePath ?? "/";
 
         if (this.options.store === "redis" && !this.cacheClient) {
-            throw new Error("session.store is set to 'redis' but no `cache` datastore connection was found.");
+            throw new Error("session.store is set to 'redis' but no `cache` datasource connection was found.");
         }
 
         if (this.cacheClient && this.options.store !== "memory") {

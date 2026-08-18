@@ -14,7 +14,7 @@ import { BaseMongoEntity } from "../models/BaseMongoEntity.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { ApiError, ObjectDecorators, ObjectUtils, UserUtils, type JWTUser } from "@rapidrest/core";
 import { DatabaseDecorators } from "../decorators/index.js";
-import { Redis } from "ioredis";
+import * as ioredis from "ioredis";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
@@ -22,7 +22,7 @@ import { ACLAction, type AccessControlList } from "../security/index.js";
 import type { ACLUtils } from "../security/ACLUtils.js";
 import { ConnectionManager } from "../database/index.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
-const { RedisConnection } = DatabaseDecorators;
+const { Redis } = DatabaseDecorators;
 
 const _hashCache = new Map();
 
@@ -93,8 +93,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     protected aclUtils?: ACLUtils;
 
     /** The redis client that will be used as a 2nd level cache for all cacheable models. */
-    @RedisConnection("cache")
-    protected cacheClient?: Redis;
+    @Redis("cache", false)
+    protected cacheClient?: ioredis.Redis;
 
     @Config()
     protected config: any;
@@ -137,7 +137,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     protected async init() {
         // Retrieve the repository based on the modelClass that was passed in to the constructor
         if (!this.repo) {
-            if (!this.modelClass.datastore) {
+            if (!this.modelClass.datasource) {
                 throw new Error(
                     `Cannot initialize RepoUtils. Did you forget to add @DataStore() to ${this.modelClass.name}?`,
                 );
@@ -147,10 +147,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 throw new Error("Cannot initialize RepoUtils. Failed to retrieve ConnectionManager.");
             }
 
-            const ds: any = this.connectionManager.connections.get(this.modelClass.datastore);
+            const ds: any = this.connectionManager.connections.get(this.modelClass.datasource);
             if (!ds) {
                 throw new Error(
-                    `Cannot initialize RepoUtils. No connection found for datastore '${this.modelClass.datastore}'`,
+                    `Cannot initialize RepoUtils. No connection found for datasource '${this.modelClass.datasource}'`,
                 );
             }
 
@@ -172,13 +172,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Does the model specify a MongoDB shard configuration?
         const shardConfig: any = Reflect.getMetadata("rrst:shardConfig", this.modelClass);
         if (shardConfig && this.repo instanceof MongoRepository) {
-            const conn = this.connectionManager?.connections.get(this.modelClass.datastore) as
+            const conn = this.connectionManager?.connections.get(this.modelClass.datasource) as
                 | MongoConnection
                 | undefined;
             const admin = conn?.admin();
             if (admin) {
                 const collectionName: string = resolveCollectionName(this.modelClass);
-                const dbName: string = this.config.get(`datastores:${this.modelClass.datastore}:database`);
+                const dbName: string = this.config.get(`datastores:${this.modelClass.datasource}:database`);
                 try {
                     this.logger.info(
                         `Configuring sharding for: collection=${dbName}.${collectionName}, key=${JSON.stringify(shardConfig.key)}, unique=${shardConfig.unique}, options=${JSON.stringify(shardConfig.options)})`,
@@ -328,7 +328,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
     /**
      * Determines whether an object with the given unique identifier (and, optionally, a specific version) exists
-     * in the datastore. Respects record-level ACLs the same way `count()` does.
+     * in the datasource. Respects record-level ACLs the same way `count()` does.
      *
      * @param id The unique identifier of the object to check for.
      * @param options The additional options to consider, such as `version` and the requesting `user`.
@@ -376,7 +376,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
-     * Stores a new record of the provided object in the datastore. Performs pre-processing, permission checks against
+     * Stores a new record of the provided object in the datasource. Performs pre-processing, permission checks against
      * the class ACL, cache seeding, telemetry recording and push notifications.
      *
      * @param obj The object to store.
@@ -664,7 +664,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
-     * Retrieves an array of objects from the datastore matching the given search query. This function will first
+     * Retrieves an array of objects from the datasource matching the given search query. This function will first
      * attempt to look up the results in the cache. Also checks ACLs for READ permission.
      *
      * @param query The constructed search query to run.
@@ -982,7 +982,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // @ChildEntity()). `objectFactory.classes` contains every registered model in the app, so without
                 // this check a client could point `_type`/`_fqn` at an unrelated model to have its payload
                 // instantiated/validated against that other model's (possibly much looser) rules while still
-                // being persisted through this route's own datastore/collection.
+                // being persisted through this route's own datasource/collection.
                 if (clazz && (clazz === this.modelClass || clazz.prototype instanceof this.modelClass)) {
                     return clazz;
                 }
@@ -1303,15 +1303,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // Iterate through all properties and look for `@Reference`
                 for (const member of Object.getOwnPropertyNames(obj)) {
                     const clazz: any = Reflect.getMetadata("rrst:reference", metadataObj, member);
-                    if (clazz && clazz.datastore && obj[member]) {
+                    if (clazz && clazz.datasource && obj[member]) {
                         // Attempt to grab the repository for this reference type
-                        const conn: any = this.connectionManager?.connections.get(clazz.datastore);
+                        const conn: any = this.connectionManager?.connections.get(clazz.datasource);
                         const repo: MongoRepository<any> | Repository<any> | undefined =
                             conn instanceof MongoConnection || isSqlDataSource(conn)
                                 ? conn.getRepository(clazz)
                                 : undefined;
                         if (repo) {
-                            // Check to see if there are any objects with this UID in the datastore. If the value is an array
+                            // Check to see if there are any objects with this UID in the datasource. If the value is an array
                             // let's make sure that every uid is valid.
                             const uids: string[] = Array.isArray(obj[member]) ? obj[member] : [obj[member]];
                             const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, uids);

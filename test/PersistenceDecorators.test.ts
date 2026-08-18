@@ -125,9 +125,7 @@ describe("PersistenceDecorators Tests", () => {
         });
 
         it("throws when applied to a class with no property names", () => {
-            expect(() => Index({ unique: true })(class NoFields {})).toThrow(
-                /requires a list of property names/,
-            );
+            expect(() => Index({ unique: true })(class NoFields {})).toThrow(/requires a list of property names/);
         });
 
         it("collects property and class indexes across the hierarchy", () => {
@@ -218,7 +216,7 @@ describe("PersistenceDecorators Tests", () => {
             expect(resolveCollectionName(CustomNamed)).toBe("custom_people");
         });
 
-        it("resolves names from the most ancestral datastore owner", () => {
+        it("resolves names from the most ancestral datasource owner", () => {
             // Person/Employee inherit @DataStore from Base, so they share Base's collection
             expect(resolveCollectionName(Person)).toBe("base");
             expect(resolveCollectionName(Employee)).toBe("base");

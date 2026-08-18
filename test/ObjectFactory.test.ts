@@ -8,7 +8,7 @@ import { ObjectFactory } from "../src/ObjectFactory";
 import { ConnectionManager } from "../src/database/ConnectionManager";
 import { MongoConnection } from "../src/database/MongoConnection";
 import { DataStore } from "../src/decorators/ModelDecorators";
-import { MongoRepository, RedisConnection, Repository } from "../src/decorators/DatabaseDecorators";
+import { Redis, Repository } from "../src/decorators/DatabaseDecorators";
 
 describe("ObjectFactory Tests", () => {
     function makeFactoryWithConnections(connections: Record<string, any>): ObjectFactory {
@@ -35,8 +35,8 @@ describe("ObjectFactory Tests", () => {
     @DataStore("wrong-type-ds")
     class WrongTypeEntity {}
 
-    describe("@Repository injection", () => {
-        it("throws when the entity type has no datastore configured", async () => {
+    describe("TypeORM @Repository injection", () => {
+        it("throws when the entity type has no datasource configured", async () => {
             class Target {
                 @Repository(NoDatastoreEntity)
                 public repo: any;
@@ -45,14 +45,14 @@ describe("ObjectFactory Tests", () => {
             await expect(objectFactory.initialize(new Target())).rejects.toThrow(/must defined as an entity/);
         });
 
-        it("throws when no connection is registered for the datastore", async () => {
+        it("throws when no connection is registered for the datasource", async () => {
             class Target {
                 @Repository(MissingConnEntity)
                 public repo: any;
             }
             const objectFactory = makeFactoryWithConnections({});
             await expect(objectFactory.initialize(new Target())).rejects.toThrow(
-                /Unable to find database connection with name: missing-ds/
+                /Unable to find database connection with name: missing-ds/,
             );
         });
 
@@ -63,7 +63,7 @@ describe("ObjectFactory Tests", () => {
             }
             const objectFactory = makeFactoryWithConnections({ "wrong-type-ds": {} });
             await expect(objectFactory.initialize(new Target())).rejects.toThrow(
-                /Unable to find database connection with name: wrong-type-ds/
+                /Unable to find database connection with name: wrong-type-ds/,
             );
         });
 
@@ -78,37 +78,46 @@ describe("ObjectFactory Tests", () => {
             const target = await objectFactory.initialize<Target>(new Target());
             expect(target.repo).toBe(fakeRepo);
         });
+
+        it("silently skips injection when no connection is registered and required is 'false'", async () => {
+            class Target {
+                @Repository(SqlEntity, false)
+                public redis: any;
+            }
+            const objectFactory = makeFactoryWithConnections({});
+            const target = await objectFactory.initialize<Target>(new Target());
+        });
     });
 
-    describe("@MongoRepository injection", () => {
-        it("throws when the entity type has no datastore configured", async () => {
+    describe("MongoDB @Repository injection", () => {
+        it("throws when the entity type has no datasource configured", async () => {
             class Target {
-                @MongoRepository(NoDatastoreEntity)
+                @Repository(NoDatastoreEntity)
                 public repo: any;
             }
             const objectFactory = makeFactoryWithConnections({});
             await expect(objectFactory.initialize(new Target())).rejects.toThrow(/must defined as an entity/);
         });
 
-        it("throws when no connection is registered for the datastore", async () => {
+        it("throws when no connection is registered for the datasource", async () => {
             class Target {
-                @MongoRepository(MissingConnEntity)
+                @Repository(MissingConnEntity)
                 public repo: any;
             }
             const objectFactory = makeFactoryWithConnections({});
             await expect(objectFactory.initialize(new Target())).rejects.toThrow(
-                /Unable to find database connection with name: missing-ds/
+                /Unable to find database connection with name: missing-ds/,
             );
         });
 
-        it("throws when the connection is not a MongoDB datastore", async () => {
+        it("throws when the connection is not a MongoDB datasource", async () => {
             class Target {
-                @MongoRepository(WrongTypeEntity)
+                @Repository(WrongTypeEntity)
                 public repo: any;
             }
             const objectFactory = makeFactoryWithConnections({ "wrong-type-ds": {} });
             await expect(objectFactory.initialize(new Target())).rejects.toThrow(
-                /is not a MongoDB datastore/
+                /Unable to find database connection with name: wrong-type-ds/,
             );
         });
 
@@ -118,21 +127,30 @@ describe("ObjectFactory Tests", () => {
             const conn = new MongoConnection("mongo-ds", {} as any, fakeDb, [MongoEntity]);
             (conn as any).getRepository = () => fakeRepo;
             class Target {
-                @MongoRepository(MongoEntity)
+                @Repository(MongoEntity)
                 public repo: any;
             }
             const objectFactory = makeFactoryWithConnections({ "mongo-ds": conn });
             const target = await objectFactory.initialize<Target>(new Target());
             expect(target.repo).toBe(fakeRepo);
         });
+
+        it("silently skips injection when no connection is registered and required is 'false'", async () => {
+            class Target {
+                @Repository(MongoEntity, false)
+                public redis: any;
+            }
+            const objectFactory = makeFactoryWithConnections({});
+            const target = await objectFactory.initialize<Target>(new Target());
+        });
     });
 
-    describe("@RedisConnection injection", () => {
+    describe("@Redis injection", () => {
         it("assigns a duplicate of the connection when duplicate() is available", async () => {
             const duplicated = { kind: "duplicate" };
             const fakeRedis = { duplicate: () => duplicated };
             class Target {
-                @RedisConnection("events")
+                @Redis("events")
                 public redis: any;
             }
             const objectFactory = makeFactoryWithConnections({ events: fakeRedis });
@@ -143,7 +161,7 @@ describe("ObjectFactory Tests", () => {
         it("assigns the connection directly when duplicate() is not available", async () => {
             const fakeRedis = { kind: "no-duplicate" };
             class Target {
-                @RedisConnection("events")
+                @Redis("events")
                 public redis: any;
             }
             const objectFactory = makeFactoryWithConnections({ events: fakeRedis });
@@ -151,20 +169,20 @@ describe("ObjectFactory Tests", () => {
             expect(target.redis).toBe(fakeRedis);
         });
 
-        it("throws when no connection is registered and the name is not 'cache'", async () => {
+        it("throws when no connection is registered and required is 'true'", async () => {
             class Target {
-                @RedisConnection("events")
+                @Redis("events")
                 public redis: any;
             }
             const objectFactory = makeFactoryWithConnections({});
             await expect(objectFactory.initialize(new Target())).rejects.toThrow(
-                /Unable to find database connection with name: events/
+                /Unable to find database connection with name: events/,
             );
         });
 
-        it("silently skips injection when no connection is registered and the name is 'cache'", async () => {
+        it("silently skips injection when no connection is registered and required is 'false'", async () => {
             class Target {
-                @RedisConnection("cache")
+                @Redis("cache", false)
                 public redis: any;
             }
             const objectFactory = makeFactoryWithConnections({});

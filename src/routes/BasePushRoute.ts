@@ -67,7 +67,9 @@ export class BasePushRoute {
         if (this.redisConfig) {
             this.redisPub = new Redis(this.redisConfig.url, this.redisConfig.options);
         } else {
-            this.logger.warn("Could not initialize the push notification publisher. The `events` datastore is not configured.");
+            this.logger.warn(
+                "Could not initialize the push notification publisher. The `events` datasource is not configured.",
+            );
         }
     }
 
@@ -108,7 +110,9 @@ export class BasePushRoute {
             // Cap the number of concurrent connections a single user may hold, to prevent an authenticated user
             // from exhausting server resources by opening unbounded sockets.
             if ((this.activeSocks.get(user.uid)?.length ?? 0) >= this.maxSocketsPerUser) {
-                this.logger.debug(`User ${user.uid} exceeded the maximum of ${this.maxSocketsPerUser} concurrent push connections.`);
+                this.logger.debug(
+                    `User ${user.uid} exceeded the maximum of ${this.maxSocketsPerUser} concurrent push connections.`,
+                );
                 return undefined;
             }
 
@@ -262,7 +266,9 @@ export class BasePushRoute {
         }
 
         if (!this.redisPub) {
-            this.logger.error(`Failed to send push message to channel ${id}. The \`events\` datastore is not configured.`);
+            this.logger.error(
+                `Failed to send push message to channel ${id}. The \`events\` datasource is not configured.`,
+            );
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 

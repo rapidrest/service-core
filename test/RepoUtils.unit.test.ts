@@ -20,13 +20,13 @@ describe("RepoUtils.init guard clauses", () => {
         await expect(repoUtils.init()).rejects.toThrow("Failed to retrieve ConnectionManager");
     });
 
-    it("throws when no connection is registered for the model's datastore", async () => {
+    it("throws when no connection is registered for the model's datasource", async () => {
         const repoUtils: any = new RepoUtils(User);
         repoUtils.connectionManager = { connections: new Map() };
-        await expect(repoUtils.init()).rejects.toThrow("No connection found for datastore 'mongodb'");
+        await expect(repoUtils.init()).rejects.toThrow("No connection found for datasource 'mongodb'");
     });
 
-    it("throws when the datastore connection has no repository for the class", async () => {
+    it("throws when the datasource connection has no repository for the class", async () => {
         const repoUtils: any = new RepoUtils(User);
         const fakeConn = { getRepository: () => undefined };
         repoUtils.connectionManager = { connections: new Map([["mongodb", fakeConn]]) };

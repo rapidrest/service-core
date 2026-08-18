@@ -45,10 +45,10 @@ export function resolveCollectionName(clazz: any): string {
         }
     }
 
-    // Rule 2: most ancestral class owning a datastore binding
+    // Rule 2: most ancestral class owning a datasource binding
     let owner: any = undefined;
     for (let c = clazz; c && c !== Function.prototype; c = Object.getPrototypeOf(c)) {
-        if (Reflect.getOwnMetadata("rrst:datastore", c)) {
+        if (Reflect.getOwnMetadata("rrst:datasource", c)) {
             owner = c;
         }
     }

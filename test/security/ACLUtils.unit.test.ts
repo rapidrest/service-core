@@ -16,9 +16,9 @@ function makeAclUtils(overrides: Partial<{ enabled: boolean; connMgr: any }> = {
 
 describe("ACLUtils Tests (unit)", () => {
     describe("init", () => {
-        it("throws when enabled and no `acl` datastore connection is configured", () => {
+        it("throws when enabled and no `acl` datasource connection is configured", () => {
             const aclUtils = makeAclUtils({ enabled: true, connMgr: undefined });
-            expect(() => aclUtils.init()).toThrow("Did you forget to configure the `acl` datastore?");
+            expect(() => aclUtils.init()).toThrow("Did you forget to configure the `acl` datasource?");
         });
 
         it("logs a warning instead of throwing when RBAC is disabled", () => {
@@ -42,7 +42,7 @@ describe("ACLUtils Tests (unit)", () => {
             await expect(aclUtils.findACL("some-uid")).resolves.toBeUndefined();
         });
 
-        it("returns undefined when enabled but no `acl` datastore connection is configured", async () => {
+        it("returns undefined when enabled but no `acl` datasource connection is configured", async () => {
             const aclUtils = makeAclUtils({ enabled: true, connMgr: undefined });
             await expect(aclUtils.findACL("some-uid")).resolves.toBeUndefined();
         });
@@ -151,7 +151,12 @@ describe("ACLUtils Tests (unit)", () => {
         it("throws on a version mismatch when saving to a SQL-backed repo", async () => {
             // A plain object with getRepository() duck-types as a SQL DataSource per isSqlDataSource() —
             // it's specifically NOT `instanceof MongoRepository`, which routes saveACL() down the SQL branch.
-            const existing = { uid: "x", version: 5, parentUid: undefined, records: [{ userOrRoleId: "a", actions: ["read"] }] };
+            const existing = {
+                uid: "x",
+                version: 5,
+                parentUid: undefined,
+                records: [{ userOrRoleId: "a", actions: ["read"] }],
+            };
             const fakeRepo = { findOne: vi.fn().mockResolvedValue(existing), save: vi.fn() };
             const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
             const aclUtils = makeAclUtils({
@@ -160,9 +165,7 @@ describe("ACLUtils Tests (unit)", () => {
             });
 
             const acl = { uid: "x", records: [{ userOrRoleId: "b", actions: ["write"] }] };
-            await expect(aclUtils.saveACL(acl as any)).rejects.toThrow(
-                "The acl to save must be of the same version.",
-            );
+            await expect(aclUtils.saveACL(acl as any)).rejects.toThrow("The acl to save must be of the same version.");
             expect(fakeRepo.save).not.toHaveBeenCalled();
         });
     });

@@ -35,7 +35,7 @@ export class ModelUtils {
 
     /**
      * Provides the `typeorm` module to use when building SQL queries. This is called automatically when a SQL
-     * datastore connection is established.
+     * datasource connection is established.
      *
      * @param module The `typeorm` module.
      */
@@ -49,7 +49,7 @@ export class ModelUtils {
     public static get orm(): any {
         if (!ModelUtils.typeOrm) {
             throw new Error(
-                "SQL query construction requires the optional peer dependency 'typeorm' but no SQL datastore has been initialized.",
+                "SQL query construction requires the optional peer dependency 'typeorm' but no SQL datasource has been initialized.",
             );
         }
         return ModelUtils.typeOrm;
@@ -881,7 +881,7 @@ export class ModelUtils {
 
                 // Go through each class and determine which ones implements the `@Model` decorator.
                 classLoader.getClasses().forEach((clazz: any, name: string) => {
-                    const isModel: any = Reflect.getMetadata("rrst:datastore", clazz) !== undefined;
+                    const isModel: any = Reflect.getMetadata("rrst:datasource", clazz) !== undefined;
                     if (isModel) {
                         result.set(name, clazz);
                     }

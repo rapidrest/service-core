@@ -1,13 +1,13 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import type { Admin, Db, MongoClient } from "mongodb";
+import type { Admin, ClientSession, ClientSessionOptions, Db, MongoClient } from "mongodb";
 import { MongoRepository } from "./MongoRepository.js";
 import { resolveCollectionName } from "./NamingUtils.js";
 
 /**
  * Represents a single named connection to a MongoDB database using the native `mongodb` driver, including the
- * registry of all model classes assigned to the connection's datastore.
+ * registry of all model classes assigned to the connection's datasource.
  *
  * Note that this class only references the `mongodb` package via type-only imports and is therefore safe to load
  * when the optional `mongodb` peer dependency is not installed.
@@ -19,7 +19,7 @@ export class MongoConnection {
     public readonly client: MongoClient;
     /** The database that this connection is bound to. */
     public readonly db: Db;
-    /** The name of the datastore that this connection was created for. */
+    /** The name of the datasource that this connection was created for. */
     public readonly name: string;
 
     private connected: boolean = true;
@@ -82,7 +82,7 @@ export class MongoConnection {
         if (typeof classOrName === "string") {
             clazz = this.entities.get(classOrName);
             if (!clazz) {
-                throw new Error(`No entity named '${classOrName}' is registered with datastore '${this.name}'.`);
+                throw new Error(`No entity named '${classOrName}' is registered with datasource '${this.name}'.`);
             }
         }
 
@@ -104,5 +104,15 @@ export class MongoConnection {
      */
     public getMongoRepository<T extends object = any>(classOrName: any | string): MongoRepository<T> {
         return this.getRepository<T>(classOrName);
+    }
+
+    /**
+     * Creates a new client session for performing transactions using the provided options.
+     *
+     * @param options The options to start the session with.
+     * @returns The newly started session.
+     */
+    public startSession(options?: ClientSessionOptions): ClientSession {
+        return this.client.startSession(options);
     }
 }

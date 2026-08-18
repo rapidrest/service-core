@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, ObjectDecorators, UserUtils, type JWTUser } from "@rapidrest/core";
-import { Redis, ScanStream } from "ioredis";
+import * as ioredis from "ioredis";
 import Transport from "winston-transport";
 import {
     Auth,
@@ -14,7 +14,7 @@ import {
     User,
     WebSocket,
 } from "../decorators/RouteDecorators.js";
-import { RedisConnection } from "../decorators/DatabaseDecorators.js";
+import { Redis } from "../decorators/DatabaseDecorators.js";
 import { type IWebSocketShim } from "../http/IWebSocketShim.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
@@ -25,7 +25,7 @@ const { Config, Init, Logger } = ObjectDecorators;
  */
 export class RedisTransport extends Transport {
     private channel: string;
-    private redis: Redis;
+    private redis: ioredis.Redis;
 
     constructor(opts: any) {
         super(opts);
@@ -76,8 +76,8 @@ export class BaseAdminRoute {
     /** A map of user uid's to active sockets. */
     protected activeSockets: Map<string, any[]> = new Map();
 
-    @RedisConnection("cache")
-    protected cacheClient?: Redis;
+    @Redis("cache", false)
+    protected cacheClient?: ioredis.Redis;
 
     @Config("datastores:cache", null)
     protected cacheConnConfig: any;
@@ -88,14 +88,14 @@ export class BaseAdminRoute {
     @Config("datastores:logs", null)
     protected logsConnConfig: any;
 
-    protected redisClient?: Redis;
+    protected redisClient?: ioredis.Redis;
 
     /**
      * A dedicated connection for publishing admin channel messages (e.g. the `RESTART` signal).
      * `redisClient` issues `SUBSCRIBE` in `init()`, which puts it into subscriber-only mode — Redis
      * connections in that state can't also run `PUBLISH`, so a separate connection is required.
      */
-    protected redisPublisher?: Redis;
+    protected redisPublisher?: ioredis.Redis;
 
     /** The underlying ReleaseNotes specification. */
     protected releaseNotes?: string;
@@ -116,7 +116,7 @@ export class BaseAdminRoute {
 
         if (this.cacheConnConfig) {
             const adminChannel: string = this.serviceName || "service_admin";
-            this.redisClient = new Redis(this.cacheConnConfig.url, this.cacheConnConfig.options);
+            this.redisClient = new ioredis.Redis(this.cacheConnConfig.url, this.cacheConnConfig.options);
             this.redisPublisher = this.redisClient.duplicate();
             void this.redisClient.subscribe(adminChannel);
             this.redisClient.on("message", (channel: string, message: string) => {
@@ -134,11 +134,11 @@ export class BaseAdminRoute {
             this.logger.add(
                 new RedisTransport({
                     channelName,
-                    redis: new Redis(this.logsConnConfig.url, this.logsConnConfig.options),
+                    redis: new ioredis.Redis(this.logsConnConfig.url, this.logsConnConfig.options),
                 }),
             );
         } else {
-            this.logger.warn("Could not initialize `/admin/logs` route. The `logs` datastore is not not configured.");
+            this.logger.warn("Could not initialize `/admin/logs` route. The `logs` datasource is not not configured.");
         }
 
         // Discover the release notes file and load it (if available)
@@ -157,7 +157,7 @@ export class BaseAdminRoute {
 
         if (this.cacheClient) {
             const task: Promise<void> = new Promise((resolve, reject) => {
-                const stream: ScanStream | undefined = this.cacheClient?.scanStream({ match: "db.cache.*" });
+                const stream: ioredis.ScanStream | undefined = this.cacheClient?.scanStream({ match: "db.cache.*" });
                 if (!stream) {
                     resolve();
                     return;
@@ -199,7 +199,7 @@ export class BaseAdminRoute {
         }
 
         // Create a new redis connection for this client
-        const redis: Redis = new Redis(this.logsConnConfig.url, this.logsConnConfig.options);
+        const redis: ioredis.Redis = new ioredis.Redis(this.logsConnConfig.url, this.logsConnConfig.options);
 
         const channelName: string = this.serviceName + "-logs";
         try {

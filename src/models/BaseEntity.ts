@@ -7,7 +7,7 @@ import { Column, Index, PrimaryColumn } from "../decorators/PersistenceDecorator
 import * as uuid from "uuid";
 
 /**
- * Provides a common base class for all entity's that will be persisted to a datastore.
+ * Provides a common base class for all entity's that will be persisted to a datasource.
  *
  * Note that the `@CreateDateColumn`, `@UpdateDateColumn`, and `@VersionColumn` decorators from TypeORM are not supported
  * because they are not implemented in TypeORM's MongoDB support. They are instead implemented directly by this

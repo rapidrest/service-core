@@ -151,9 +151,7 @@ describe("ModelRoute Tests [SQL]", () => {
 
         it("Can update document property. [SQL]", async () => {
             const item: Item = await createItem("BFG", 1, 10000);
-            const result = await request(server)
-                .put(`/items/${item.uid}/cost`)
-                .send(50000);
+            const result = await request(server).put(`/items/${item.uid}/cost`).send(50000);
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toBe(item.uid);
             expect(result.body.cost).toBe(50000);
@@ -365,7 +363,7 @@ describe("ModelRoute Tests [SQL]", () => {
             }
         });
 
-        it("Can truncate datastore [SQL].", async () => {
+        it("Can truncate datasource [SQL].", async () => {
             const items: Item[] = await createItems(25);
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
@@ -377,7 +375,7 @@ describe("ModelRoute Tests [SQL]", () => {
             expect(count).toBe(0);
         });
 
-        it("Can truncate datastore with criteria (in) [SQL].", async () => {
+        it("Can truncate datasource with criteria (in) [SQL].", async () => {
             const items: Item[] = await createItems(13);
             await createItem("BFG", 1, 10000);
             await createItem("B-Bomb", 5, 50);
@@ -433,7 +431,10 @@ describe("ModelRoute Tests [SQL]", () => {
             expect(result.status).toBe(200);
 
             for (const item of items) {
-                const existing: Item | null = await repo.findOne({ where: { uid: item.uid }, order: { version: "DESC" } });
+                const existing: Item | null = await repo.findOne({
+                    where: { uid: item.uid },
+                    order: { version: "DESC" },
+                });
                 expect(existing).toBeDefined();
                 expect(existing?.cost).toBe(item.cost + 1000);
                 expect(existing?.name).toBe(item.name);

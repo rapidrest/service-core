@@ -2,7 +2,12 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import type { CreateCollectionOptions, Db, Document } from "mongodb";
-import { getIndexMetadata, type CollationOptions, type EntityOptions, type IndexInfo } from "../decorators/PersistenceDecorators.js";
+import {
+    getIndexMetadata,
+    type CollationOptions,
+    type EntityOptions,
+    type IndexInfo,
+} from "../decorators/PersistenceDecorators.js";
 import { snakeCase } from "./NamingUtils.js";
 
 interface CollectionInfo {
@@ -75,10 +80,10 @@ export class MongoSchemaSync {
             }
         }
 
-        // Rule 2: most ancestral class owning a datastore binding
+        // Rule 2: most ancestral class owning a datasource binding
         let owner: any = undefined;
         for (let c = clazz; c && c !== Function.prototype; c = Object.getPrototypeOf(c)) {
-            if (Reflect.getOwnMetadata("rrst:datastore", c)) {
+            if (Reflect.getOwnMetadata("rrst:datasource", c)) {
                 owner = c;
             }
         }

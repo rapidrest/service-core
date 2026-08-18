@@ -37,15 +37,15 @@ import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
  * | Name | HTTP Method | What it does |
  * | --- | --- | --- |
  * | `count` | `HEAD /` | Counts the number of objects matching the provided set of criteria in the request's query parameters. Returns the count as the value of the `Content-Length` header. |
- * | `create` | `POST /` | Adds one or more new objects to the datastore. |
- * | `delete` | `DELETE /:id` | Removes an existing object from the datastore. |
- * | `exists` | `HEAD /:id` | Checks if the object with the given ID exists in the datastore. Sets `Content-Length` header to `1` if the object exists, otherwise `0`. |
+ * | `create` | `POST /` | Adds one or more new objects to the datasource. |
+ * | `delete` | `DELETE /:id` | Removes an existing object from the datasource. |
+ * | `exists` | `HEAD /:id` | Checks if the object with the given ID exists in the datasource. Sets `Content-Length` header to `1` if the object exists, otherwise `0`. |
  * | `find` | `GET /` | Returns all objects matching the provided set of criteria in the request's query parameters. |
  * | `findById` | `GET /:id` | Returns a single object with a specified unique identifier. |
- * | `truncate` | `DELETE /` | Removes all objects from the datastore. |
- * | `update` | `PUT /:id` | Modifies an existing object in the datastore. |
- * | `updateBulk` | `PUT /` | Modifies multiple existing objects in the datastore. |
- * | `updateProperty` | `PUT /:id/:property` | Modifies an single property of the given name of an existing object in the datastore. |
+ * | `truncate` | `DELETE /` | Removes all objects from the datasource. |
+ * | `update` | `PUT /:id` | Modifies an existing object in the datasource. |
+ * | `updateBulk` | `PUT /` | Modifies multiple existing objects in the datasource. |
+ * | `updateProperty` | `PUT /:id/:property` | Modifies an single property of the given name of an existing object in the datasource. |
  *
  * @author Jean-Philippe Steinmetz
  */
@@ -54,7 +54,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
 
     @Summary("Count {{name}}s")
     @Description(
-        "Returns the total count of {{name}}s in the datastore based on the given criteria " +
+        "Returns the total count of {{name}}s in the datasource based on the given criteria " +
             "in the header as `Content-Length`.",
     )
     @Returns([null])
@@ -116,7 +116,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
 
     @Summary("Exists")
     @Description(
-        "Returns the total count of {{name}}s in the datastore based on the given criteria " +
+        "Returns the total count of {{name}}s in the datasource based on the given criteria " +
             "in the header as `Content-Length`.",
     )
     @Returns([null])
@@ -147,7 +147,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     }
 
     @Summary("Truncate {{model}}s")
-    @Description("Deletes all {{model}}s from the datastore that the user has access to.")
+    @Description("Deletes all {{model}}s from the datasource that the user has access to.")
     @Returns([null])
     @Delete()
     public async truncate(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<void> {

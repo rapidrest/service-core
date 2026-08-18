@@ -8,7 +8,7 @@ import { isSqlDataSource } from "./database/ConnectionKinds.js";
 import { MongoConnection } from "./database/MongoConnection.js";
 
 interface Entity {
-    datastore?: any;
+    datasource?: any;
 }
 
 /**
@@ -34,58 +34,42 @@ export class ObjectFactory extends CoreObjectFactory {
             for (const member of Object.getOwnPropertyNames(proto)) {
                 const connectionManager: ConnectionManager | undefined = this.getInstance(ConnectionManager);
 
-                // Inject @Repository
-                const injectRepo: any = Reflect.getMetadata("rrst:injectRepo", proto, member);
-                if (injectRepo) {
-                    // Look up the connection name from the model class
-                    const datastore: string = (injectRepo as Entity).datastore;
-                    if (datastore) {
-                        const conn: any = connectionManager?.connections.get(datastore);
-                        if (conn instanceof MongoConnection || isSqlDataSource(conn)) {
-                            obj[member] = conn.getRepository(injectRepo);
-                        } else {
-                            throw new Error("Unable to find database connection with name: " + datastore);
-                        }
-                    } else {
-                        throw new Error(
-                            "The model " + injectRepo.name + " must defined as an entity in datastore config."
-                        );
-                    }
-                }
-
-                // Inject @MongoRepository
-                const injectMongoRepo: any = Reflect.getMetadata("rrst:injectMongoRepo", proto, member);
-                if (injectMongoRepo) {
-                    // Look up the connection name from the model class
-                    const datastore: string = (injectMongoRepo as Entity).datastore;
-                    if (datastore) {
-                        const conn: any = connectionManager?.connections.get(datastore);
-                        if (conn instanceof MongoConnection) {
-                            obj[member] = conn.getMongoRepository(injectMongoRepo);
-                        } else if (conn) {
-                            throw new Error(`Datastore '${datastore}' is not a MongoDB datastore.`);
-                        } else {
-                            throw new Error("Unable to find database connection with name: " + datastore);
-                        }
-                    } else {
-                        throw new Error(
-                            "The model " + injectMongoRepo.name + " must defined as an entity in datastore config."
-                        );
-                    }
-                }
-
-                // Inject @RedisConnection
-                const injectRedisConn: string = Reflect.getMetadata("rrst:injectRedisRepo", proto, member);
-                if (injectRedisConn) {
-                    const conn: any = connectionManager?.connections.get(injectRedisConn);
+                // Inject @DataSource
+                const injectDataSource: any = Reflect.getMetadata("rrst:injectDataSource", proto, member);
+                if (injectDataSource) {
+                    const { name, required } = injectDataSource;
+                    const conn: any = connectionManager?.connections.get(name);
                     if (conn) {
-                        // Always create a copy of the redis connection so that the user can subscribe/publish
-                        // to redis pubsub channels without error. We must also check that it is possible to duplicate
-                        // the connection.
-                        obj[member] = conn.duplicate ? conn.duplicate() : conn;
-                        // The `cache` datastore is a special case that we don't want to fail on if it's missing
-                    } else if (injectRedisConn !== "cache") {
-                        throw new Error("Unable to find database connection with name: " + injectRedisConn);
+                        // Always create a copy of the connection so that the user can perform context aware operations without
+                        // error. We must also check that it is possible to duplicate the connection.
+                        obj[member] = typeof conn.duplicate === "function" ? conn.duplicate() : conn;
+                        // Also store the connection in a private map. We'll re-use this for @Transactional
+                        obj._datasources = obj._datasources ?? new Map();
+                        obj._datasources.set(name, obj[member]);
+                        // The `cache` datasource is a special case that we don't want to fail on if it's missing
+                    } else if (required) {
+                        throw new Error("Unable to find database connection with name: " + name);
+                    }
+                }
+
+                // Inject @Repository
+                const injectRepository: any = Reflect.getMetadata("rrst:injectRepository", proto, member);
+                if (injectRepository) {
+                    const { type, required } = injectRepository;
+                    // Look up the connection name from the model class
+                    const datasource: string = (type as Entity).datasource;
+                    if (datasource) {
+                        const conn: any = connectionManager?.connections.get(datasource);
+                        if (conn instanceof MongoConnection || isSqlDataSource(conn)) {
+                            obj[member] = conn.getRepository(injectRepository);
+                            // Also store the connection in a private map. We'll re-use this for @Transactional
+                            obj._datasources = obj._datasources ?? new Map();
+                            obj._datasources.set(injectDataSource, conn);
+                        } else if (required) {
+                            throw new Error("Unable to find database connection with name: " + datasource);
+                        }
+                    } else {
+                        throw new Error("The model " + type.name + " must defined as an entity in datasource config.");
                     }
                 }
             }

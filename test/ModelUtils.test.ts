@@ -719,7 +719,7 @@ describe("ModelUtils Tests", () => {
             (ModelUtils as any).typeOrm = undefined;
             try {
                 expect(() => ModelUtils.orm).toThrow(
-                    "SQL query construction requires the optional peer dependency 'typeorm' but no SQL datastore has been initialized.",
+                    "SQL query construction requires the optional peer dependency 'typeorm' but no SQL datasource has been initialized.",
                 );
             } finally {
                 // Restore so every other SQL test in this file keeps working.
@@ -740,10 +740,7 @@ describe("ModelUtils Tests", () => {
         it("Can build id search query with multiple identifiers and values.", () => {
             const query: any = ModelUtils.buildIdSearchQuerySQL(DoubleIdentifierClass, ["MyID", "MyID2"]);
             expect(query).toEqual({
-                where: [
-                    { id: In(["MyID", "MyID2"]) },
-                    { id2: In(["MyID", "MyID2"]) },
-                ],
+                where: [{ id: In(["MyID", "MyID2"]) }, { id2: In(["MyID", "MyID2"]) }],
             });
         });
 

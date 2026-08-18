@@ -3,8 +3,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { RepoUtils, type RepoOperationOptions } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
-import { Redis } from "ioredis";
-import { RedisConnection } from "../decorators/DatabaseDecorators.js";
+import * as ioredis from "ioredis";
+import { Redis } from "../decorators/DatabaseDecorators.js";
 import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BulkError } from "../BulkError.js";
@@ -83,7 +83,7 @@ export type UpdateObject<T extends BaseEntity | SimpleEntity> = Partial<T> & Pic
  * The set of options required by update request handlers.
  */
 export interface UpdateRequestOptions<T extends BaseEntity | SimpleEntity> extends RequestOptions {
-    /** The existing object that has already been recently pulled from the datastore. */
+    /** The existing object that has already been recently pulled from the datasource. */
     existing?: T | null;
     /** An additional list of channel names to send push notifications to. */
     pushChannels?: string[];
@@ -95,7 +95,7 @@ export interface UpdateRequestOptions<T extends BaseEntity | SimpleEntity> exten
 
 /**
  * The `ModelRoute` is an abstract base class that provides a set of built-in route behavior functions for handling
- * requests for a given data model that is managed by a persistent datastore. This class _does not_ provide route
+ * requests for a given data model that is managed by a persistent datasource. This class _does not_ provide route
  * handlers for the defined behaviors. This class is intended to serve as a base class for you to extend and hook
  * up your own route handlers that use the included functionality as desired so that you only expose the CRUD
  * endpoints for your model that you desire. If you desire a fully functional set of route handlers that implements
@@ -103,15 +103,15 @@ export interface UpdateRequestOptions<T extends BaseEntity | SimpleEntity> exten
  *
  * Provided behaviors:
  * * `doCount`: Counts the number of objects matching the provided set of criteria in the request's query parameters. Returns the count as the value of the `Content-Length` header.
- * * `doCreate`: Adds one or more new objects to the datastore.
- * * `doDelete`: Removes an existing object from the datastore.
- * * `doExists`: Checks if the object with the given ID exists in the datastore. Sets `Content-Length` header to `1` if the object exists, otherwise `0`.
+ * * `doCreate`: Adds one or more new objects to the datasource.
+ * * `doDelete`: Removes an existing object from the datasource.
+ * * `doExists`: Checks if the object with the given ID exists in the datasource. Sets `Content-Length` header to `1` if the object exists, otherwise `0`.
  * * `doFind`: Returns all objects matching the provided set of criteria in the request's query parameters.
  * * `doFindById`: Returns a single object with a specified unique identifier.
- * * `doTruncate`: Removes all objects from the datastore.
- * * `doUpdate`: Modifies an existing object in the datastore.
- * * `doUpdateBulk`: Modifies multiple existing objects in the datastore.
- * * `doUpdateProperty`: Modifies an single property of the given name of an existing object in the datastore.
+ * * `doTruncate`: Removes all objects from the datasource.
+ * * `doUpdate`: Modifies an existing object in the datasource.
+ * * `doUpdateBulk`: Modifies multiple existing objects in the datasource.
+ * * `doUpdateProperty`: Modifies an single property of the given name of an existing object in the datasource.
  *
  * @author Jean-Philippe Steinmetz
  */
@@ -120,8 +120,8 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     protected aclUtils?: ACLUtils;
 
     /** The redis client that will be used as a 2nd level cache for all cacheable models. */
-    @RedisConnection("cache")
-    protected cacheClient?: Redis;
+    @Redis("cache", false)
+    protected cacheClient?: ioredis.Redis;
 
     /** The global application configuration. */
     @Config()
@@ -216,7 +216,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
-     * Attempts to store an object provided in `options.req.body` into the datastore. Upon success, sets the newly persisted
+     * Attempts to store an object provided in `options.req.body` into the datasource. Upon success, sets the newly persisted
      * object(s) to the `result` property of the `options.res` argument, otherwise sends a `400 BAD REQUEST` response to the
      * client.
      *
@@ -246,7 +246,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
-     * Attempts to store a collection of objects provided in `options.req.body` into the datastore. Upon success, sets the newly persisted
+     * Attempts to store a collection of objects provided in `options.req.body` into the datasource. Upon success, sets the newly persisted
      * object(s) to the `result` property of the `options.res` argument, otherwise sends a `400 BAD REQUEST` response to the
      * client.
      *
@@ -276,7 +276,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
-     * Attempts to store one or more objects provided in `options.req.body` into the datastore. Upon success, sets the newly persisted
+     * Attempts to store one or more objects provided in `options.req.body` into the datasource. Upon success, sets the newly persisted
      * object(s) to the `result` property of the `options.res` argument, otherwise sends a `400 BAD REQUEST` response to the
      * client.
      *
@@ -448,7 +448,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
-     * Attempts to remove all entries of the data model type from the datastore matching the given
+     * Attempts to remove all entries of the data model type from the datasource matching the given
      * parameters and query.
      *
      * @param options The options to process the request using.

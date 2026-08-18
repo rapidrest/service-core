@@ -904,7 +904,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(result.status).toBe(403);
         });
 
-        it("Can truncate datastore (admin) [MongoDB].", async () => {
+        it("Can truncate datasource (admin) [MongoDB].", async () => {
             const users: ProtectedUser[] = await createUsers(25);
             const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
@@ -918,7 +918,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(count).toBe(0);
         });
 
-        it("Can truncate datastore for items only user has permissions for [MongoDB].", async () => {
+        it("Can truncate datasource for items only user has permissions for [MongoDB].", async () => {
             const userUid: string = uuid.v4();
             const users: ProtectedUser[] = await createUsers(25);
             const myUsers: ProtectedUser[] = await createUsers(5, undefined, userUid);
@@ -934,7 +934,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(count).toBe(users.length);
         });
 
-        it("Cannot truncate datastore (user) [MongoDB].", async () => {
+        it("Cannot truncate datasource (user) [MongoDB].", async () => {
             const users: ProtectedUser[] = await createUsers(25);
             const token = JWTUtils.createTokenSync(config.get("auth"), {
                 uid: uuid.v4(),
@@ -948,7 +948,7 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
             expect(count).toBe(users.length);
         });
 
-        it("Cannot truncate datastore (anonymous) [MongoDB].", async () => {
+        it("Cannot truncate datasource (anonymous) [MongoDB].", async () => {
             const users: ProtectedUser[] = await createUsers(25);
             const result = await request(server).delete(basePath);
             expect(result.status).toBe(204);

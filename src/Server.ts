@@ -281,8 +281,8 @@ export class Server {
                 // Load all models
                 this.logger.info("Scanning for data models...");
                 for (const [name, clazz] of this.classLoader.getClasses().entries()) {
-                    const datastore: string | undefined = Reflect.getMetadata("rrst:datastore", clazz) || undefined;
-                    if (datastore) {
+                    const datasource: string | undefined = Reflect.getMetadata("rrst:datasource", clazz) || undefined;
+                    if (datasource) {
                         models.set(name, clazz);
                         this.apiSpec.addModel(name, clazz);
                     }

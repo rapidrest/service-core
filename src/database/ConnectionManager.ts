@@ -28,7 +28,7 @@ export class ConnectionManager {
             return config.url;
         } else {
             if (!config.type || !config.host) {
-                throw new Error(`Invalid datastore config: ${JSON.stringify(config)}.`);
+                throw new Error(`Invalid datasource config: ${JSON.stringify(config)}.`);
             }
             return `${config.protocol ? config.protocol : config.type}://${config.username && config.password ? `${config.username}:${config.password}@` : ""}${config.host}${config.port ? `:${config.port}` : ""}${config.database ? `/${config.database}` : ""}${config.options ? `?${config.options}` : ""}`;
         }
@@ -46,8 +46,8 @@ export class ConnectionManager {
      * Dynamically imports the given optional peer dependency, throwing a helpful error if it is not installed.
      *
      * @param pkg The name of the package to import.
-     * @param datastoreName The name of the datastore requiring the package.
-     * @param datastoreType The type of the datastore requiring the package.
+     * @param datastoreName The name of the datasource requiring the package.
+     * @param datastoreType The type of the datasource requiring the package.
      */
     private async importOptionalDependency(pkg: string, datastoreName: string, datastoreType: string): Promise<any> {
         try {
@@ -78,17 +78,17 @@ export class ConnectionManager {
     }
 
     /**
-     * Establishes (or reconnects) a single configured datastore connection and stores it in `this.connections`.
+     * Establishes (or reconnects) a single configured datasource connection and stores it in `this.connections`.
      *
-     * @param name The configured name of the datastore.
-     * @param datastore The datastore's configuration.
+     * @param name The configured name of the datasource.
+     * @param datasource The datasource's configuration.
      * @param models A map of model names and associated class definitions to establish database connections for.
-     * @param processedModels Tracks which datastore each model class has already been claimed as an entity for,
+     * @param processedModels Tracks which datasource each model class has already been claimed as an entity for,
      * shared across every concurrent call from `connect()` so a model claimed by two datastores is still caught.
      */
     private async connectDatastore(
         name: string,
-        datastore: any,
+        datasource: any,
         models: Map<string, any>,
         processedModels: Map<string, string>,
     ): Promise<void> {
@@ -102,12 +102,12 @@ export class ConnectionManager {
         }
 
         if (!connection) {
-            datastore.name = name;
-            const url: string = this.buildConnectionUri(datastore);
+            datasource.name = name;
+            const url: string = this.buildConnectionUri(datasource);
 
             this.logger.info(`Connecting to database ${name} [${this.redactUri(url)}]...`);
 
-            if (datastore.type === "redis") {
+            if (datasource.type === "redis") {
                 connection = new Redis(url);
             } else {
                 // Make an array of all entities associated with this connection
@@ -115,39 +115,39 @@ export class ConnectionManager {
                 for (const className of models.keys()) {
                     // Get the class type
                     const clazz = models.get(className);
-                    const ds: string = Reflect.getMetadata("rrst:datastore", clazz);
-                    // Search for the associated datastore with the model via either config or @Model decorator
-                    if (ds === name || (datastore.entities && datastore.entities.includes(className))) {
+                    const ds: string = Reflect.getMetadata("rrst:datasource", clazz);
+                    // Search for the associated datasource with the model via either config or @Model decorator
+                    if (ds === name || (datasource.entities && datasource.entities.includes(className))) {
                         const processedDatastore = processedModels.get(clazz.name);
                         if (processedDatastore) {
                             throw new Error(
                                 `Model ${clazz.name} already defined as an entity for ${processedDatastore}`,
                             );
                         }
-                        clazz.datastore = name;
+                        clazz.datasource = name;
                         entities.push(clazz);
                         processedModels.set(clazz.name, name);
                     }
                 }
 
-                if (datastore.type === "mongodb" || datastore.type === "mongodb+srv") {
+                if (datasource.type === "mongodb" || datasource.type === "mongodb+srv") {
                     // Connect using the native MongoDB driver
-                    const { MongoClient } = await this.importOptionalDependency("mongodb", name, datastore.type);
-                    const client = new MongoClient(url, datastore.clientOptions);
+                    const { MongoClient } = await this.importOptionalDependency("mongodb", name, datasource.type);
+                    const client = new MongoClient(url, datasource.clientOptions);
                     await client.connect();
-                    const db = client.db(datastore.database);
+                    const db = client.db(datasource.database);
                     connection = new MongoConnection(name, client, db, entities);
 
                     // Perform structure synchronization when requested
-                    if (datastore.synchronize) {
+                    if (datasource.synchronize) {
                         const schemaSync: MongoSchemaSync = new MongoSchemaSync(db, this.logger);
                         await schemaSync.synchronize(entities);
                     }
                 } else {
                     // Connect using TypeORM
-                    await this.importOptionalDependency("typeorm", name, datastore.type);
+                    await this.importOptionalDependency("typeorm", name, datasource.type);
                     const orm = await import("./TypeOrmSupport.js");
-                    connection = await orm.connect(name, datastore, entities, url);
+                    connection = await orm.connect(name, datasource, entities, url);
                 }
             }
         }
