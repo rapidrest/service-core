@@ -35,7 +35,7 @@ export class RedisSessionStore implements SessionStore {
         data: Record<string, any>,
         ttlSeconds: number = this.defaultTTL,
     ): Promise<void> {
-        await this.client.setex(KEY_PREFIX + sessionId, ttlSeconds, JSON.stringify(data));
+        await this.client.setEx(KEY_PREFIX + sessionId, ttlSeconds, JSON.stringify(data));
     }
 
     public async delete(sessionId: string): Promise<void> {

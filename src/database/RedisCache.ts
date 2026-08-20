@@ -1,12 +1,12 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { RedisStore } from "@rapidrest/core";
-import { Init } from "@rapidrest/core/dist/types/decorators/ObjectDecorators.js";
+import { ObjectDecorators, RedisStore } from "@rapidrest/core";
 import type { RedisClientType } from "redis";
 import { Redis } from "../decorators/DatabaseDecorators.js";
 import { BaseEntity } from "typeorm";
 import { SimpleEntity } from "../models/SimpleEntity.js";
+const { Init } = ObjectDecorators;
 
 /**
  * Implements a cache system for storing entities. Uses the `cache` Redis datastore (when configured) as the

@@ -8,7 +8,6 @@ import { default as config } from "./config";
 import { Server, ObjectFactory, ApiErrors } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { request } from "../src/test/request.js";
-import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
 
 import { JWTUtils, Logger, sleep } from "@rapidrest/core";
@@ -20,7 +19,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
         dbName: "mongomemory-rrst-test",
     },
 });
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 vi.setConfig({ testTimeout: 1200000 });
 describe("Server Tests", () => {
     const logger = new Logger();
@@ -33,14 +31,6 @@ describe("Server Tests", () => {
 
     afterAll(async () => {
         await mongod.stop();
-        await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    throw new Error(err.message);
-                }
-                resolve();
-            });
-        });
     });
 
     beforeEach(async () => {

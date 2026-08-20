@@ -8,6 +8,7 @@ import ProtectedUser from "../server/models/ProtectedUser";
 import { MongoConnection, MongoRepository } from "../../src";
 import { JWTUtils, Logger, EventUtils } from "@rapidrest/core";
 import { AccessControlListMongo } from "../../src/security/AccessControlListMongo";
+import { ACLUtils } from "../../src/security/ACLUtils";
 import { ACLAction, ACLRecord } from "../../src/security";
 import { Server } from "../../src/Server";
 import { ObjectFactory } from "../../src/ObjectFactory";
@@ -968,6 +969,13 @@ describe("ModelRoute (ACLs Enabled) Tests [MongoDB]", () => {
                 defaultACL.version++;
 
                 await aclRepo.save(defaultACL);
+
+                // This bypasses ACLUtils entirely (writing straight to the repo), so its cache — which,
+                // without a `cache` datastore configured, backs onto an in-memory store rather than being
+                // disabled outright (see RedisCache's doc comment) — is never invalidated by this write.
+                // Invalidate it manually so the request below observes the change instead of a stale hit.
+                const aclUtils: ACLUtils | undefined = objectFactory.getInstance(ACLUtils);
+                await (aclUtils as any)?.cache?.delete("ProtectedUser");
             }
 
             const users: ProtectedUser[] = await createUsers(25);

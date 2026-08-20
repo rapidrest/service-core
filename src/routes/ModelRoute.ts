@@ -3,8 +3,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { RepoUtils, type RepoOperationOptions } from "../models/RepoUtils.js";
 import { BaseEntity } from "../models/BaseEntity.js";
-import * as ioredis from "ioredis";
-import { Redis } from "../decorators/DatabaseDecorators.js";
 import type { HttpRequest, HttpResponse } from "../http/index.js";
 import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BulkError } from "../BulkError.js";
@@ -122,10 +120,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
 
     @Inject(ACLUtils)
     protected aclUtils?: ACLUtils;
-
-    /** The redis client that will be used as a 2nd level cache for all cacheable models. */
-    @Redis("cache", false)
-    protected cacheClient?: ioredis.Redis;
 
     /** The global application configuration. */
     @Config()

@@ -2,7 +2,8 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, ObjectDecorators, UserUtils, type JWTUser } from "@rapidrest/core";
-import * as ioredis from "ioredis";
+import type { RedisClientType } from "redis";
+import { importRedis } from "../database/ConnectionKinds.js";
 import Transport from "winston-transport";
 import {
     Auth,
@@ -25,7 +26,7 @@ const { Config, Init, Logger } = ObjectDecorators;
  */
 export class RedisTransport extends Transport {
     private channel: string;
-    private redis: ioredis.Redis;
+    private redis: RedisClientType;
 
     constructor(opts: any) {
         super(opts);
@@ -34,7 +35,7 @@ export class RedisTransport extends Transport {
     }
 
     public close(): void {
-        this.redis.disconnect();
+        void this.redis.disconnect();
     }
 
     public log(info: any, next: Function): any {
@@ -77,7 +78,7 @@ export class BaseAdminRoute {
     protected activeSockets: Map<string, any[]> = new Map();
 
     @Redis("cache", false)
-    protected cacheClient?: ioredis.Redis;
+    protected cacheClient?: RedisClientType;
 
     @Config("datastores:cache", null)
     protected cacheConnConfig: any;
@@ -88,14 +89,14 @@ export class BaseAdminRoute {
     @Config("datastores:logs", null)
     protected logsConnConfig: any;
 
-    protected redisClient?: ioredis.Redis;
+    protected redisClient?: RedisClientType;
 
     /**
      * A dedicated connection for publishing admin channel messages (e.g. the `RESTART` signal).
      * `redisClient` issues `SUBSCRIBE` in `init()`, which puts it into subscriber-only mode — Redis
      * connections in that state can't also run `PUBLISH`, so a separate connection is required.
      */
-    protected redisPublisher?: ioredis.Redis;
+    protected redisPublisher?: RedisClientType;
 
     /** The underlying ReleaseNotes specification. */
     protected releaseNotes?: string;
@@ -116,25 +117,28 @@ export class BaseAdminRoute {
 
         if (this.cacheConnConfig) {
             const adminChannel: string = this.serviceName || "service_admin";
-            this.redisClient = new ioredis.Redis(this.cacheConnConfig.url, this.cacheConnConfig.options);
+            const { createClient } = await importRedis();
+            this.redisClient = createClient({ url: this.cacheConnConfig.url });
+            await this.redisClient.connect();
             this.redisPublisher = this.redisClient.duplicate();
-            void this.redisClient.subscribe(adminChannel);
-            this.redisClient.on("message", (channel: string, message: string) => {
-                if (channel === adminChannel) {
-                    if (message === "RESTART") {
-                        this.logger.info("Received RESTART signal. Restarting service...");
-                        process.kill(process.pid, "SIGINT");
-                    }
+            await this.redisPublisher.connect();
+            await this.redisClient.subscribe(adminChannel, (message: string) => {
+                if (message === "RESTART") {
+                    this.logger.info("Received RESTART signal. Restarting service...");
+                    process.kill(process.pid, "SIGINT");
                 }
             });
         }
 
         if (this.logsConnConfig) {
             const channelName: string = this.serviceName + "-logs";
+            const { createClient } = await importRedis();
+            const logsRedis: RedisClientType = createClient({ url: this.logsConnConfig.url });
+            await logsRedis.connect();
             this.logger.add(
                 new RedisTransport({
                     channelName,
-                    redis: new ioredis.Redis(this.logsConnConfig.url, this.logsConnConfig.options),
+                    redis: logsRedis,
                 }),
             );
         } else {
@@ -156,24 +160,13 @@ export class BaseAdminRoute {
         }
 
         if (this.cacheClient) {
-            const task: Promise<void> = new Promise((resolve, reject) => {
-                const stream: ioredis.ScanStream | undefined = this.cacheClient?.scanStream({ match: "cache.*" });
-                if (!stream) {
-                    resolve();
-                    return;
-                }
-                let keys: string[] = [];
-                stream.on("data", (k: string[]) => {
-                    keys = keys.concat(k);
-                });
-                stream.on("end", () => {
-                    (keys.length > 0 ? this.cacheClient!.unlink(keys) : Promise.resolve())
-                        .then(() => resolve())
-                        .catch(reject);
-                });
-                stream.on("error", reject);
-            });
-            await task;
+            const keys: string[] = [];
+            for await (const found of this.cacheClient.scanIterator({ MATCH: "cache.*" })) {
+                keys.push(...found);
+            }
+            if (keys.length > 0) {
+                await this.cacheClient.unlink(keys);
+            }
         }
     }
 
@@ -199,13 +192,13 @@ export class BaseAdminRoute {
         }
 
         // Create a new redis connection for this client
-        const redis: ioredis.Redis = new ioredis.Redis(this.logsConnConfig.url, this.logsConnConfig.options);
+        const { createClient } = await importRedis();
+        const redis: RedisClientType = createClient({ url: this.logsConnConfig.url });
+        await redis.connect();
 
         const channelName: string = this.serviceName + "-logs";
         try {
-            await redis.subscribe(channelName);
-            this.logger.info(`User ${user.uid} successfully subscribed to logging channel.`);
-            redis.on("message", (channel: string, message: string) => {
+            await redis.subscribe(channelName, (message: string, channel: string) => {
                 // Forward the message to the client
                 socket.send(message, (err) => {
                     if (err) {
@@ -214,13 +207,14 @@ export class BaseAdminRoute {
                     }
                 });
             });
+            this.logger.info(`User ${user.uid} successfully subscribed to logging channel.`);
             socket.send(JSON.stringify({ id: 0, type: "SUBSCRIBED", success: true, data: channelName }));
 
             socket.on("close", async (code: number, reason: string) => {
                 // Unsubscribe from all redis pub/sub channels
                 await redis.unsubscribe(channelName);
                 // Disconnect the redis client
-                redis.disconnect();
+                await redis.disconnect();
 
                 // Remove the socket from our tracked list
                 const socks: any[] = this.activeSockets.get(user.uid) || [];
@@ -240,6 +234,7 @@ export class BaseAdminRoute {
         } catch (err: any) {
             this.logger.error(`User ${user.uid} failed to subscribe to logging channel.`);
             this.logger.debug(err);
+            void redis.disconnect();
             socket.close();
 
             // Remove the socket from our tracked list

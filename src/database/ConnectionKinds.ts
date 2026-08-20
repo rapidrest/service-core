@@ -12,3 +12,17 @@ import { MongoConnection } from "./MongoConnection.js";
 export function isSqlDataSource(conn: any): boolean {
     return !!conn && typeof conn.getRepository === "function" && !(conn instanceof MongoConnection);
 }
+
+/**
+ * Dynamically imports the `redis` package, throwing a helpful error if it isn't installed. `redis` is a peer
+ * dependency (like `mongodb` and `typeorm`) rather than a hard dependency of this package, so it must only be
+ * loaded when a consumer actually configures a redis-backed feature — never imported at the top of a module
+ * that's always loaded, or every consumer would be forced to install it regardless of whether they use it.
+ */
+export async function importRedis(): Promise<typeof import("redis")> {
+    try {
+        return await import("redis");
+    } catch (err: any) {
+        throw new Error("This feature requires the optional peer dependency 'redis'. Install it with: yarn add redis");
+    }
+}

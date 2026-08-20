@@ -6,7 +6,6 @@ import { request } from "../../src/test/request.js";
 import { Server, ConnectionManager, ObjectFactory } from "../../src";
 import VersionedItem from "../server/models/VersionedItem";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import * as sqlite3 from "sqlite3";
 import { Repository, DataSource } from "typeorm";
 import { Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
@@ -18,7 +17,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
     },
 });
 let repo: Repository<VersionedItem>;
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 
 // VersionedItem has @TrackChanges() enabled, so each version is a distinct row sharing the same `uid` (version
 // is promoted to part of the composite primary key for SQL - see TypeOrmSupport.ts). Rows are inserted directly
@@ -63,14 +61,6 @@ describe("VersionedModelRoute Tests [SQL]", () => {
         await server.stop();
         await mongod.stop();
         await objectFactory.destroy();
-        return await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    console.log(err);
-                }
-                resolve();
-            });
-        });
     });
 
     beforeEach(async () => {

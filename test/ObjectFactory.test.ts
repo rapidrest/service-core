@@ -87,6 +87,33 @@ describe("ObjectFactory Tests", () => {
             const objectFactory = makeFactoryWithConnections({});
             const target = await objectFactory.initialize<Target>(new Target());
         });
+
+        it("calls getRepository() with the entity type itself, not the @Repository metadata wrapper", async () => {
+            // Regression test: getRepository() used to be called with the raw `{ type, required }` metadata
+            // object instead of `type`, which would break resolveCollectionName()/repository lookup for any
+            // real (non-fake) connection.
+            const getRepository = vi.fn().mockReturnValue({ kind: "sql-repo" });
+            class Target {
+                @Repository(SqlEntity)
+                public repo: any;
+            }
+            const objectFactory = makeFactoryWithConnections({ "sql-ds": { getRepository } });
+            await objectFactory.initialize<Target>(new Target());
+            expect(getRepository).toHaveBeenCalledWith(SqlEntity);
+        });
+
+        it("stores the connection in _datasources keyed by the datasource name, for @Transactional to find", async () => {
+            // Regression test: this used to be keyed by `injectDataSource` (always undefined for a plain
+            // @Repository-only field), so @Transactional could never resolve the connection it just injected.
+            const fakeDataSource = { getRepository: () => ({ kind: "sql-repo" }) };
+            class Target {
+                @Repository(SqlEntity)
+                public repo: any;
+            }
+            const objectFactory = makeFactoryWithConnections({ "sql-ds": fakeDataSource });
+            const target = await objectFactory.initialize<Target>(new Target());
+            expect((target as any)._datasources.get("sql-ds")).toBe(fakeDataSource);
+        });
     });
 
     describe("MongoDB @Repository injection", () => {

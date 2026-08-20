@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import config from "../../config";
-import Redis from "ioredis-mock";
+import { createStandaloneFakeRedisClient } from "../../helpers/FakeRedis.js";
 import { Logger, MemoryStore } from "@rapidrest/core";
 import { ObjectFactory } from "../../../src/ObjectFactory";
 import { ConnectionManager } from "../../../src/database/ConnectionManager";
@@ -22,7 +22,7 @@ describe("RedisSessionStore Tests", () => {
 
     it("Can save and load session data.", async () => {
         const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, {
-            args: [new Redis() as any],
+            args: [createStandaloneFakeRedisClient() as any],
         });
         await store.save("abc", { uid: "user-1" }, 60);
         const loaded = await store.load("abc");
@@ -31,14 +31,14 @@ describe("RedisSessionStore Tests", () => {
 
     it("Returns undefined for a session ID that was never saved.", async () => {
         const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, {
-            args: [new Redis() as any],
+            args: [createStandaloneFakeRedisClient() as any],
         });
         expect(await store.load("does-not-exist")).toBeUndefined();
     });
 
     it("Removes session data on destroy().", async () => {
         const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, {
-            args: [new Redis() as any],
+            args: [createStandaloneFakeRedisClient() as any],
         });
         await store.save("to-destroy", { uid: "user-3" }, 60);
         await store.delete("to-destroy");
@@ -46,7 +46,7 @@ describe("RedisSessionStore Tests", () => {
     });
 
     it("Returns undefined when the stored value is not valid JSON.", async () => {
-        const client = new Redis() as any;
+        const client = createStandaloneFakeRedisClient() as any;
         const store: RedisSessionStore = await objectFactory.newInstance(RedisSessionStore, { args: [client] });
         await client.set("session:corrupted", "not-json");
         expect(await store.load("corrupted")).toBeUndefined();
@@ -65,7 +65,7 @@ describe("SessionManager Tests", () => {
     it("Selects RedisSessionStore when a `cache` connection is available.", async () => {
         const objectFactory = new ObjectFactory(makeConfig(), new Logger());
         const connMgr: ConnectionManager = await objectFactory.newInstance(ConnectionManager, { name: "default" });
-        connMgr.connections.set("cache", new Redis() as any);
+        connMgr.connections.set("cache", createStandaloneFakeRedisClient() as any);
         const mgr: SessionManager = await objectFactory.newInstance(SessionManager, { name: "default" });
         expect((mgr as any).store).toBeInstanceOf(RedisSessionStore);
         await objectFactory.destroy();

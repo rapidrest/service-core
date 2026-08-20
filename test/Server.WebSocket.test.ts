@@ -6,7 +6,6 @@ import * as fs from "fs";
 import { default as config } from "./config";
 import { Server } from "../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
 import { requestws } from "../src/test/requestws.js";
 
@@ -18,7 +17,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
         dbName: "mongomemory-rrst-test",
     },
 });
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 vi.setConfig({ testTimeout: 60000 });
 
 describe("Server WebSocket Tests", () => {
@@ -32,14 +30,6 @@ describe("Server WebSocket Tests", () => {
     afterAll(async () => {
         await server.stop();
         await mongod.stop();
-        return await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    console.log(err);
-                }
-                resolve();
-            });
-        });
     });
 
     it("Can connect via unsecured WebSocket [anonymous]", async () => {

@@ -4,7 +4,6 @@
 import { default as config } from "../config";
 import { BaseStaticRoute, ObjectFactory, Server } from "../../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import * as sqlite3 from "sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import * as http from "http";
@@ -19,7 +18,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
         dbName: "mongomemory-rrst-test",
     },
 });
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 vi.setConfig({ testTimeout: 30000 });
 
 @Route("/static")
@@ -63,14 +61,6 @@ describe("BaseStaticRoute Tests", () => {
         await server.stop();
         await objectFactory.destroy();
         await mongod.stop();
-        return await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    throw new Error(err.message);
-                }
-                resolve();
-            });
-        });
     });
 
     it("Returns a 404 for the base path without a trailing slash (the `/*` route requires it).", async () => {

@@ -11,7 +11,7 @@ import { Logger } from "@rapidrest/core";
 import { ObjectFactory } from "../../src/ObjectFactory";
 import { ModelUtils } from "../../src/models/ModelUtils";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
-import Redis from "ioredis-mock";
+import { createStandaloneFakeRedisClient } from "../helpers/FakeRedis.js";
 import * as uuid from "uuid";
 
 vi.setConfig({ testTimeout: 300000 });
@@ -26,7 +26,7 @@ describe("ACLUtils Tests", () => {
                 dbName: "mongomemory-cjs-test",
             },
         });
-        const redis: any = new Redis();
+        const redis: any = createStandaloneFakeRedisClient();
         let aclUtils: ACLUtils | undefined = undefined;
 
         const testACLs: AccessControlList[] = [
@@ -162,7 +162,11 @@ describe("ACLUtils Tests", () => {
         beforeEach(async () => {
             try {
                 await aclRepo.clear();
-                await redis.flushall();
+                // `ACLUtils.cache` (a `RedisCache`) keeps its own local in-memory layer on top of redis —
+                // flushing redis alone leaves that local layer still serving whatever version it last saw,
+                // which would then disagree with the freshly-recreated (version 0) documents below.
+                await (aclUtils as any)?.cache?.clear();
+                await redis.flushAll();
             } catch (err) {
                 // The error "ns not found" occurs when the collection doesn't exist yet. We can ignore this error.
                 if (err.message !== "ns not found") {

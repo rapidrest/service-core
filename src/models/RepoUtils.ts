@@ -19,7 +19,7 @@ import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 import { ACLAction, type AccessControlList } from "../security/index.js";
 import type { ACLUtils } from "../security/ACLUtils.js";
 import { ConnectionManager, RedisCache } from "../database/index.js";
-import { Transactional } from "../decorators/DatabaseDecorators.js";
+import { Transactional, transactionContext } from "../decorators/DatabaseDecorators.js";
 import type { ClientSession } from "mongodb";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
@@ -102,7 +102,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     protected aclUtils?: ACLUtils;
 
     /** The store that will be used as a 2nd level cache for all cacheable models. */
-    protected cache?: RedisCache;
+    protected cache?: RedisCache<T>;
 
     @Config()
     protected config: any;
@@ -112,12 +112,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
     /** The unique identifier of the default ACL for the model type. */
     public defaultACLUid: string = "";
-
-    /**
-     * Serializes concurrent `create()` calls that target the same identifier value(s), keyed by a canonical
-     * string of those values. See `create()` for why this is needed instead of a database-level constraint.
-     */
-    private createLocks: Map<string, Promise<void>> = new Map();
 
     @Logger
     protected logger: any;
@@ -132,9 +126,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
     @Config("trusted_roles", ["admin"])
     protected trustedRoles: string[] = ["admin"];
-
-    // The following is set by @Transactional automatically
-    protected _transaction?: { session?: ClientSession; entityManager?: EntityManager };
 
     constructor(modelClass: any, repo?: Repository<T> | MongoRepository<T>) {
         this.modelClass = modelClass;
@@ -231,12 +222,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 return await this.repo.distinct("uid", searchQuery[0].$match, { session: txInfo?.session });
             }
             return await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery, {
-                session: this._transaction?.session,
+                session: txInfo?.session,
             });
         }
 
         // Only the uid column is needed, and pagination must not clip the result set here.
-        const uidQuery: any = { ...searchQuery, select: ["uid"] };
+        const uidQuery: any = { ...searchQuery, select: { uid: true } };
         delete uidQuery.take;
         delete uidQuery.page;
         const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
@@ -416,7 +407,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, ids, undefined);
-        const count: number = await repo.count(query);
+        const count: number =
+            this.repo instanceof MongoRepository
+                ? await this.repo.count(query, { session: txInfo?.session })
+                : await (txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo).count(
+                      query,
+                  );
         if (!this.modelClass.trackChanges && count > 0) {
             throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
         } else if (
@@ -453,13 +449,20 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile
         // since T extends BaseEntity.
-        const result: T = this.instantiateObject(repo.save(newObj));
+        let saved: any;
+        if (this.repo instanceof MongoRepository) {
+            saved = await this.repo.save(newObj, { session: txInfo?.session });
+        } else {
+            const repo: any = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+            saved = await repo.save(newObj);
+        }
+        const result: T = this.instantiateObject(saved);
 
         if (this.aclUtils?.enabled && this.modelClass.recordACL) {
             // Reuse the existing ACL if this is a legitimate trackChanges "new version" rather than building a fresh,
             // version-less object from scratch. Building fresh here would let saveACL()'s optimistic-lock version
             // check pass by coincidence (a never-updated ACL is also version 0), silently discarding the real records.
-            const acl: AccessControlList = (await this.aclUtils!.findACL(result.uid, undefined, {
+            const acl: AccessControlList = (await this.aclUtils.findACL(result.uid, undefined, {
                 transaction: txInfo,
             })) ?? {
                 uid: result.uid,
@@ -468,7 +471,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             };
 
             // Look for an existing record for the creator
-            let found: boolean = !!this.aclUtils!.getRecord(acl, options?.user);
+            let found: boolean = !!this.aclUtils.getRecord(acl, options?.user);
 
             // Always grant the creator CRUD access, unless the user is a superuser.
             if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
@@ -678,6 +681,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             // Cache the results for future requests. Don't bother if there were no results.
             if (results.length > 0 && this.cache) {
                 void this.cache.saveSet(searchQueryHash, results);
+                // Also seed each individual object's own cache entry.
+                const ids: string[] = results.map((obj) => this.hashQuery(this.searchIdQuery(obj.uid)));
+                void this.cache.saveMany(ids, results);
             }
         }
 
@@ -865,9 +871,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         return this.modelClass;
     }
 
-    /** Returns the current transactional session information, if present. */
+    /**
+     * Returns the current transactional session information, if present.
+     */
     protected getTransaction(options?: RepoOperationOptions): TransactionInfo | undefined {
-        return options?.transaction ?? this._transaction;
+        return options?.transaction ?? transactionContext.getStore();
     }
 
     /**
@@ -1139,7 +1147,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
                 if (keepPrevious) {
                     toSave.version += 1;
-                    result = await repo.save(toSave);
+                    // TypeORM's overloaded Repository.save() can't be resolved against `repo`'s inferred
+                    // `EntityManager | Repository<T>` union type — same class of friction as the "HAX" cast
+                    // above.
+                    result = await (repo as any).save(toSave);
                 } else {
                     await repo.update(query.where, toSave);
                 }
@@ -1199,6 +1210,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // then the provided object will be missing all decorators and validation won't work as desired.
                 const metadataObj: T = this.instantiateObject(obj);
 
+                // A separate, genuinely bare instance (constructed with no data at all) to source @ReadOnly
+                // defaults from. `metadataObj` isn't safe for this: it's hydrated from the client-supplied
+                // `obj`, and a model constructor that copies a same-named field from its `other` argument
+                // (a common "hydrate from data" pattern) would carry the client's tampered value straight
+                // through to `metadataObj` too, making the "reset to default" below a no-op.
+                const defaultObj: T = this.instantiateObject(undefined, (metadataObj as any).constructor);
+
                 ObjectUtils.validate(obj, (metadataObj as any).constructor);
 
                 // Iterate through all properties
@@ -1207,7 +1225,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     const isReadOnly: boolean = Reflect.getMetadata("rrst:readOnly", metadataObj, member);
                     if (member in obj && isReadOnly) {
                         // Override the value from our default object
-                        obj[member] = metadataObj[member];
+                        obj[member] = (defaultObj as any)[member];
                     }
 
                     // Check for @Reference

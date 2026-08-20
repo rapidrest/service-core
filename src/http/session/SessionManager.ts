@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import * as crypto from "crypto";
-import type * as ioredis from "ioredis";
+import type { RedisClientType } from "redis";
 import { MemoryStore, ObjectDecorators } from "@rapidrest/core";
 import { DatabaseDecorators } from "../../decorators/index.js";
 import { RedisSessionStore } from "./RedisSessionStore.js";
@@ -30,7 +30,7 @@ export class SessionManager {
 
     /** The redis client used as a session store when configured. Special-cased to not throw if absent. */
     @Redis("cache", false)
-    private cacheClient?: ioredis.Redis;
+    private cacheClient?: RedisClientType;
 
     @Logger
     private logger?: any;

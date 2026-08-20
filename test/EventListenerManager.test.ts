@@ -17,28 +17,36 @@ async function createManager(objectFactory: ObjectFactory, redis: any): Promise<
     return manager;
 }
 
+// node-redis (unlike ioredis) has no client-wide "message" event — the listener that decodes and dispatches
+// incoming events is instead passed directly to `subscribe(channel, listener)` per channel. This fake tracks
+// the listener registered for each channel and exposes `emit(channel, message)` to simulate an incoming
+// pub/sub message for it.
 function makeRedis() {
-    const handlers: Record<string, Function[]> = {};
-    return {
-        subscribe: vi.fn().mockResolvedValue(undefined),
-        unsubscribe: vi.fn().mockResolvedValue(undefined),
-        on: vi.fn((event: string, cb: Function) => {
-            handlers[event] = handlers[event] || [];
-            handlers[event].push(cb);
+    const listeners: Record<string, Function> = {};
+    const redis: any = {
+        subscribe: vi.fn((channel: string, listener: Function) => {
+            listeners[channel] = listener;
+            return Promise.resolve();
         }),
-        emit(event: string, ...args: any[]) {
-            for (const cb of handlers[event] || []) cb(...args);
+        unsubscribe: vi.fn().mockResolvedValue(undefined),
+        duplicate: vi.fn(() => redis),
+        emit(channel: string, message: string) {
+            listeners[channel]?.(message, channel);
         },
     };
+    return redis;
 }
 
 describe("EventListenerManager Tests", () => {
+    beforeAll(() => {
+        config.set("events:channels", ["channel1"]);
+    });
+
     it("subscribes to the configured channels and registers a message handler", async () => {
         const redis = makeRedis();
         const objectFactory = new ObjectFactory(config, Logger());
         await createManager(objectFactory, redis);
-        expect(redis.subscribe).toHaveBeenCalled();
-        expect(redis.on).toHaveBeenCalledWith("message", expect.any(Function));
+        expect(redis.subscribe).toHaveBeenCalledWith("channel1", expect.any(Function));
     });
 
     it("logs and continues when the redis subscribe call fails", async () => {
@@ -67,9 +75,9 @@ describe("EventListenerManager Tests", () => {
         }
         manager.register(new Handler());
 
-        redis.emit("message", "channel1", JSON.stringify({ type: "user.created", data: {} }));
-        redis.emit("message", "channel1", JSON.stringify({ type: "user.updated", data: {} }));
-        redis.emit("message", "channel1", JSON.stringify({ type: "unrelated.event", data: {} }));
+        redis.emit("channel1", JSON.stringify({ type: "user.created", data: {} }));
+        redis.emit("channel1", JSON.stringify({ type: "user.updated", data: {} }));
+        redis.emit("channel1", JSON.stringify({ type: "unrelated.event", data: {} }));
 
         expect(received).toEqual([
             ["created", { type: "user.created", data: {} }],
@@ -81,7 +89,7 @@ describe("EventListenerManager Tests", () => {
         const redis = makeRedis();
         const objectFactory = new ObjectFactory(config, Logger());
         await createManager(objectFactory, redis);
-        expect(() => redis.emit("message", "channel1", "not-json")).not.toThrow();
+        expect(() => redis.emit("channel1", "not-json")).not.toThrow();
     });
 
     it("logs and continues when a well-formed event has no valid type field", async () => {
@@ -100,7 +108,7 @@ describe("EventListenerManager Tests", () => {
         }
         manager.register(new Handler());
 
-        expect(() => redis.emit("message", "channel1", JSON.stringify({ data: {} }))).not.toThrow();
+        expect(() => redis.emit("channel1", JSON.stringify({ data: {} }))).not.toThrow();
         expect(received).toEqual([]);
     });
 
@@ -129,7 +137,7 @@ describe("EventListenerManager Tests", () => {
         manager.register(new WorkingHandler());
 
         expect(() =>
-            redis.emit("message", "channel1", JSON.stringify({ type: "thing.happened" }))
+            redis.emit("channel1", JSON.stringify({ type: "thing.happened" }))
         ).not.toThrow();
         expect(received).toEqual([{ type: "thing.happened" }]);
     });
@@ -158,7 +166,7 @@ describe("EventListenerManager Tests", () => {
         const unhandled = vi.fn();
         process.on("unhandledRejection", unhandled);
         try {
-            redis.emit("message", "channel1", JSON.stringify({ type: "thing.happened" }));
+            redis.emit("channel1", JSON.stringify({ type: "thing.happened" }));
             // Let the rejected promise's .catch() run before asserting.
             await new Promise((resolve) => setImmediate(resolve));
             expect(unhandled).not.toHaveBeenCalled();
@@ -187,7 +195,7 @@ describe("EventListenerManager Tests", () => {
         }
         manager.register(new Derived());
 
-        redis.emit("message", "channel1", JSON.stringify({ type: "thing.happened" }));
+        redis.emit("channel1", JSON.stringify({ type: "thing.happened" }));
         expect(calls.length).toBe(1);
     });
 
@@ -230,7 +238,7 @@ describe("EventListenerManager Tests", () => {
 
         await createManager(objectFactory, redis);
 
-        redis.emit("message", "channel1", JSON.stringify({ type: "auto.event" }));
+        redis.emit("channel1", JSON.stringify({ type: "auto.event" }));
         expect(received.length).toBe(1);
     });
 
@@ -287,7 +295,7 @@ describe("EventListenerManager Tests", () => {
 
         await createManager(objectFactory, redis);
 
-        redis.emit("message", "channel1", JSON.stringify({ type: "instance.event" }));
+        redis.emit("channel1", JSON.stringify({ type: "instance.event" }));
         expect(received.length).toBe(1);
     });
 
@@ -308,7 +316,7 @@ describe("EventListenerManager Tests", () => {
         await manager.destroy();
         expect(redis.unsubscribe).toHaveBeenCalled();
 
-        redis.emit("message", "channel1", JSON.stringify({ type: "some.event" }));
+        redis.emit("channel1", JSON.stringify({ type: "some.event" }));
         expect(received.length).toBe(0);
     });
 });

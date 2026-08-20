@@ -16,14 +16,14 @@ function makeAclUtils(overrides: Partial<{ enabled: boolean; connMgr: any }> = {
 
 describe("ACLUtils Tests (unit)", () => {
     describe("init", () => {
-        it("throws when enabled and no `acl` datasource connection is configured", () => {
+        it("throws when enabled and no `acl` datasource connection is configured", async () => {
             const aclUtils = makeAclUtils({ enabled: true, connMgr: undefined });
-            expect(() => aclUtils.init()).toThrow("Did you forget to configure the `acl` datasource?");
+            await expect(aclUtils.init()).rejects.toThrow("Did you forget to configure the `acl` datasource?");
         });
 
-        it("logs a warning instead of throwing when RBAC is disabled", () => {
+        it("logs a warning instead of throwing when RBAC is disabled", async () => {
             const aclUtils = makeAclUtils({ enabled: false });
-            expect(() => aclUtils.init()).not.toThrow();
+            await expect(aclUtils.init()).resolves.not.toThrow();
             expect(aclUtils.logger.warn).toHaveBeenCalledWith("RBAC system is disabled.");
         });
     });
@@ -70,18 +70,16 @@ describe("ACLUtils Tests (unit)", () => {
         it("invalidates the cached ACL entry so a deletion isn't masked by a stale cache hit", async () => {
             const fakeRepo = { delete: vi.fn().mockResolvedValue(undefined) };
             const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
-            const fakeCache = { del: vi.fn().mockResolvedValue(1) };
             const aclUtils = makeAclUtils({
                 enabled: true,
-                connMgr: {
-                    connections: new Map<string, any>([
-                        ["acl", fakeConnection],
-                        ["cache", fakeCache],
-                    ]),
-                },
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
             });
+            // `cache` is a `RedisCache` instance (which prefixes keys internally), not a raw redis
+            // connection, so it's set directly rather than via a "cache" datasource connection.
+            const fakeCache = { delete: vi.fn().mockResolvedValue(undefined) };
+            aclUtils.cache = fakeCache;
             await aclUtils.removeACL("some-uid");
-            expect(fakeCache.del).toHaveBeenCalledWith("db.cache.AccessControlList.some-uid");
+            expect(fakeCache.delete).toHaveBeenCalledWith("some-uid");
         });
 
         it("does not touch the cache when none is configured", async () => {

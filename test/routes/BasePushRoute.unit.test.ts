@@ -11,33 +11,37 @@ const { subscribeMock, createdInstances } = vi.hoisted(() => ({
     createdInstances: [] as any[],
 }));
 
-vi.mock("ioredis", () => {
-    class FakeRedis {
+vi.mock("redis", () => {
+    // node-redis (unlike ioredis) has no client-wide "message" event — the listener passed to
+    // subscribe() is what receives messages for that channel, as (message, channel).
+    class FakeRedisClient {
         public url?: string;
-        public options?: any;
-        public handlers: Record<string, Function[]> = {};
-        constructor(url?: string, options?: any) {
-            this.url = url;
-            this.options = options;
+        public listenersByChannel: Map<string, Function> = new Map();
+        constructor(opts?: any) {
+            this.url = opts?.url;
             createdInstances.push(this);
         }
-        subscribe(...args: any[]) {
-            return subscribeMock(...args);
+        async connect() {
+            return this;
         }
-        unsubscribe() {
+        async subscribe(channels: string | string[], listener: Function) {
+            const result = await subscribeMock(channels, listener);
+            for (const channel of Array.isArray(channels) ? channels : [channels]) {
+                this.listenersByChannel.set(channel, listener);
+            }
+            return result;
+        }
+        async unsubscribe() {
             return Promise.resolve();
         }
-        on(event: string, cb: Function) {
-            (this.handlers[event] ??= []).push(cb);
-        }
-        disconnect() {
+        async disconnect() {
             // no-op
         }
-        emit(event: string, ...args: any[]) {
-            this.handlers[event]?.forEach((h) => h(...args));
+        async publish() {
+            return 0;
         }
     }
-    return { Redis: FakeRedis };
+    return { createClient: (opts?: any) => new FakeRedisClient(opts), RedisClient: FakeRedisClient };
 });
 
 import { BasePushRoute } from "../../src/routes/BasePushRoute";
@@ -67,18 +71,18 @@ describe("BasePushRoute Tests (unit)", () => {
     });
 
     describe("init", () => {
-        it("warns and leaves redisPub unset when the `events` datasource is not configured", () => {
+        it("warns and leaves redisPub unset when the `events` datasource is not configured", async () => {
             const route = makeRoute({ redisConfig: undefined });
-            route.init();
+            await route.init();
             expect(route.logger.warn).toHaveBeenCalledWith(
                 "Could not initialize the push notification publisher. The `events` datasource is not configured.",
             );
             expect(route.redisPub).toBeUndefined();
         });
 
-        it("initializes redisPub when the `events` datasource is configured", () => {
+        it("initializes redisPub when the `events` datasource is configured", async () => {
             const route = makeRoute();
-            route.init();
+            await route.init();
             expect(route.redisPub).toBeDefined();
             expect(route.logger.warn).not.toHaveBeenCalled();
         });
@@ -87,7 +91,7 @@ describe("BasePushRoute Tests (unit)", () => {
     describe("send", () => {
         it("throws a 500 instead of publishing when the `events` datasource isn't configured", async () => {
             const route = makeRoute({ redisConfig: undefined });
-            route.init();
+            await route.init();
             const user = { uid: "u1" };
             await expect(route.send("channel1", { message: "hi" }, user)).rejects.toMatchObject({ status: 500 });
             expect(route.logger.error).toHaveBeenCalledWith(
@@ -97,14 +101,14 @@ describe("BasePushRoute Tests (unit)", () => {
 
         it("throws a 403 without touching redisPub when the user lacks create permission", async () => {
             const route = makeRoute({ aclUtils: { hasPermission: vi.fn().mockResolvedValue(false) } });
-            route.init();
+            await route.init();
             const user = { uid: "u1" };
             await expect(route.send("channel1", { message: "hi" }, user)).rejects.toMatchObject({ status: 403 });
         });
 
         it("publishes the message when configured and permitted", async () => {
             const route = makeRoute();
-            route.init();
+            await route.init();
             route.redisPub.publish = vi.fn().mockResolvedValue(1);
             const user = { uid: "u1" };
             await route.send("channel1", { message: "hi" }, user);
@@ -138,7 +142,8 @@ describe("BasePushRoute Tests (unit)", () => {
 
             await route.connect(sock, user);
             const redisInstance = createdInstances[createdInstances.length - 1];
-            redisInstance.emit("message", "u1", JSON.stringify({ hello: "world" }));
+            const onMessage = redisInstance.listenersByChannel.get("u1");
+            onMessage(JSON.stringify({ hello: "world" }), "u1");
 
             expect(route.logger.debug).toHaveBeenCalledWith("Failed to forward message to u1");
         });

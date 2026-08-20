@@ -10,7 +10,6 @@ import { JWTUtils, Logger, EventUtils, ClassLoader } from "@rapidrest/core";
 import { ObjectFactory } from "../../src/ObjectFactory";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
 import { Server } from "../../src/Server";
-import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
 import { Model, Route } from "../../src/decorators/RouteDecorators";
 import { DataSource, In, Not, Repository } from "typeorm";
@@ -26,8 +25,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
         dbName: "mongomemory-rrst-test",
     },
 });
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
-
 vi.setConfig({ testTimeout: 1200000 });
 describe("ACLRouteSQL Tests", () => {
     const classLoader: ClassLoader = new ClassLoader("./test/server", true, true, config.get("class_loader:ignore"));
@@ -73,7 +70,7 @@ describe("ACLRouteSQL Tests", () => {
 
     beforeAll(async () => {
         config.set("datastores:acl", {
-            type: "sqlite",
+            type: "better-sqlite3",
             host: "localhost",
             database: "rrst-test",
             synchronize: true,
@@ -100,14 +97,6 @@ describe("ACLRouteSQL Tests", () => {
         await server.stop();
         await objectFactory.destroy();
         await mongod.stop();
-        return await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    console.log(err);
-                }
-                resolve();
-            });
-        });
     });
 
     beforeEach(async () => {

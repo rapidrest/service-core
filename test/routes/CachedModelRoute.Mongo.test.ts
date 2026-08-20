@@ -8,16 +8,17 @@ import { Server, ConnectionManager, ModelUtils, ObjectFactory, MongoConnection, 
 import { MongoMemoryServer } from "mongodb-memory-server";
 import CacheUser from "../server/models/CacheUser";
 import { Logger } from "@rapidrest/core";
-import Redis from "ioredis-mock";
+import { createStandaloneFakeRedisClient } from "../helpers/FakeRedis.js";
 
-const baseCacheKey: string = "db.cache.CacheUser";
+// Must match `RedisCache`'s own base key: `cache.${modelClass.name}.` (see RedisCache.ts).
+const baseCacheKey: string = "cache.CacheUser";
 const mongod: MongoMemoryServer = new MongoMemoryServer({
     instance: {
         port: 9999,
         dbName: "rrst-test",
     },
 });
-const redis: any = new Redis();
+const redis: any = createStandaloneFakeRedisClient();
 let repo: MongoRepository<CacheUser>;
 
 const createUser = async (firstName: string, lastName: string, age: number = 100): Promise<CacheUser> => {

@@ -10,41 +10,41 @@ const hoisted = vi.hoisted(() => {
     };
 });
 
-vi.mock("ioredis", () => {
-    class FakeRedis {
+vi.mock("redis", () => {
+    // node-redis (unlike ioredis) has no client-wide "message" event — the listener passed to
+    // subscribe() is what receives messages for that channel, as (message, channel). `emit()` here is a
+    // test-only convenience for simulating an incoming pub/sub message on a given channel.
+    class FakeRedisClient {
         public url?: string;
-        public options?: any;
-        private handlers: Record<string, Function[]> = {};
+        private listenersByChannel: Record<string, Function> = {};
         public unsubscribe = vi.fn().mockResolvedValue(undefined);
-        public disconnect = vi.fn();
+        public disconnect = vi.fn().mockResolvedValue(undefined);
         public publish = vi.fn();
 
-        constructor(url?: string, options?: any) {
-            this.url = url;
-            this.options = options;
+        constructor(opts?: any) {
+            this.url = opts?.url;
             hoisted.instances.push(this);
         }
 
-        subscribe(..._args: any[]) {
-            if (hoisted.subscribeBehavior) return hoisted.subscribeBehavior();
-            return Promise.resolve();
-        }
-
-        on(event: string, cb: Function) {
-            this.handlers[event] = this.handlers[event] || [];
-            this.handlers[event].push(cb);
+        async connect() {
             return this;
         }
 
-        duplicate() {
-            return new FakeRedis(this.url, this.options);
+        async subscribe(channel: string, listener: Function) {
+            if (hoisted.subscribeBehavior) return hoisted.subscribeBehavior();
+            this.listenersByChannel[channel] = listener;
+            return Promise.resolve();
         }
 
-        emit(event: string, ...args: any[]) {
-            for (const cb of this.handlers[event] || []) cb(...args);
+        duplicate() {
+            return new FakeRedisClient({ url: this.url });
+        }
+
+        emit(channel: string, message: string) {
+            this.listenersByChannel[channel]?.(message, channel);
         }
     }
-    return { Redis: FakeRedis };
+    return { createClient: (opts?: any) => new FakeRedisClient(opts), RedisClient: FakeRedisClient };
 });
 
 import "reflect-metadata";
@@ -110,11 +110,19 @@ describe("BaseAdminRoute.restart edge cases", () => {
 });
 
 describe("BaseAdminRoute.clearCache edge cases", () => {
-    it("resolves immediately when scanStream returns no stream", async () => {
+    it("resolves immediately when there are no matching keys", async () => {
         const route: any = new BaseAdminRoute();
         route.trustedRoles = ["admin"];
-        route.cacheClient = { scanStream: () => undefined };
+        route.cacheClient = {
+            scanIterator: () =>
+                (async function* () {
+                    // Yields nothing -- simulates a scan that finds no matching keys.
+                    return;
+                })(),
+            unlink: vi.fn(),
+        };
         await expect(route.clearCache({ uid: "u1", roles: ["admin"] })).resolves.toBeUndefined();
+        expect(route.cacheClient.unlink).not.toHaveBeenCalled();
     });
 
     it("does nothing when the cache is not configured", async () => {
@@ -137,8 +145,10 @@ describe("BaseAdminRoute admin channel message handler", () => {
 
         const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
         try {
+            // init() subscribes on the admin channel using the first-created client; the second is the
+            // duplicated publisher, which is never subscribed to anything.
             const redisClient = hoisted.instances[hoisted.instances.length - 2];
-            redisClient.emit("message", "some-other-channel", "RESTART");
+            redisClient.emit("some-other-channel", "RESTART");
             expect(killSpy).not.toHaveBeenCalled();
         } finally {
             killSpy.mockRestore();
@@ -157,7 +167,7 @@ describe("BaseAdminRoute admin channel message handler", () => {
         const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
         try {
             const redisClient = hoisted.instances[hoisted.instances.length - 2];
-            redisClient.emit("message", "svc", "SOME_OTHER_MESSAGE");
+            redisClient.emit("svc", "SOME_OTHER_MESSAGE");
             expect(killSpy).not.toHaveBeenCalled();
         } finally {
             killSpy.mockRestore();
@@ -225,7 +235,7 @@ describe("BaseAdminRoute.logs edge cases", () => {
 
         // The redis instance created inside logs() is the last one pushed.
         const redisInstance = hoisted.instances[hoisted.instances.length - 1];
-        redisInstance.emit("message", "svc-logs", "log line");
+        redisInstance.emit("svc-logs", "log line");
 
         expect(route.logger.error).toHaveBeenCalledWith("Failed to forward message to client u1, channel=svc-logs.");
         expect(route.logger.debug).toHaveBeenCalledWith(new Error("send failed"));

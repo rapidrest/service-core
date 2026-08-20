@@ -6,7 +6,6 @@ import { request } from "../../src/test/request.js";
 import { Server, ConnectionManager, ObjectFactory } from "../../src";
 import Item from "../server/models/Item";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import * as sqlite3 from "sqlite3";
 import { Repository, DataSource } from "typeorm";
 import { Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
@@ -18,7 +17,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
     },
 });
 let repo: Repository<Item>;
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 
 const createItem = async (name: string, quantity: number = 1, cost: number = 100): Promise<Item> => {
     const item: Item = new Item({
@@ -60,14 +58,6 @@ describe("ModelRoute Tests [SQL]", () => {
         await server.stop();
         await mongod.stop();
         await objectFactory.destroy();
-        return await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    console.log(err);
-                }
-                resolve();
-            });
-        });
     });
 
     beforeEach(async () => {

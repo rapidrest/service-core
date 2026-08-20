@@ -1,19 +1,19 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
-// This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server)
-vi.mock("ioredis", async () => {
-    const RedisMock = await import("ioredis-mock");
-    return { Redis: RedisMock.default || RedisMock };
-});
+// This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server).
+// A synchronous factory (backed by a normal, statically-resolved import rather than a dynamic one inside the
+// factory) avoids a race where BaseAdminRoute connects two redis datastores ("cache" and "logs") concurrently,
+// each dynamically importing "redis", before an async factory's own internal import has resolved.
+import { createFakeRedisModule } from "../helpers/FakeRedis.js";
+vi.mock("redis", () => createFakeRedisModule());
 
 import { default as config } from "../config";
+import { createClient } from "redis";
 import { BaseAdminRoute, ObjectFactory, Server } from "../../src";
 import { RedisTransport } from "../../src/routes/BaseAdminRoute";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
-import type { RedisClientType } from "redis";
 import { requestws } from "../../src/test/requestws.js";
 import { request } from "../../src/test/request.js";
 
@@ -26,7 +26,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
         dbName: "mongomemory-rrst-test",
     },
 });
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
 vi.setConfig({ testTimeout: 30000 });
 
 @Route("/admin")
@@ -91,14 +90,6 @@ describe("AdminRoute Tests", () => {
         await server.stop();
         await objectFactory.destroy();
         await mongod.stop();
-        return await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    throw new Error(err.message);
-                }
-                resolve();
-            });
-        });
     });
 
     it("Can connect to logs with auth header.", async () => {
@@ -139,16 +130,19 @@ describe("AdminRoute Tests", () => {
     });
 
     it("Can clear the cache with a trusted role.", async () => {
-        const cacheClient = new Redis("redis://localhost:6379");
-        await cacheClient.set("db.cache.foo", "1");
-        await cacheClient.set("db.cache.bar", "2");
+        const cacheClient = createClient({ url: "redis://localhost:6379" });
+        await cacheClient.connect();
+        // `clearCache()` matches keys against the glob pattern "cache.*", which (like real Redis SCAN MATCH)
+        // requires the key to actually start with "cache." — these keys are named accordingly.
+        await cacheClient.set("cache.foo", "1");
+        await cacheClient.set("cache.bar", "2");
         await cacheClient.set("unrelated-key", "3");
 
         const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
         expect(result.status).toBe(204);
 
-        expect(await cacheClient.get("db.cache.foo")).toBeNull();
-        expect(await cacheClient.get("db.cache.bar")).toBeNull();
+        expect(await cacheClient.get("cache.foo")).toBeNull();
+        expect(await cacheClient.get("cache.bar")).toBeNull();
         expect(await cacheClient.get("unrelated-key")).toBe("3");
     });
 

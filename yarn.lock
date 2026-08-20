@@ -802,13 +802,12 @@ __metadata:
     "@rapidrest/core": "npm:^4.0.0"
     "@simplewebauthn/server": "npm:^13.3.2"
     "@swc/core": "npm:^1.15.41"
+    "@types/better-sqlite3": "npm:^9.6.0"
     "@types/bun": "npm:^1.3.14"
-    "@types/ioredis-mock": "npm:^8.2.7"
     "@types/node": "npm:^25.9.2"
     "@types/node-schedule": "npm:^2.1.8"
     "@types/rimraf": "npm:^4.0.5"
     "@types/speakeasy": "npm:^2"
-    "@types/sqlite3": "npm:^5.1.0"
     "@types/uuid": "npm:^11.0.0"
     "@types/ws": "npm:^8.18.1"
     "@typescript-eslint/eslint-plugin": "npm:^8.61.0"
@@ -816,6 +815,7 @@ __metadata:
     "@vitest/coverage-v8": "npm:^4.1.8"
     autocannon: "npm:^8.0.0"
     axios: "npm:^1.17.0"
+    better-sqlite3: "npm:^12.0.0"
     dayjs: "npm:^1.11.21"
     deepmerge: "npm:^4.3.1"
     eslint: "npm:^10.4.1"
@@ -835,7 +835,6 @@ __metadata:
     redis: "npm:^6.2.1"
     reflect-metadata: "npm:^0.2.2"
     rimraf: "npm:^6.1.3"
-    sqlite3: "npm:^6.0.1"
     ts-node: "npm:^10.9.2"
     tsx: "npm:^4.19.3"
     typedoc: "npm:^0.28.19"
@@ -864,8 +863,6 @@ __metadata:
     uWebSockets.js:
       optional: true
   peerDependenciesMeta:
-    ioredis:
-      optional: true
     mongodb:
       optional: true
     typeorm:
@@ -1348,6 +1345,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/better-sqlite3@npm:^9.6.0":
+  version: 9.6.0
+  resolution: "@types/better-sqlite3@npm:9.6.0"
+  dependencies:
+    "@types/node": "npm:*"
+  checksum: 10c0/630273028a281addb0df36d204d0edcd0ab000f55ed89fdc742536a6ead4d4404287ebfb1714f5c58ec2f08fd508baf810e1d8f093ff9d480b9f3fb6495d141a
+  languageName: node
+  linkType: hard
+
 "@types/bun@npm:^1.3.14":
   version: 1.3.14
   resolution: "@types/bun@npm:1.3.14"
@@ -1401,15 +1407,6 @@ __metadata:
   dependencies:
     "@types/unist": "npm:*"
   checksum: 10c0/3249781a511b38f1d330fd1e3344eed3c4e7ea8eff82e835d35da78e637480d36fad37a78be5a7aed8465d237ad0446abc1150859d0fde395354ea634decf9f7
-  languageName: node
-  linkType: hard
-
-"@types/ioredis-mock@npm:^8.2.7":
-  version: 8.2.7
-  resolution: "@types/ioredis-mock@npm:8.2.7"
-  peerDependencies:
-    ioredis: ">=5"
-  checksum: 10c0/cb3b30815d099f4e4652290618a8dc84aadf101027f3b996b0045bad363e9355b05076477fbec31495faac7aae9463a30a6ae8d1a366702010dbf6acca6af1ae
   languageName: node
   linkType: hard
 
@@ -1469,15 +1466,6 @@ __metadata:
   dependencies:
     "@types/node": "npm:*"
   checksum: 10c0/4a9304373a4fe5b7931409384fd948c1ff3ae4cb0b2f5a69f407852f2e3186c4276c969292c634ea722bab859e84cdaf7d006588ce8a3c48ee4199b2deb2dc08
-  languageName: node
-  linkType: hard
-
-"@types/sqlite3@npm:^5.1.0":
-  version: 5.1.0
-  resolution: "@types/sqlite3@npm:5.1.0"
-  dependencies:
-    sqlite3: "npm:*"
-  checksum: 10c0/94930cae2f93d5cebe390e3050db54c80e5937f744728cd702690305a68f2650dd4dba825b9709969bf1810f5534880efd867d8acea59279363622f5b690c362
   languageName: node
   linkType: hard
 
@@ -2217,6 +2205,17 @@ __metadata:
   version: 1.5.1
   resolution: "base64-js@npm:1.5.1"
   checksum: 10c0/f23823513b63173a001030fae4f2dabe283b99a9d324ade3ad3d148e218134676f1ee8568c877cd79ec1c53158dcf2d2ba527a97c606618928ba99dd930102bf
+  languageName: node
+  linkType: hard
+
+"better-sqlite3@npm:^12.0.0":
+  version: 12.11.1
+  resolution: "better-sqlite3@npm:12.11.1"
+  dependencies:
+    bindings: "npm:^1.5.0"
+    node-gyp: "npm:latest"
+    prebuild-install: "npm:^7.1.1"
+  checksum: 10c0/162d3fa6c19a68191d09537bd113bd54a636c9fb38b0fc0796f4f270032770695ef35a1bca041a0a0fa9bfa47e20b9e17c94484a3899c31f38881af4d12b7fa5
   languageName: node
   linkType: hard
 
@@ -5030,35 +5029,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-addon-api@npm:^8.0.0":
-  version: 8.8.0
-  resolution: "node-addon-api@npm:8.8.0"
-  dependencies:
-    node-gyp: "npm:latest"
-  checksum: 10c0/4fc508efce85b448eac0e6ca5e3df7f287db42ca6b7c83490c1b9e805f56f558f0d4411112b3b1cb27a573a5a1007eefd0ca91e7aa2afa5b9b513a146b1ae8f9
-  languageName: node
-  linkType: hard
-
-"node-gyp@npm:12.x":
-  version: 12.4.0
-  resolution: "node-gyp@npm:12.4.0"
-  dependencies:
-    env-paths: "npm:^2.2.0"
-    exponential-backoff: "npm:^3.1.1"
-    graceful-fs: "npm:^4.2.6"
-    nopt: "npm:^9.0.0"
-    proc-log: "npm:^6.0.0"
-    semver: "npm:^7.3.5"
-    tar: "npm:^7.5.4"
-    tinyglobby: "npm:^0.2.12"
-    undici: "npm:^6.25.0"
-    which: "npm:^6.0.0"
-  bin:
-    node-gyp: bin/node-gyp.js
-  checksum: 10c0/9acb7c798e124275a6f9c1f7eb64b5abd6196bb885a3945fb44ee0dccf435514e88cdfb0f228ee7ff76ef25107c1f39ff37a067bf92fd00b9aff9234db29ff9e
-  languageName: node
-  linkType: hard
-
 "node-gyp@npm:latest":
   version: 12.2.0
   resolution: "node-gyp@npm:12.2.0"
@@ -5531,7 +5501,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"prebuild-install@npm:^7.1.3":
+"prebuild-install@npm:^7.1.1":
   version: 7.1.3
   resolution: "prebuild-install@npm:7.1.3"
   dependencies:
@@ -6220,27 +6190,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sqlite3@npm:*, sqlite3@npm:^6.0.1":
-  version: 6.0.1
-  resolution: "sqlite3@npm:6.0.1"
-  dependencies:
-    bindings: "npm:^1.5.0"
-    node-addon-api: "npm:^8.0.0"
-    node-gyp: "npm:12.x"
-    prebuild-install: "npm:^7.1.3"
-    tar: "npm:^7.5.10"
-  peerDependencies:
-    node-gyp: 12.x
-  dependenciesMeta:
-    node-gyp:
-      optional: true
-  peerDependenciesMeta:
-    node-gyp:
-      optional: true
-  checksum: 10c0/519e1b84168e4404872d68b5261d73326dd6551bbf2a6b9d6318f3193efe5392ee2c1061a10e18f3d7dcbe6dc4c753513e3f83986d3bca703f363545eba2fb8e
-  languageName: node
-  linkType: hard
-
 "ssri@npm:^13.0.0":
   version: 13.0.0
   resolution: "ssri@npm:13.0.0"
@@ -6483,7 +6432,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tar@npm:^7.5.10, tar@npm:^7.5.4":
+"tar@npm:^7.5.4":
   version: 7.5.20
   resolution: "tar@npm:7.5.20"
   dependencies:
@@ -6933,13 +6882,6 @@ __metadata:
   version: 7.16.0
   resolution: "undici-types@npm:7.16.0"
   checksum: 10c0/3033e2f2b5c9f1504bdc5934646cb54e37ecaca0f9249c983f7b1fc2e87c6d18399ebb05dc7fd5419e02b2e915f734d872a65da2e3eeed1813951c427d33cc9a
-  languageName: node
-  linkType: hard
-
-"undici@npm:^6.25.0":
-  version: 6.27.0
-  resolution: "undici@npm:6.27.0"
-  checksum: 10c0/f88c3dae3957dbf9d93cb481440aced317bd3c4941b5914fea5efba516d51138988cdb5c76006f0bb1337e41d56c3443351055d492e73af2428521c37ba2a76f
   languageName: node
   linkType: hard
 

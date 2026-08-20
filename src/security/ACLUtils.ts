@@ -210,11 +210,11 @@ export class ACLUtils {
             return undefined;
         }
 
-        // Retrieve the ACL from the cache if present
+        // Retrieve the ACL from the cache if present. A cache hit must still fall through to the parent-chain
+        // population below (not return early) — a cached ACL was stored via its own plain, unpopulated `.parent`
+        // (see the cache write below), so skipping that step here would silently return an ACL with no parent
+        // chain, which `hasPermission()` needs to find inherited records.
         let acl: AccessControlList | undefined = await this.cache?.load(entityId);
-        if (acl) {
-            return acl;
-        }
 
         // If the acl wasn't found in the cache look in the database
         if (!acl) {

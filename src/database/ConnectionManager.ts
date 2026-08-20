@@ -3,7 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { ObjectDecorators } from "@rapidrest/core";
 import type { DataSource } from "typeorm";
-import { isSqlDataSource } from "./ConnectionKinds.js";
+import { importRedis, isSqlDataSource } from "./ConnectionKinds.js";
 import { MongoConnection } from "./MongoConnection.js";
 import { MongoSchemaSync } from "./MongoSchemaSync.js";
 import type { RedisClientType } from "redis";
@@ -68,9 +68,22 @@ export class ConnectionManager {
     public async connect(datastores: any, models: Map<string, any>): Promise<void> {
         const processedModels: Map<string, string> = new Map();
 
+        // Redis-type datastores are connected sequentially, separately from the concurrent Promise.all below
+        // for every other datastore. Two concurrent *first* dynamic imports of the same module can, under
+        // some tooling that mocks dynamic imports (e.g. Vitest), non-deterministically resolve to a mix of
+        // the mocked and the real module instead of consistently returning the mock — sequencing avoids ever
+        // having two redis connection attempts in flight at once, which is where that surfaces. Redis
+        // connections are cheap enough that this isn't a meaningful hit to startup concurrency.
+        const redisNames: string[] = Object.keys(datastores).filter((name) => datastores[name]?.type === "redis");
+        for (const name of redisNames) {
+            await this.connectDatastore(name, datastores[name], models, processedModels);
+        }
+
         const pending: Promise<void>[] = [];
         for (const name in datastores) {
-            pending.push(this.connectDatastore(name, datastores[name], models, processedModels));
+            if (!redisNames.includes(name)) {
+                pending.push(this.connectDatastore(name, datastores[name], models, processedModels));
+            }
         }
         await Promise.all(pending);
 
@@ -94,7 +107,7 @@ export class ConnectionManager {
     ): Promise<void> {
         // It's possible that the connection was already configured during a previous run. In that case we will
         // attempt to reconnect instead of creating a new connection.
-        let connection: DataSource | MongoConnection | Redis | undefined = this.connections.get(name);
+        let connection: DataSource | MongoConnection | RedisClientType | undefined = this.connections.get(name);
 
         if (connection && isSqlDataSource(connection) && !(connection as DataSource).isInitialized) {
             this.logger.info(`Reconnecting to database ${name}...`);
@@ -108,9 +121,13 @@ export class ConnectionManager {
             this.logger.info(`Connecting to database ${name} [${this.redactUri(url)}]...`);
 
             if (datasource.type === "redis") {
-                const { createClient } = await this.importOptionalDependency("redis", name, datasource.type);
-                connection = createClient(url);
-                await connection.connect();
+                // Uses a literal `import("redis")` specifier (via importRedis()) rather than this class's
+                // generic importOptionalDependency(pkg, ...) helper, whose variable specifier bundler/test
+                // tooling (e.g. Vitest's module mocking) can't always statically analyze and intercept.
+                const { createClient } = await importRedis();
+                const redisConn: RedisClientType = createClient({ url });
+                await redisConn.connect();
+                connection = redisConn;
             } else {
                 // Make an array of all entities associated with this connection
                 const entities: any[] = [];
@@ -168,18 +185,26 @@ export class ConnectionManager {
                     if (conn.isConnected) {
                         await conn.close();
                     }
-                } else if (conn instanceof Redis) {
-                    // Disconnect regardless of whether the connection ever reached "ready" — one
-                    // stuck retrying against an unreachable server (status stays "connecting" /
-                    // "reconnecting" forever) must still be torn down here, or it leaks an
-                    // endlessly-retrying client with active reconnect timers past this
-                    // ConnectionManager's lifetime. "end" is the only state where disconnect()
-                    // would be a redundant no-op.
-                    if (conn.status !== "end") {
-                        conn.disconnect();
+                } else if (isSqlDataSource(conn)) {
+                    const sqlConn: DataSource = conn as DataSource;
+                    if (sqlConn.isInitialized) {
+                        await sqlConn.destroy();
                     }
-                } else if (isSqlDataSource(conn) && conn.isInitialized) {
-                    await conn.destroy();
+                } else if (typeof (conn as any).disconnect === "function") {
+                    // The only other connection kind this class ever creates is a redis client. Duck-typed
+                    // (rather than `instanceof RedisClient`) so `redis` doesn't need to be imported here just
+                    // to identify a connection this class already knows isn't Mongo or SQL — it's a peer
+                    // dependency, loaded dynamically only where actually needed (see connectDatastore()).
+                    const redis: RedisClientType = conn as RedisClientType;
+                    // Disconnect regardless of whether the connection ever reached "ready" — one
+                    // stuck retrying against an unreachable server (isOpen stays true while it keeps
+                    // retrying in the background) must still be torn down here, or it leaks an
+                    // endlessly-retrying client with active reconnect timers past this
+                    // ConnectionManager's lifetime. `isOpen` is false only once the client has actually
+                    // closed, so a redundant disconnect() call is skipped in that case.
+                    if (redis.isOpen) {
+                        await redis.disconnect();
+                    }
                 }
             }
         }

@@ -3,6 +3,7 @@ import { Auth, Param, Post, Socket, User, WebSocket } from "../decorators/RouteD
 import { ACLUtils } from "../security/ACLUtils.js";
 import ws from "ws";
 import type { RedisClientType } from "redis";
+import { importRedis } from "../database/ConnectionKinds.js";
 import { Description, Summary } from "../decorators/DocDecorators.js";
 import { ACLAction } from "../security/AccessControlList.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
@@ -63,9 +64,11 @@ export class BasePushRoute {
     private redisPub?: RedisClientType;
 
     @Init
-    private init(): void {
+    private async init(): Promise<void> {
         if (this.redisConfig) {
-            this.redisPub = new Redis(this.redisConfig.url, this.redisConfig.options);
+            const { createClient } = await importRedis();
+            this.redisPub = createClient({ url: this.redisConfig.url });
+            await this.redisPub.connect();
         } else {
             this.logger.warn(
                 "Could not initialize the push notification publisher. The `events` datasource is not configured.",
@@ -101,6 +104,15 @@ export class BasePushRoute {
     @Auth(["jwt"])
     @WebSocket()
     public async connect(@Socket sock: ws, @User user: any): Promise<void> {
+        const onMessage = (message: string, channel: string) => {
+            this.logger.debug(`Forwarding message to ${user.uid}`);
+            sock.send(message, (err) => {
+                if (err) {
+                    this.logger.debug(`Failed to forward message to ${user.uid}`);
+                }
+            });
+        };
+
         // The socket cap check, the subscribe, and the activeSocks/activeSubs bookkeeping below must all happen
         // atomically with respect to any other concurrent connect()/SUBSCRIBE/UNSUBSCRIBE for this same user
         // (e.g. a burst of connections opened milliseconds apart), or two calls could both read the same
@@ -117,7 +129,9 @@ export class BasePushRoute {
             }
 
             // Establish a new redis pub/sub client for this connection
-            const conn: RedisClientType = new Redis(this.redisConfig.url, this.redisConfig.options);
+            const { createClient } = await importRedis();
+            const conn: RedisClientType = createClient({ url: this.redisConfig.url });
+            await conn.connect();
 
             // On a first-ever connection there's nothing stored yet, so just the user's own identity channel
             // (always implicitly permitted, same as the SUBSCRIBE message handler below never ACL-checks it).
@@ -132,7 +146,7 @@ export class BasePushRoute {
                 }
             }
             try {
-                await conn.subscribe(...subs);
+                await conn.subscribe(subs, onMessage);
                 this.logger.info(`User ${user.uid} successfully subscribed to push channels: ${subs}`);
                 sock.send(JSON.stringify({ id: 0, type: "SUBSCRIBED", success: true, data: subs }));
                 this.activeSubs.set(user.uid, subs);
@@ -154,16 +168,6 @@ export class BasePushRoute {
             sock.close(1008, "Too many concurrent connections.");
             return;
         }
-
-        // Set up the outgoing message forwarding handler to the client
-        redis.on("message", (channel: string, message: string) => {
-            this.logger.debug(`Forwarding message to ${user.uid}`);
-            sock.send(message, (err) => {
-                if (err) {
-                    this.logger.debug(`Failed to forward message to ${user.uid}`);
-                }
-            });
-        });
 
         // Set up the incoming message handler from the client
         sock.on("message", async (data: any, isBinary: boolean) => {
@@ -195,7 +199,9 @@ export class BasePushRoute {
                             }
 
                             // Subscribe to all approved channels
-                            await redis.subscribe(...subd);
+                            if (subd.length > 0) {
+                                await redis.subscribe(subd, onMessage);
+                            }
                             this.activeSubs.set(user.uid, origSubs.concat(subd));
                             sock.send(
                                 JSON.stringify({ id: message.id, type: "SUBSCRIBED", success: true, data: subd }),
@@ -205,7 +211,11 @@ export class BasePushRoute {
                         await this.runExclusive(user.uid, async () => {
                             const origSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
                             const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
-                            await redis.unsubscribe(...subs);
+                            // An empty channel list means "unsubscribe from everything" per the Redis protocol,
+                            // which is not what an empty UNSUBSCRIBE request from the client should do.
+                            if (subs.length > 0) {
+                                await redis.unsubscribe(subs);
+                            }
                             for (const channel of subs) {
                                 const idx: number = origSubs.indexOf(channel);
                                 if (idx !== -1) {
@@ -230,12 +240,12 @@ export class BasePushRoute {
         sock.on("close", async (code: number, reason: string) => {
             // Unsubscribe from all redis pub/sub channels
             const subs: string[] | undefined = this.activeSubs.get(user.uid);
-            if (subs) {
-                await redis.unsubscribe(...subs);
+            if (subs && subs.length > 0) {
+                await redis.unsubscribe(subs);
             }
 
             // Disconnect the redis client
-            redis.disconnect();
+            await redis.disconnect();
 
             // Remove the socket from our tracked list
             const socks: ws[] = this.activeSocks.get(user.uid) || [];

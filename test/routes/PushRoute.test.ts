@@ -1,18 +1,18 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-// This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server)
-vi.mock("ioredis", async () => {
-    const RedisMock = await import("ioredis-mock");
-    return { Redis: RedisMock.default || RedisMock };
-});
+// This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server).
+// A synchronous factory (backed by a normal, statically-resolved import rather than a dynamic one inside the
+// factory) avoids a race where redis is dynamically imported by both ConnectionManager and BasePushRoute
+// before an async factory's own internal import has resolved.
+import { createFakeRedisModule } from "../helpers/FakeRedis.js";
+vi.mock("redis", () => createFakeRedisModule());
 
 import { default as config } from "../config";
 import { BasePushRoute, MongoConnection, MongoRepository, ObjectFactory, Server } from "../../src";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
 import { AccessControlListMongo } from "../../src/security/AccessControlListMongo";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
 import { requestws } from "../../src/test/requestws.js";
 import { request } from "../../src/test/request.js";
@@ -28,8 +28,6 @@ const mongod: MongoMemoryServer = new MongoMemoryServer({
         dbName: "mongomemory-rrst-test",
     },
 });
-const sqlite: sqlite3.Database = new sqlite3.Database(":memory:");
-
 @Route("/push")
 class PushRoute extends BasePushRoute {}
 
@@ -101,14 +99,6 @@ describe("BasePushRoute Tests", () => {
         await server.stop();
         await objectFactory.destroy();
         await mongod.stop();
-        return await new Promise<void>((resolve) => {
-            sqlite.close((err) => {
-                if (err) {
-                    console.log(err);
-                }
-                resolve();
-            });
-        });
     });
 
     describe("connect", () => {

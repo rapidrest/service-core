@@ -1,10 +1,16 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
+// A synchronous factory (backed by a normal, statically-resolved import rather than a dynamic one inside the
+// factory) avoids a race where ConnectionManager.connect() dynamically imports "redis" for two datastores
+// concurrently (see connect() redis path below) before an async factory's own internal import has resolved.
+import { createFakeRedisModule } from "../helpers/FakeRedis.js";
+vi.mock("redis", () => createFakeRedisModule());
+
 import "reflect-metadata";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
 import { MongoConnection } from "../../src/database/MongoConnection";
-import type { RedisClientType } from "redis";
+import { RedisClient } from "redis";
 
 function makeManager(): any {
     const manager: any = new ConnectionManager();
@@ -25,7 +31,7 @@ describe("ConnectionManager Tests", () => {
 
         it("resolves with the module when the package is actually installed", async () => {
             const manager = makeManager();
-            const mod = await manager.importOptionalDependency("ioredis", "cache", "redis");
+            const mod = await manager.importOptionalDependency("redis", "cache", "redis");
             expect(mod).toBeDefined();
         });
     });
@@ -74,10 +80,21 @@ describe("ConnectionManager Tests", () => {
             };
             manager.connections.set("sqlite", staleConnection);
 
-            await manager.connect({ sqlite: { type: "sqlite", database: "test" } }, new Map());
+            await manager.connect({ sqlite: { type: "better-sqlite3", database: "test" } }, new Map());
 
             expect(initialize).toHaveBeenCalledTimes(1);
             expect(manager.connections.get("sqlite")).toBe(staleConnection);
+        });
+    });
+
+    describe("connect() redis path", () => {
+        it("creates and connects a redis client for a 'redis' type datastore", async () => {
+            const manager = makeManager();
+            await manager.connect({ cache: { type: "redis", url: "redis://localhost:6379" } }, new Map());
+
+            const conn: any = manager.connections.get("cache");
+            expect(conn).toBeInstanceOf(RedisClient);
+            expect(conn.isOpen).toBe(true);
         });
     });
 
@@ -90,8 +107,8 @@ describe("ConnectionManager Tests", () => {
             await expect(
                 manager.connect(
                     {
-                        ds1: { type: "sqlite", database: ":memory:", host: "localhost", entities: ["MyModel"] },
-                        ds2: { type: "sqlite", database: ":memory:", host: "localhost", entities: ["MyModel"] },
+                        ds1: { type: "better-sqlite3", database: ":memory:", host: "localhost", entities: ["MyModel"] },
+                        ds2: { type: "better-sqlite3", database: ":memory:", host: "localhost", entities: ["MyModel"] },
                     },
                     models,
                 ),
@@ -122,11 +139,13 @@ describe("ConnectionManager Tests", () => {
             expect(manager.connections.size).toBe(0);
         });
 
-        it("disconnects a Redis client whose status is not already 'end'", async () => {
+        it("disconnects a Redis client that is still open", async () => {
             const manager = makeManager();
-            const redis: any = Object.create(Redis.prototype);
-            redis.status = "connecting";
-            redis.disconnect = vi.fn();
+            const redis: any = Object.create(RedisClient.prototype);
+            // `isOpen` is a getter-only accessor on the real prototype, so it must be shadowed via
+            // defineProperty rather than a plain assignment.
+            Object.defineProperty(redis, "isOpen", { value: true, configurable: true });
+            redis.disconnect = vi.fn().mockResolvedValue(undefined);
             manager.connections.set("cache", redis);
 
             await manager.disconnect();
@@ -134,11 +153,11 @@ describe("ConnectionManager Tests", () => {
             expect(redis.disconnect).toHaveBeenCalledTimes(1);
         });
 
-        it("does not call disconnect() again on a Redis client whose status is already 'end'", async () => {
+        it("does not call disconnect() again on a Redis client that is already closed", async () => {
             const manager = makeManager();
-            const redis: any = Object.create(Redis.prototype);
-            redis.status = "end";
-            redis.disconnect = vi.fn();
+            const redis: any = Object.create(RedisClient.prototype);
+            Object.defineProperty(redis, "isOpen", { value: false, configurable: true });
+            redis.disconnect = vi.fn().mockResolvedValue(undefined);
             manager.connections.set("cache", redis);
 
             await manager.disconnect();

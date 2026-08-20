@@ -61,10 +61,10 @@ export class ObjectFactory extends CoreObjectFactory {
                     if (datasource) {
                         const conn: any = connectionManager?.connections.get(datasource);
                         if (conn instanceof MongoConnection || isSqlDataSource(conn)) {
-                            obj[member] = conn.getRepository(injectRepository);
+                            obj[member] = conn.getRepository(type);
                             // Also store the connection in a private map. We'll re-use this for @Transactional
                             obj._datasources = obj._datasources ?? new Map();
-                            obj._datasources.set(injectDataSource, conn);
+                            obj._datasources.set(datasource, conn);
                         } else if (required) {
                             throw new Error("Unable to find database connection with name: " + datasource);
                         }

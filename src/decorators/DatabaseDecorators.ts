@@ -2,8 +2,21 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { isSqlDataSource } from "../database/ConnectionKinds.js";
 import { MongoConnection } from "../database/MongoConnection.js";
+
+/** The transactional context (`session` and/or `entityManager`) established by `@Transactional`, if any. */
+export interface TransactionContext {
+    session?: any;
+    entityManager?: any;
+}
+
+/**
+ * Carries the transactional context established by `@Transactional` through the async call chain of the
+ * decorated method, keyed to that specific invocation rather than to the object instance the method runs on.
+ */
+export const transactionContext = new AsyncLocalStorage<TransactionContext>();
 
 /**
  * Apply this to a property to have the datasource connection with the given name injected at instantiation.
@@ -29,8 +42,12 @@ export function DataSource(name: string, required: boolean = true) {
  */
 export function EntityManager(nameOrType?: string | any) {
     return function (target: any, propertyKey: string, index: number) {
-        const datasource: string = typeof nameOrType === "string" ? nameOrType : nameOrType.datasource;
-        let args: any = Reflect.getMetadata("rrst:args", target, propertyKey);
+        const datasource: string | undefined =
+            typeof nameOrType === "string" ? nameOrType : nameOrType?.datasource;
+        // Falls back to a fresh object rather than assuming some other parameter decorator (e.g. `@Param`)
+        // already initialized this metadata — a `@Transactional` method using only `@EntityManager` has no
+        // such decorator, and indexing into `undefined` here would throw at class-definition time.
+        const args: any = Reflect.getMetadata("rrst:args", target, propertyKey) ?? {};
         args[index] = ["entityManager", datasource];
         Reflect.defineMetadata("rrst:args", args, target, propertyKey);
     };
@@ -41,8 +58,9 @@ export function EntityManager(nameOrType?: string | any) {
  */
 export function MongoSession(nameOrType?: string | any) {
     return function (target: any, propertyKey: string, index: number) {
-        const datasource: string = typeof nameOrType === "string" ? nameOrType : nameOrType.datasource;
-        let args: any = Reflect.getMetadata("rrst:args", target, propertyKey);
+        const datasource: string | undefined =
+            typeof nameOrType === "string" ? nameOrType : nameOrType?.datasource;
+        const args: any = Reflect.getMetadata("rrst:args", target, propertyKey) ?? {};
         args[index] = ["mongoSession", datasource];
         Reflect.defineMetadata("rrst:args", args, target, propertyKey);
     };
@@ -82,13 +100,14 @@ export function Redis(name: string = "redis", required: boolean = true) {
  *
  * For MongoDB, this has the effect of creating a new session and wrapping the function call in
  * `session.withTransaction()`. Note that you must pass in the `session` to each `MongoRepository` function you wish
- * to use the transaction. The `session` will be automatically stored in the object under `this._transaction`.
- * Optionally, it can also be injected to a function arguments that is decorated with `@MongoSession`.
+ * to use the transaction. The `session` is automatically made available for the duration of the call via
+ * `transactionContext` (an `AsyncLocalStorage` that is scoped to this call). Optionally, it can also be injected to a
+ * function argument that is decorated with `@MongoSession`.
  *
  * For TypeORM, this has the effect of creating a new transaction and wrapping the function call in
  * `datasource.transaction()`. Note that you must use the provided `EntityManager` for all database actions. The
- * `entityManager` will be automatically stored in the object under `this._transaction`. Optionally, it can be injected
- * to a function argument that is decorated with `@EntityManager`.
+ * `entityManager` is automatically made available for the duration of the call via `transactionContext`. Optionally,
+ * it can be injected to a function argument that is decorated with `@EntityManager`.
  *
  * Note: A `@Transactional` method *MUST* always return a promise (e.g. is async).
  *
@@ -101,7 +120,7 @@ export function Redis(name: string = "redis", required: boolean = true) {
  *   private myRepo: MongoRepository<MongoModel>;
  *
  *   @Transactional()
- *   public myFunc(obj: MongoModel, @MongoSession session) {
+ *   public myFunc(obj: MongoModel, @MongoSession() session) {
  *     await this.myRepo.save(obj, { session });
  *   }
  * }
@@ -117,7 +136,7 @@ export function Redis(name: string = "redis", required: boolean = true) {
  *   private myRepo2: MongoRepository<MongoModel2>;
  *
  *   @Transactional(MongoModel)
- *   public myFunc(obj: MongoModel, @MongoSession session) {
+ *   public myFunc(obj: MongoModel, @MongoSession() session) {
  *     await this.myRepo.save(obj, { session });
  *   }
  * }
@@ -130,7 +149,7 @@ export function Redis(name: string = "redis", required: boolean = true) {
  *   private myRepo: Repository<SQLModel>;
  *
  *   @Transactional(SQLModel)
- *   public myFunc(obj: SQLModel, @EntityManager em) {
+ *   public myFunc(obj: SQLModel, @EntityManager() em) {
  *     await em.save(obj);
  *   }
  * }
@@ -145,17 +164,24 @@ export function Transactional(source?: string | any, options?: any) {
         const argMetadata: any = Reflect.getMetadata("rrst:args", target, propertyKey);
 
         descriptor.value = async function (this: any, ...args: any[]) {
-            if (!this._datasources) {
-                throw new Error(
-                    `${target.name} uses @Transactional (on ${propertyKey}) that has no active datasources.`,
-                );
-            }
+            // Resolved into a local rather than reassigning the closed-over `source` param, which is shared by
+            // every invocation of this decorated method across every instance it's ever called on.
+            const resolvedSource: string | any = source ?? this.modelClass;
+            const datasource: string | undefined =
+                typeof resolvedSource === "string" ? resolvedSource : resolvedSource?.datasource;
+            const conn: any = datasource ? this._datasources?.get(datasource) : undefined;
 
-            source = source ?? this.modelClass;
-            const datasource: string = typeof source === "string" ? source : source.datasource;
-            const conn: any = this._datasources.get(datasource);
-            if (!conn) {
-                throw new Error(`${target.name} does not have an active datasource named: '${datasource}'`);
+            // No usable transactional connection could be resolved — not yet initialized, no datasource
+            // registered under that name, or a connection type that doesn't support transactions. Run the
+            // method directly rather than throwing a transactional-plumbing error that would mask whatever
+            // more specific guard clause the method itself has (e.g. "repository not initialized"), and
+            // rather than silently skipping the call the way falling through the two branches below without
+            // ever calling `original` used to.
+            if (
+                !(conn instanceof MongoConnection) &&
+                !(isSqlDataSource(conn) && typeof conn.transaction === "function")
+            ) {
+                return await original.apply(this, args);
             }
 
             let result = undefined;
@@ -165,6 +191,9 @@ export function Transactional(source?: string | any, options?: any) {
                 // https://www.mongodb.com/docs/manual/core/transactions/?language-no-dependencies=nodejs
                 const session = conn.startSession(options);
                 try {
+                    // `withTransaction()` already aborts the transaction automatically if the callback throws
+                    // or its returned promise rejects, so no explicit `abortTransaction()` call is needed here
+                    // — and the error must be allowed to propagate to the caller rather than being swallowed.
                     await session.withTransaction(async () => {
                         // Inject the session into the function arguments
                         for (const key in argMetadata) {
@@ -176,15 +205,10 @@ export function Transactional(source?: string | any, options?: any) {
                             }
                         }
 
-                        // Also add the session data to the target object
-                        this._transaction = {
-                            session,
-                        };
-
-                        result = await original.apply(this, args);
+                        // Scope the session to this call's async context (see `transactionContext`) rather than
+                        // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
+                        result = await transactionContext.run({ session }, () => original.apply(this, args));
                     });
-                } catch (err) {
-                    await session.abortTransaction();
                 } finally {
                     await session.endSession();
                 }
@@ -203,12 +227,9 @@ export function Transactional(source?: string | any, options?: any) {
                         }
                     }
 
-                    // Also add the entityManager to the target object
-                    this._transaction = {
-                        entityManager,
-                    };
-
-                    result = await original.apply(this, args);
+                    // Scope the entityManager to this call's async context (see `transactionContext`) rather than
+                    // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
+                    result = await transactionContext.run({ entityManager }, () => original.apply(this, args));
                 });
             }
 
