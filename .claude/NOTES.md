@@ -54,15 +54,51 @@ Keep entries terse — this is a reference, not a transcript.
 - **Commit discipline.** Don't `git commit` unless explicitly asked, even after a full
   review-and-fix cycle with passing tests. Leave changes staged/unstaged and say so.
 
+- **Aspect/method decorators resolve DI dependencies via `this._objectFactory`, never a bespoke
+  side-effect map.** Core `ObjectFactory` sets `_objectFactory` (non-enumerable) on every
+  instance it creates specifically so decorators can reach the container without being field-
+  injected — e.g. `this._objectFactory?.getInstance(ConnectionManager)`. `@Transactional`
+  originally resolved its connection from a `_datasources` Map that only got populated as a side
+  effect of `@DataSource`/`@Repository` field injection; any class that didn't declare one of
+  those fields (`ModelRoute`, `CRUDRoute`) silently got no connection, making the decorator a
+  no-op until someone hand-copied a matching `_datasources.set(...)` into that class's own
+  init path. Removed entirely (from `ObjectFactory.ts`, `RepoUtils.ts`, `ModelRoute.ts`) in favor
+  of the `_objectFactory.getInstance()` lookup. Don't reintroduce a similar per-instance map for
+  any future decorator that needs container access.
+
+- **Any method decorator that reassigns `descriptor.value` must explicitly restore the
+  function's `.name`.** `descriptor.value = async function (...) {}` doesn't trigger JS's
+  function-name inference (that only fires for identifier/object-literal-property assignment),
+  so the wrapper's `.name` becomes `""`. `RouteUtils.wrapMiddleware()` looks up
+  `@Param`/`@Query`/`@User`/etc. argument metadata via
+  `Reflect.getMetadata("rrst:args", proto, func.name)` — an empty name makes that lookup miss
+  silently, and the route handler receives zero arguments (no error at decoration time). Fix:
+  `Object.defineProperty(descriptor.value, "name", { value: propertyKey, configurable: true });`
+  right after building the wrapper. This bit `@Transactional` once it was added to
+  `CRUDRoute.delete/truncate/update/updateProperty` — every one of those routes started 500ing,
+  with a stack trace that looked like an unrelated null-deref, nothing about decorators.
+
+- **Prefer extending a general function with an option flag over adding a narrow bespoke one —
+  but verify default-filter semantics match before swapping, don't just match the call
+  signature.** Same spirit as "extract already-computed values" above. Concrete case: reused
+  `RepoUtils.count()` (with `ignoreACL: true, includeDeleted: true`) instead of keeping a
+  separate `countByUid()`, but `count()`/`exists()` silently exclude soft-deleted rows by
+  default — naively swapping to `exists()` would have made every ordinary (non-purge) soft-
+  delete misreport as `purged: true`. Had to add a real `includeDeleted` option to `count()`
+  first so it could reproduce the bespoke function's exact behavior.
+
 ## Open / in-progress design threads
 
-- **Transaction support (planned, not yet started as of 2026-08-16).** The project owner is
-  going to implement DB transaction support throughout the library as the real fix for the
-  concurrency issues below, instead of the in-process lock + rollback approach used in the
-  2026-08-15/16 session. Anything touching `RepoUtils.create()`'s ACL-claim race or
-  `count()`/`truncate()`'s per-record ACL enumeration should account for this direction — don't
-  re-introduce the lock/rollback/manual-cap approach without checking whether transactions have
-  superseded it.
+- **Transaction support is implemented, ongoing refinement.** `@Transactional`
+  (`src/decorators/DatabaseDecorators.ts`) now covers `RepoUtils.create/update/delete/truncate()`
+  plus `ModelRoute`/`CRUDRoute`'s `doCreateObject`/`doDelete`/`doTruncate`/`doUpdate`/
+  `doUpdateProperty`/`delete`/`truncate`/`update`/`updateProperty`. Nested `@Transactional` calls
+  merge into a single outer transaction by default (`TransactionalMode.MERGE`); pass
+  `{mode: TransactionalMode.CREATE}` to force a genuinely independent second one. This supersedes
+  the "planned transaction support" note that used to be here — the in-process lock/rollback
+  approach from 2026-08-15/16 has not been reintroduced. Still open: whether any `runExclusive`-
+  based workarounds elsewhere in the codebase (the ones this whole effort set out to unwind) are
+  now actually redundant and can be removed — hasn't been swept end-to-end.
 
 ## Session Log
 
@@ -127,3 +163,51 @@ transaction support throughout the library instead. As of 2026-08-16 the working
 a single pre-existing, session-unrelated one-line docstring fix in `ModelUtils.ts`
 (`buildSearchQueryMongo`'s `@returns` comment). See "Open / in-progress design threads" above —
 do not redo the lock/cap/rollback approach without checking whether transactions have landed.
+
+### 2026-08-20 — @Transactional: merge-context review, DI redesign, soft-delete query support
+
+Continuation of the transaction-support effort referenced above. The user had added a
+merge-context feature to `@Transactional` (nested calls reuse an outer transaction by default —
+`TransactionalMode.MERGE`/`CREATE`) and applied the decorator to several `CRUDRoute`/`ModelRoute`
+handler methods, and asked for a correctness/vuln/perf review plus test coverage.
+
+**Bugs found and fixed:**
+1. The merge-context flag was computed but never actually used to skip opening a second, nested
+   transaction — nesting always opened a fresh one regardless of mode.
+2. `ModelRoute`/`CRUDRoute` had no way to resolve a connection at all (see the `_datasources` →
+   `_objectFactory` standing decision above) — `@Transactional` was a silent no-op on every route
+   handler until that was fixed.
+3. `conn.startSession(options)` passed the whole `TransactionalOptions` object instead of
+   `options.driverOptions`.
+4. **The big one:** once (1) and (2) were fixed and `@Transactional` started actually running on
+   route handlers, every route decorated with it (`CRUDRoute.delete/truncate/update/
+   updateProperty`) started 500ing — root cause was the decorator's wrapper function losing its
+   `.name` (see standing decision above), which broke `RouteUtils`' `@Param`/`@Query`/`@User`
+   argument injection. Not discovered until running the *full* test suite, not just the files
+   touched — worth remembering that a change to a shared decorator needs a full-suite run even
+   when the diff looks contained to `RepoUtils`/`ModelRoute`.
+5. `ModelRoute.doDelete()`'s `recordEvent` path computed its `purged` flag via
+   `this.repoUtils.repo.count(...)` directly against the raw repo, bypassing whatever transaction
+   was now active — once merge-context nesting was real, that read could observe stale
+   pre-commit state. Fixed (see below).
+
+**Redesign:** user rejected the `_datasources` connection-resolution mechanism outright once
+bugs #1-2 surfaced from it, calling it "more code to maintain, opportunities for mistakes" — see
+the `_objectFactory` standing decision above for the replacement.
+
+**`countByUid()` added then removed:** first fix for bug #5 was a new `RepoUtils.countByUid()`
+helper. User pushed to reuse `count()`/`exists()` instead — see the "prefer extending a general
+function" standing decision above. Net result: `count()` gained a real `includeDeleted` option
+(and two of its own latent transaction-visibility bugs got fixed along the way: the Mongo
+non-aggregate branch never passed `{session}`, the SQL branch never used the active
+`entityManager`), `countByUid()` was deleted.
+
+**Follow-on requirement:** user flagged that soft-deleted records must be independently queryable
+via the API (e.g. an admin history/restore UI) — `find()`/`count()` already supported this
+transparently (a client's `?deleted=true` flows untouched through `ModelUtils.buildSearchQuery()`),
+but `findOne()`/`exists()` hard-excluded soft-deleted rows with no override at all. Both now
+respect the new `includeDeleted` option; `ModelRoute.doFindById()`/`doExists()` translate a
+`?deleted=true` query param into it.
+
+**Outcome:** 1093 tests passing, `yarn lint` and `tsc --noEmit` clean. See the global Claude
+memory project/feedback notes on this same effort for more detail than fits here.

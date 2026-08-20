@@ -3,6 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { ConnectionManager } from "../database/ConnectionManager.js";
 import { isSqlDataSource } from "../database/ConnectionKinds.js";
 import { MongoConnection } from "../database/MongoConnection.js";
 
@@ -92,6 +93,25 @@ export function Redis(name: string = "redis", required: boolean = true) {
 }
 
 /**
+ * Describes the opertaing mode for transaction support and how existing context should be
+ * reconciled. When @Transactional is used multiple times in a single callstack, the
+ * context can either be merged in a single transaction and nested.
+ */
+export enum TransactionalMode {
+    /** Always creates a new transactional context for the current function. */
+    CREATE,
+    /** Merges existing transactional context instead of creating a new one. */
+    MERGE,
+}
+
+export interface TransactionalOptions {
+    /** The merge mode to apply when multiple transactions are declared in the same call stack. */
+    mode: TransactionalMode;
+    /** The set of options to pass to the underlying datastore driver. */
+    driverOptions?: any;
+}
+
+/**
  * Apply this to perform all operations in a single transaction. The specified `source` can
  * be the name of a connection or the class type of a persistent data model. If no `source` is specified it is inferred
  * by lookup via `this.modelClass` which is injected when `@Model` is added to a class.
@@ -107,13 +127,16 @@ export function Redis(name: string = "redis", required: boolean = true) {
  * `entityManager` is automatically made available for the duration of the call via `transactionContext`. Optionally,
  * it can be injected to a function argument that is decorated with `@EntityManager`.
  *
+ * If `@Transactional` was already in effect earlier in the current call stack (e.g. a `RepoUtils` method called
+ * from a `ModelRoute` method that's also `@Transactional`), the existing transaction is reused by default rather
+ * than opening a second, nested one. See `TransactionalOptions.mode`.
+ *
  * Note: A `@Transactional` method *MUST* always return a promise (e.g. is async).
  *
  * @example
  * ```ts
  * @Model(MongoModel)
  * class MyClass {
- *   // Note: You *must* declare an injected repository for you class
  *   @Repository(MongoModel)
  *   private myRepo: MongoRepository<MongoModel>;
  *
@@ -126,11 +149,10 @@ export function Redis(name: string = "redis", required: boolean = true) {
  * @example
  * ```ts
  * class MyClass {
- *   // Note: You *must* declare an injected repository for you class
  *   @Repository(MongoModel)
  *   private myRepo: MongoRepository<MongoModel>;
  *
- *   @Repository(MongoModel)
+ *   @Repository(MongoModel2)
  *   private myRepo2: MongoRepository<MongoModel2>;
  *
  *   @Transactional(MongoModel)
@@ -142,7 +164,6 @@ export function Redis(name: string = "redis", required: boolean = true) {
  * @example
  * ```ts
  * class MyClass {
- *   // Note: You *must* declare an injected repository for you class, even if you don't use it.
  *   @Repository(SQLModel)
  *   private myRepo: Repository<SQLModel>;
  *
@@ -156,7 +177,7 @@ export function Redis(name: string = "redis", required: boolean = true) {
  * the source is inferred using `this.modelClass`.
  * @param options The transcation options to pass to the underlying datasource connection.
  */
-export function Transactional(source?: string | any, options?: any) {
+export function Transactional(source?: string | any, options?: TransactionalOptions) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         const original: Function = descriptor.value;
         const argMetadata: any = Reflect.getMetadata("rrst:args", target, propertyKey);
@@ -167,7 +188,11 @@ export function Transactional(source?: string | any, options?: any) {
             const resolvedSource: string | any = source ?? this.modelClass;
             const datasource: string | undefined =
                 typeof resolvedSource === "string" ? resolvedSource : resolvedSource?.datasource;
-            const conn: any = datasource ? this._datasources?.get(datasource) : undefined;
+            // Resolve the datasource directly from the ConnectionManager using `this._objectFactory`
+            // which ObjectFactory always injects into every object it manages.
+            const connectionManager: ConnectionManager | undefined =
+                this._objectFactory?.getInstance(ConnectionManager);
+            const conn: any = datasource ? connectionManager?.connections.get(datasource) : undefined;
 
             // Check if the connection supports transactions. If it doesn't we will fallback to the default
             // (non-transactional) behavior. A log message warns the developer at startup about the missing
@@ -178,26 +203,48 @@ export function Transactional(source?: string | any, options?: any) {
                 return await original.apply(this, args);
             }
 
+            // Injects the active session/entityManager into any @MongoSession/@EntityManager-decorated argument
+            // whose named datasource (if any) matches the one this call resolved above. Note that `ctx` is not
+            // re-verified against `datasource` when it was inherited from an outer call (the merge case below).
+            // An outer @Transactional for a *different* datasource being merged into is a caller error, and the
+            // resulting session/entityManager mismatch will surface loudly via the driver rather than silently.
+            const injectContextArgs = (ctx: TransactionContext) => {
+                for (const key in argMetadata) {
+                    const i: number = Number(key);
+                    const [kind, argDatasource] = argMetadata[i];
+                    if (argDatasource && argDatasource !== datasource) {
+                        continue;
+                    }
+                    if (kind === "mongoSession" && ctx.session !== undefined) {
+                        args[i] = ctx.session;
+                    } else if (kind === "entityManager" && ctx.entityManager !== undefined) {
+                        args[i] = ctx.entityManager;
+                    }
+                }
+            };
+
+            // Also check if @Transactional was already used earlier in the call stack. By default (i.e. when
+            // `options.mode` is omitted, or explicitly TransactionalMode.MERGE) that existing context is reused
+            // instead of opening a second, nested transaction of its own. Pass `{ mode: TransactionalMode.CREATE }`
+            // to always start a fresh transaction regardless of any outer one.
+            const existingContext: TransactionContext | undefined = transactionContext.getStore();
+            if (existingContext !== undefined && options?.mode !== TransactionalMode.CREATE) {
+                injectContextArgs(existingContext);
+                return await original.apply(this, args);
+            }
+
             let result = undefined;
 
             if (canUseMongoTransaction) {
                 // Implement transactions according to the MongoDB docs:
                 // https://www.mongodb.com/docs/manual/core/transactions/?language-no-dependencies=nodejs
-                const session = conn.startSession(options);
+                const session = conn.startSession(options?.driverOptions);
                 try {
                     // `withTransaction()` already aborts the transaction automatically if the callback throws
                     // or its returned promise rejects, so no explicit `abortTransaction()` call is needed here
                     // — and the error must be allowed to propagate to the caller rather than being swallowed.
                     await session.withTransaction(async () => {
-                        // Inject the session into the function arguments
-                        for (const key in argMetadata) {
-                            const i: number = Number(key);
-                            if (argMetadata[i][0] === "mongoSession") {
-                                if (!argMetadata[i][1] || argMetadata[i][1] === datasource) {
-                                    args[i] = session;
-                                }
-                            }
-                        }
+                        injectContextArgs({ session });
 
                         // Scope the session to this call's async context (see `transactionContext`) rather than
                         // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
@@ -206,20 +253,12 @@ export function Transactional(source?: string | any, options?: any) {
                 } finally {
                     await session.endSession();
                 }
-            } else if (canUseSqlTransaction) {
+            } else {
                 // Implement transaction according to the TypeORM docs:
                 // https://typeorm.io/docs/transactions/
                 // TODO Use QueryRunner instead
                 await conn.transaction(async (entityManager) => {
-                    // Inject the entity manager into the function arguments+
-                    for (const key in argMetadata) {
-                        const i: number = Number(key);
-                        if (argMetadata[i][0] === "entityManager") {
-                            if (!argMetadata[i][1] || argMetadata[i][1] === datasource) {
-                                args[i] = entityManager;
-                            }
-                        }
-                    }
+                    injectContextArgs({ entityManager });
 
                     // Scope the entityManager to this call's async context (see `transactionContext`) rather than
                     // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
@@ -229,6 +268,14 @@ export function Transactional(source?: string | any, options?: any) {
 
             return result;
         };
+
+        // A plain `descriptor.value = async function (...) {}` assignment doesn't trigger JS's function-name
+        // inference (that only applies to identifier/object-literal-property assignment, not this kind of
+        // member expression), so the wrapper would otherwise have `.name === ""`. That breaks
+        // `RouteUtils.wrapMiddleware`, which looks up @Param/@Query/@User/etc. argument metadata via
+        // `Reflect.getMetadata("rrst:args", proto, func.name)` — losing the name silently drops every HTTP
+        // route handler's arguments the moment it's also decorated with `@Transactional`.
+        Object.defineProperty(descriptor.value, "name", { value: propertyKey, configurable: true });
 
         return descriptor;
     };

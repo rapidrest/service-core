@@ -22,6 +22,7 @@ import {
 } from "../decorators/RouteDecorators.js";
 import { ModelRoute, type UpdateObject } from "./ModelRoute.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
+import { Transactional } from "../decorators/DatabaseDecorators.js";
 
 /**
  * The `CRUDRoute` provides a base implementation of all CRUD endpoint behaviors that `ModelRoute` offers for a given
@@ -104,6 +105,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Description("Deletes the {{name}} from the service.")
     @Returns([null])
     @Delete("/:id")
+    @Transactional()
     public async delete(
         @Param("id") id: string,
         @Query("version") version: string | undefined,
@@ -150,6 +152,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Description("Deletes all {{model}}s from the datasource that the user has access to.")
     @Returns([null])
     @Delete()
+    @Transactional()
     public async truncate(@Param() params: any, @Query() query: any, @User user?: JWTUser): Promise<void> {
         return await super.doTruncate({ params, query, user });
     }
@@ -168,6 +171,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Returns([Object])
     @Put("/:id")
     @Validate("validateUpdate")
+    @Transactional()
     public async update(
         @Param("id") id: string,
         obj: UpdateObject<T>,
@@ -204,6 +208,7 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     @Description("Updates a single property of an existing {{model}}.")
     @TypeInfo([Object])
     @Returns([Object])
+    @Transactional()
     public async updateProperty(
         @Param("id") id: string,
         @Param("property") propertyName: string,

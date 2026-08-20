@@ -102,18 +102,6 @@ describe("ObjectFactory Tests", () => {
             expect(getRepository).toHaveBeenCalledWith(SqlEntity);
         });
 
-        it("stores the connection in _datasources keyed by the datasource name, for @Transactional to find", async () => {
-            // Regression test: this used to be keyed by `injectDataSource` (always undefined for a plain
-            // @Repository-only field), so @Transactional could never resolve the connection it just injected.
-            const fakeDataSource = { getRepository: () => ({ kind: "sql-repo" }) };
-            class Target {
-                @Repository(SqlEntity)
-                public repo: any;
-            }
-            const objectFactory = makeFactoryWithConnections({ "sql-ds": fakeDataSource });
-            const target = await objectFactory.initialize<Target>(new Target());
-            expect((target as any)._datasources.get("sql-ds")).toBe(fakeDataSource);
-        });
     });
 
     describe("MongoDB @Repository injection", () => {

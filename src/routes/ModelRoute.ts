@@ -14,6 +14,7 @@ import { NotificationUtils } from "../NotificationUtils.js";
 import { NetUtils } from "../NetUtils.js";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { ModelUtils } from "../models/ModelUtils.js";
+import { Transactional } from "../decorators/DatabaseDecorators.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -218,6 +219,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object to store in the database.
      * @param options The options to process the request using.
      */
+    @Transactional()
     protected async doCreateObject(obj: Partial<T>, options: CreateRequestOptions): Promise<T> {
         if (!this.repoUtils) {
             throw new Error("repoUtils not set!");
@@ -306,6 +308,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param id The unique identifier of the object to delete.
      * @param options The options to process the request using.
      */
+    @Transactional()
     protected async doDelete(id: string, options: DeleteRequestOptions): Promise<void> {
         if (!this.repoUtils || !this.repoUtils.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
@@ -334,7 +337,14 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         await this.repoUtils.delete(existing.uid, options);
 
         if (options.recordEvent) {
-            const count: number = await this.repoUtils.repo.count({ uid: existing.uid } as any);
+            // `count === 0` across every state (including a just-set `deleted: true` from a non-purge delete
+            // above) is what actually distinguishes a full purge from an ordinary soft-delete - excluding
+            // soft-deleted rows here (count()'s default) would make every routine soft-delete misreport
+            // `purged: true`.
+            const count: number = await this.repoUtils.count(
+                { uid: existing.uid },
+                { ...options, ignoreACL: true, includeDeleted: true },
+            );
             const evt: any = {
                 type: `Delete${this.modelClass.name}`,
                 objectUid: existing.uid,
@@ -373,6 +383,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
         const result: number = await this.repoUtils.exists(id, {
             action: ACLAction.EXISTS,
             version: options.params?.version || options.query?.version,
+            includeDeleted: options.query?.deleted === true || options.query?.deleted === "true",
             user: options.user,
         });
         if (result > 0) {
@@ -433,6 +444,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
 
         const result: T | undefined = await this.repoUtils.findOne(id, {
             version: options.params?.version || options.query?.version,
+            includeDeleted: options.query?.deleted === true || options.query?.deleted === "true",
             user: options.user,
         });
         if (!result) {
@@ -448,6 +460,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      *
      * @param options The options to process the request using.
      */
+    @Transactional()
     protected async doTruncate(options: TruncateRequestOptions): Promise<void> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
@@ -512,6 +525,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param obj The object to update in the database
      * @param options The options to process the request using.
      */
+    @Transactional()
     protected async doUpdate(id: string, obj: UpdateObject<T>, options: UpdateRequestOptions<T>): Promise<T> {
         if (!this.repoUtils) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
@@ -563,6 +577,7 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      * @param value The value of the property to set.
      * @param options The options to process the request using.
      */
+    @Transactional()
     protected async doUpdateProperty(
         id: string,
         propertyName: string,

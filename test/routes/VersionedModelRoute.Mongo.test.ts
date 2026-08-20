@@ -160,6 +160,39 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             expect(count).toBe(1);
         });
 
+        it("Cannot find a soft-deleted document by id without ?deleted=true. [MongoDB]", async () => {
+            const user: User = (await createUser("David", "Tennant", 47))[0];
+            await request(server).delete(`${baseUrl}/${user.uid}`);
+
+            const result = await request(server).get(`${baseUrl}/${user.uid}`);
+            expect(result.status).toBe(404);
+        });
+
+        it("Can find a soft-deleted document by id with ?deleted=true, for an admin history/restore view. [MongoDB]", async () => {
+            const user: User = (await createUser("David", "Tennant", 47))[0];
+            await request(server).delete(`${baseUrl}/${user.uid}`);
+
+            const result = await request(server).get(`${baseUrl}/${user.uid}?deleted=true`);
+            expect(result.status).toBe(200);
+            expect(result.body.uid).toBe(user.uid);
+        });
+
+        it("Reports a soft-deleted document as not existing without ?deleted=true. [MongoDB]", async () => {
+            const user: User = (await createUser("David", "Tennant", 47))[0];
+            await request(server).delete(`${baseUrl}/${user.uid}`);
+
+            const result = await request(server).head(`${baseUrl}/${user.uid}`);
+            expect(result.status).toBe(404);
+        });
+
+        it("Reports a soft-deleted document as existing with ?deleted=true. [MongoDB]", async () => {
+            const user: User = (await createUser("David", "Tennant", 47))[0];
+            await request(server).delete(`${baseUrl}/${user.uid}`);
+
+            const result = await request(server).head(`${baseUrl}/${user.uid}?deleted=true`);
+            expect(result.status).toBe(200);
+        });
+
         it("Can purge document. [MongoDB]", async () => {
             const user: User = (await createUser("David", "Tennant", 47))[0];
             const result = await request(server).delete(`${baseUrl}/${user.uid}?purge=true`);

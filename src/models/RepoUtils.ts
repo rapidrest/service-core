@@ -73,6 +73,11 @@ export interface RepoFindOptions extends RepoOperationOptions {
      * of these (e.g. `exists()` checking `ACLAction.EXISTS` instead of `COUNT` when reusing `count()`).
      */
     action?: string;
+    /**
+     * Set to `true` to include soft-deleted `RecoverableBaseEntity` rows/documents that would otherwise be
+     * excluded by default. Has no effect for a non-recoverable model class.
+     */
+    includeDeleted?: boolean;
     /** The total number of resources to retrieve. */
     limit?: number;
     /** The page number of the paginated results to retrieve. */
@@ -97,9 +102,6 @@ export interface RepoUpdateOptions<T extends BaseEntity | SimpleEntity> extends 
 export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     // Automatically injected by ObjectFactory on instantiation
     private _objectFactory?: ObjectFactory;
-
-    // Populated in init() below; read by @Transactional to resolve the connection to transact against.
-    private _datasources?: Map<string, any>;
 
     @Inject("ACLUtils")
     protected aclUtils?: ACLUtils;
@@ -157,15 +159,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
 
             this.repo = ds.getRepository(this.modelClass);
-
-            // `@Transactional` (on create()/update()/delete()/truncate() below) resolves its connection via
-            // `this._datasources`. Unlike a `@Repository`-decorated field, `repo` here is resolved manually
-            // above rather than through ObjectFactory's injection path, so `_datasources` is never populated
-            // as a side effect of that injection the way it would be for a class that only declares
-            // `@Repository` fields — it must be set explicitly, or every `@Transactional` call on this
-            // instance would silently run without a transaction.
-            this._datasources = this._datasources ?? new Map();
-            this._datasources.set(this.modelClass.datasource, ds);
         }
 
         // Create the cache store if caching is enabled for this entity type
@@ -294,6 +287,20 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options?.user);
 
+        // `buildSearchQuery()` auto-excludes soft-deleted rows for a RecoverableBaseEntity by default. We strip
+        // that out of the query rather than trying to influence the exclusion via the input `query` object.
+        if (options?.includeDeleted) {
+            if (Array.isArray(searchQuery)) {
+                delete searchQuery[0]?.$match?.deleted;
+            } else if (searchQuery?.$match) {
+                delete searchQuery.$match.deleted;
+            } else if (Array.isArray(searchQuery?.where)) {
+                for (const w of searchQuery.where) {
+                    delete w.deleted;
+                }
+            }
+        }
+
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
@@ -309,10 +316,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 count = result ? result.count : count;
             } else {
                 const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
-                count = await repo.count(searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
+                count = await repo.count(searchQuery["$match"] ? searchQuery["$match"] : searchQuery, {
+                    session: txInfo?.session,
+                });
             }
         } else {
-            count = await this.repo.count(searchQuery);
+            const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+            count = await repo.count(searchQuery);
         }
 
         return count;
@@ -347,9 +357,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        // Excludes soft-deleted records — a deleted object shouldn't report as existing. `exists()` doesn't
-        // go through the shared per-id cache (see findOne()), so this can filter at the query level directly.
-        const query: any = this.searchIdQuery(id, options?.version, false);
+        // Excludes soft-deleted records by default, unless `includeDeleted` is set to `true`.
+        const query: any = this.searchIdQuery(id, options?.version, options?.includeDeleted ?? false);
 
         // Without an explicit version, `query` matches every historical row sharing this uid on a trackChanges
         // entity - existence is still a yes/no question about the uid itself, so results are deduped by uid and
@@ -766,11 +775,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        // Never surface a soft-deleted record via an id-based lookup — matches the default the list/search
-        // endpoint already applies. Checked here (after cache or DB resolution) rather than by filtering
-        // `deleted` into the query above, so a cache entry that predates a delete, or was seeded by an
-        // explicit `?deleted=true` list request, can't slip a "deleted" record past this check either.
-        if (existing && (existing as any).deleted === true) {
+        // Never surface a soft-deleted record via an id-based lookup by default — matches the default the
+        // list/search endpoint already applies. `includeDeleted` opts back in (e.g. an admin history/restore
+        // view fetching a specific past version by id). Checked here (after cache or DB resolution) rather
+        // than by filtering `deleted` into the query above, so a cache entry that predates a delete, or was
+        // seeded by an explicit `?deleted=true` list request, is filtered consistently either way.
+        if (existing && (existing as any).deleted === true && !options?.includeDeleted) {
             existing = null;
         }
 

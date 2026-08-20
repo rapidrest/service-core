@@ -43,9 +43,6 @@ export class ObjectFactory extends CoreObjectFactory {
                         // Always create a copy of the connection so that the user can perform context aware operations without
                         // error. We must also check that it is possible to duplicate the connection.
                         obj[member] = typeof conn.duplicate === "function" ? conn.duplicate() : conn;
-                        // Also store the connection in a private map. We'll re-use this for @Transactional
-                        obj._datasources = obj._datasources ?? new Map();
-                        obj._datasources.set(name, obj[member]);
                         // The `cache` datasource is a special case that we don't want to fail on if it's missing
                     } else if (required) {
                         throw new Error("Unable to find database connection with name: " + name);
@@ -62,9 +59,6 @@ export class ObjectFactory extends CoreObjectFactory {
                         const conn: any = connectionManager?.connections.get(datasource);
                         if (conn instanceof MongoConnection || isSqlDataSource(conn)) {
                             obj[member] = conn.getRepository(type);
-                            // Also store the connection in a private map. We'll re-use this for @Transactional
-                            obj._datasources = obj._datasources ?? new Map();
-                            obj._datasources.set(datasource, conn);
                         } else if (required) {
                             throw new Error("Unable to find database connection with name: " + datasource);
                         }

@@ -125,7 +125,7 @@ describe("ModelRoute.doDelete", () => {
         const route = makeRoute();
         const existing = new User({ uid: "user-1" });
         route.repoUtils.findOne.mockResolvedValue(existing);
-        route.repoUtils.repo.count.mockResolvedValue(0);
+        route.repoUtils.count.mockResolvedValue(0);
         const req: any = { headers: {}, socket: { remoteAddress: "1.2.3.4" } };
         await route.doDelete("user-1", { recordEvent: true, user: { uid: "u1" }, req });
         expect(route.repoUtils.delete).toHaveBeenCalled();
@@ -135,9 +135,28 @@ describe("ModelRoute.doDelete", () => {
         const route = makeRoute();
         const existing = new User({ uid: "user-1" });
         route.repoUtils.findOne.mockResolvedValue(existing);
-        route.repoUtils.repo.count.mockResolvedValue(1);
+        route.repoUtils.count.mockResolvedValue(1);
         await route.doDelete("user-1", { recordEvent: true });
         expect(route.repoUtils.delete).toHaveBeenCalled();
+    });
+
+    it("counts by uid ignoring ACL and including soft-deleted rows, for accurate purged detection", async () => {
+        // Regression test: this must go through repoUtils.count() (which honors the active @Transactional
+        // context via getTransaction()) rather than reading `repoUtils.repo` directly, which would read
+        // outside any active transaction and could observe stale pre-delete state while an outer
+        // @Transactional (e.g. from CRUDRoute.delete()) is still open. `includeDeleted: true` is required too:
+        // a plain (non-purge) delete on a recoverable entity only sets `deleted: true` without removing the
+        // row, and count()'s default excludes soft-deleted rows - without the override, a routine soft-delete
+        // would misreport `purged: true` even though the row is still present.
+        const route = makeRoute();
+        const existing = new User({ uid: "user-1" });
+        route.repoUtils.findOne.mockResolvedValue(existing);
+        const options = { recordEvent: true, user: { uid: "u1" } };
+        await route.doDelete("user-1", options);
+        expect(route.repoUtils.count).toHaveBeenCalledWith(
+            { uid: "user-1" },
+            expect.objectContaining({ ...options, ignoreACL: true, includeDeleted: true }),
+        );
     });
 });
 
@@ -159,6 +178,23 @@ describe("ModelRoute.doExists", () => {
     it("throws when 'me' is used without an authenticated user", async () => {
         const route = makeRoute();
         await expect(route.doExists("me", { query: {}, res: {} })).rejects.toThrow();
+    });
+
+    it("passes includeDeleted: true when ?deleted=true is requested", async () => {
+        const route = makeRoute();
+        const res = { status: vi.fn().mockReturnThis(), setHeader: vi.fn().mockReturnThis() };
+        await route.doExists("id1", { query: { deleted: "true" }, res });
+        expect(route.repoUtils.exists).toHaveBeenCalledWith("id1", expect.objectContaining({ includeDeleted: true }));
+    });
+
+    it("passes includeDeleted: false when ?deleted is not requested", async () => {
+        const route = makeRoute();
+        const res = { status: vi.fn().mockReturnThis(), setHeader: vi.fn().mockReturnThis() };
+        await route.doExists("id1", { query: {}, res });
+        expect(route.repoUtils.exists).toHaveBeenCalledWith(
+            "id1",
+            expect.objectContaining({ includeDeleted: false }),
+        );
     });
 });
 
@@ -194,6 +230,28 @@ describe("ModelRoute.doFindById", () => {
         const route = makeRoute();
         route.repoUtils.findOne.mockResolvedValue(undefined);
         await expect(route.doFindById("missing", { query: {} })).rejects.toThrow();
+    });
+
+    it("passes includeDeleted: true when ?deleted=true is requested", async () => {
+        const route = makeRoute();
+        const existing = new User({ uid: "user-1" });
+        route.repoUtils.findOne.mockResolvedValue(existing);
+        await route.doFindById("user-1", { query: { deleted: "true" } });
+        expect(route.repoUtils.findOne).toHaveBeenCalledWith(
+            "user-1",
+            expect.objectContaining({ includeDeleted: true }),
+        );
+    });
+
+    it("passes includeDeleted: false when ?deleted is not requested", async () => {
+        const route = makeRoute();
+        const existing = new User({ uid: "user-1" });
+        route.repoUtils.findOne.mockResolvedValue(existing);
+        await route.doFindById("user-1", { query: {} });
+        expect(route.repoUtils.findOne).toHaveBeenCalledWith(
+            "user-1",
+            expect.objectContaining({ includeDeleted: false }),
+        );
     });
 });
 
