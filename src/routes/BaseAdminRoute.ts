@@ -157,7 +157,7 @@ export class BaseAdminRoute {
 
         if (this.cacheClient) {
             const task: Promise<void> = new Promise((resolve, reject) => {
-                const stream: ioredis.ScanStream | undefined = this.cacheClient?.scanStream({ match: "db.cache.*" });
+                const stream: ioredis.ScanStream | undefined = this.cacheClient?.scanStream({ match: "cache.*" });
                 if (!stream) {
                     resolve();
                     return;

@@ -13,7 +13,7 @@ import { RedisTransport } from "../../src/routes/BaseAdminRoute";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import * as sqlite3 from "sqlite3";
 import * as uuid from "uuid";
-import { Redis } from "ioredis";
+import type { RedisClientType } from "redis";
 import { requestws } from "../../src/test/requestws.js";
 import { request } from "../../src/test/request.js";
 

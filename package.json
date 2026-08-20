@@ -35,14 +35,14 @@
         "uWebSockets.js": "uNetworking/uWebSockets.js#v20.68.0"
     },
     "peerDependencies": {
-        "@rapidrest/core": "2.x",
-        "ioredis": "5.x",
+        "@rapidrest/core": "3.x",
         "lodash-es": "4.x",
         "mongodb": "^7.0.0",
         "openapi3-ts": "4.x",
         "prom-client": "15.x",
+        "redis": "6.x",
         "reflect-metadata": "0.2.x",
-        "typeorm": "0.3.x",
+        "typeorm": "1.1.x",
         "uWebSockets.js": "*",
         "winston": "3.x"
     },
@@ -61,7 +61,7 @@
         }
     },
     "devDependencies": {
-        "@rapidrest/core": "^2.0",
+        "@rapidrest/core": "^4.0.0",
         "@simplewebauthn/server": "^13.3.2",
         "@swc/core": "^1.15.41",
         "@types/bun": "^1.3.14",
@@ -82,8 +82,6 @@
         "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-jsdoc": "^63.0.2",
         "globals": "^17.6.0",
-        "ioredis": "^5.11.1",
-        "ioredis-mock": "^8.13.1",
         "lodash-es": "^4.18.1",
         "mongodb": "^7.3.0",
         "mongodb-memory-server": "^11.2.0",
@@ -92,6 +90,7 @@
         "openapi3-ts": "^4.6.0",
         "pg": "^8.21.0",
         "prom-client": "^15.1.3",
+        "redis": "^6.2.1",
         "reflect-metadata": "^0.2.2",
         "rimraf": "^6.1.3",
         "sqlite3": "^6.0.1",
@@ -99,7 +98,7 @@
         "tsx": "^4.19.3",
         "typedoc": "^0.28.19",
         "typedoc-plugin-markdown": "^4.12.0",
-        "typeorm": "^0.3.20",
+        "typeorm": "^1.1.0",
         "typescript": "^6.0.3",
         "unplugin-swc": "^1.5.9",
         "uuid": "^14.0.0",

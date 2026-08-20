@@ -4,7 +4,7 @@
 import "reflect-metadata";
 import { ConnectionManager } from "../../src/database/ConnectionManager";
 import { MongoConnection } from "../../src/database/MongoConnection";
-import { Redis } from "ioredis";
+import type { RedisClientType } from "redis";
 
 function makeManager(): any {
     const manager: any = new ConnectionManager();

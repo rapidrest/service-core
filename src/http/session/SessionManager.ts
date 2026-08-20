@@ -8,7 +8,7 @@ import { DatabaseDecorators } from "../../decorators/index.js";
 import { RedisSessionStore } from "./RedisSessionStore.js";
 import type { SessionStore } from "./SessionStore.js";
 import { ObjectFactory } from "../../ObjectFactory.js";
-const { Config, Init, Inject, Logger } = ObjectDecorators;
+const { Config, Init, Logger } = ObjectDecorators;
 const { Redis } = DatabaseDecorators;
 
 /**
@@ -19,6 +19,9 @@ const { Redis } = DatabaseDecorators;
  * @author Jean-Philippe Steinmetz
  */
 export class SessionManager {
+    // Automatically injected by ObjectFactory on instantiation
+    private _objectFactory?: ObjectFactory;
+
     @Config("session", {})
     private options: any;
 
@@ -32,9 +35,6 @@ export class SessionManager {
     @Logger
     private logger?: any;
 
-    @Inject(ObjectFactory)
-    private objectFactory?: ObjectFactory;
-
     private store!: SessionStore;
     private secret!: string;
 
@@ -46,7 +46,7 @@ export class SessionManager {
 
     @Init
     private async init() {
-        if (!this.objectFactory) {
+        if (!this._objectFactory) {
             throw new Error("objectFactory is not set.");
         }
 
@@ -68,10 +68,10 @@ export class SessionManager {
         }
 
         if (this.cacheClient && this.options.store !== "memory") {
-            this.store = await this.objectFactory.newInstance(RedisSessionStore, { args: [this.cacheClient] });
+            this.store = await this._objectFactory.newInstance(RedisSessionStore, { args: [this.cacheClient] });
             this.logger?.info("Session support enabled (store: redis).");
         } else {
-            this.store = await this.objectFactory.newInstance(MemoryStore);
+            this.store = await this._objectFactory.newInstance(MemoryStore);
             this.logger?.info("Session support enabled (store: memory).");
         }
     }

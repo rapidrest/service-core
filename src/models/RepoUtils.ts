@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ////////////////////////////////////////////////////////////////////////////////
 import * as crypto from "crypto";
-import type { Repository } from "typeorm";
+import type { EntityManager, Repository } from "typeorm";
 import { MongoRepository } from "../database/MongoRepository.js";
 import { MongoConnection } from "../database/MongoConnection.js";
 import { isSqlDataSource } from "../database/ConnectionKinds.js";
@@ -13,18 +13,22 @@ import { SimpleEntity } from "../models/SimpleEntity.js";
 import { BaseMongoEntity } from "../models/BaseMongoEntity.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { ApiError, ObjectDecorators, ObjectUtils, UserUtils, type JWTUser } from "@rapidrest/core";
-import { DatabaseDecorators } from "../decorators/index.js";
-import * as ioredis from "ioredis";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 import { ACLAction, type AccessControlList } from "../security/index.js";
 import type { ACLUtils } from "../security/ACLUtils.js";
-import { ConnectionManager } from "../database/index.js";
+import { ConnectionManager, RedisCache } from "../database/index.js";
+import { Transactional } from "../decorators/DatabaseDecorators.js";
+import type { ClientSession } from "mongodb";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
-const { Redis } = DatabaseDecorators;
 
 const _hashCache = new Map();
+
+export interface TransactionInfo {
+    entityManager?: EntityManager;
+    session?: ClientSession;
+}
 
 /**
  * The available options used for `RepoUtils` operations.
@@ -38,6 +42,8 @@ export interface RepoOperationOptions {
     recordEvent?: boolean;
     /** Set to `true` to not send a push notification. */
     skipPush?: boolean;
+    /** The transactional session to execute the operation within. */
+    transaction?: TransactionInfo;
     /** The authenticated user making the request. */
     user?: JWTUser;
 }
@@ -89,12 +95,14 @@ export interface RepoUpdateOptions<T extends BaseEntity | SimpleEntity> extends 
  * @author Jean-Philippe Steinmetz
  */
 export class RepoUtils<T extends BaseEntity | SimpleEntity> {
+    // Automatically injected by ObjectFactory on instantiation
+    private _objectFactory?: ObjectFactory;
+
     @Inject("ACLUtils")
     protected aclUtils?: ACLUtils;
 
-    /** The redis client that will be used as a 2nd level cache for all cacheable models. */
-    @Redis("cache", false)
-    protected cacheClient?: ioredis.Redis;
+    /** The store that will be used as a 2nd level cache for all cacheable models. */
+    protected cache?: RedisCache;
 
     @Config()
     protected config: any;
@@ -116,9 +124,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
     protected modelClass: any;
 
-    @Inject(ObjectFactory)
-    protected objectFactory?: ObjectFactory;
-
     @Inject(NotificationUtils)
     protected notificationUtils?: NotificationUtils;
 
@@ -127,6 +132,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
     @Config("trusted_roles", ["admin"])
     protected trustedRoles: string[] = ["admin"];
+
+    // The following is set by @Transactional automatically
+    protected _transaction?: { session?: ClientSession; entityManager?: EntityManager };
 
     constructor(modelClass: any, repo?: Repository<T> | MongoRepository<T>) {
         this.modelClass = modelClass;
@@ -155,6 +163,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
 
             this.repo = ds.getRepository(this.modelClass);
+        }
+
+        // Create the cache store if caching is enabled for this entity type
+        if (!this.cache && this.modelClass.cacheTTL) {
+            this.cache = await this._objectFactory?.newInstance(RedisCache, {
+                name: this.modelClass.fqn ?? this.modelClass.name,
+                args: [this.modelClass],
+            });
         }
 
         if (!this.repo) {
@@ -202,55 +218,29 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
-     * The base key used to get or set data in the cache.
-     */
-    public get baseCacheKey(): string {
-        return "db.cache." + this.modelClass.name;
-    }
-
-    /**
-     * Runs `fn` exclusively with respect to any other call currently queued under the same `key` on this
-     * instance — a call only starts once every call queued ahead of it under that key has fully settled. Used
-     * by `create()` to make its identifier check-then-insert atomic per identifier value, in-process.
-     */
-    private async runExclusive<R>(key: string, fn: () => Promise<R>): Promise<R> {
-        const previous: Promise<void> = this.createLocks.get(key) ?? Promise.resolve();
-        const run: Promise<R> = previous.then(fn);
-        // A version of `run` that never rejects, so it's safe to chain the next caller off of it regardless of
-        // whether this call succeeds or fails.
-        const guard: Promise<void> = run.then(
-            () => undefined,
-            () => undefined,
-        );
-        this.createLocks.set(key, guard);
-        // Once nothing is queued behind this call anymore, drop its entry rather than leaking the map forever.
-        void guard.finally(() => {
-            if (this.createLocks.get(key) === guard) {
-                this.createLocks.delete(key);
-            }
-        });
-        return run;
-    }
-
-    /**
      * Retrieves every uid matching the given (already-built) search query, ignoring any pagination `take`/`page`
      * baked into it by `ModelUtils.buildSearchQuery`. Used by `count`/`exists`/`truncate`, which must narrow by
      * record-level ACLs against the *entire* matching set rather than a single page of it — applying the default
      * `take` here would silently undercount, under-check existence for, or under-delete a large result set.
      */
-    private async findAllUids(searchQuery: any): Promise<string[]> {
+    private async findAllUids(searchQuery: any, options?: RepoFindOptions): Promise<string[]> {
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
+
         if (this.repo instanceof MongoRepository) {
             if (Array.isArray(searchQuery)) {
-                return await this.repo.distinct("uid", searchQuery[0].$match);
+                return await this.repo.distinct("uid", searchQuery[0].$match, { session: txInfo?.session });
             }
-            return await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
+            return await this.repo.distinct("uid", searchQuery["$match"] ? searchQuery["$match"] : searchQuery, {
+                session: this._transaction?.session,
+            });
         }
 
         // Only the uid column is needed, and pagination must not clip the result set here.
         const uidQuery: any = { ...searchQuery, select: ["uid"] };
         delete uidQuery.take;
         delete uidQuery.page;
-        const rows: T[] = await this.repo!.find(uidQuery);
+        const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+        const rows: T[] = (await repo!.find(uidQuery)) as T[];
         return rows.map((obj: T) => obj.uid);
     }
 
@@ -259,18 +249,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      * batches rather than a single unbounded `Promise.all` so a large matching set can't fire an unbounded
      * number of concurrent permission-check round trips at once.
      */
-    private async filterPermittedUids(
-        uids: string[],
-        user: JWTUser | undefined,
-        action: string,
-        reqCache?: Map<string, AccessControlList | undefined>,
-    ): Promise<string[]> {
+    private async filterPermittedUids(uids: string[], action: string, options?: RepoFindOptions): Promise<string[]> {
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
         const batchSize = 100;
         const permitted: string[] = [];
         for (let i = 0; i < uids.length; i += batchSize) {
             const batch: string[] = uids.slice(i, i + batchSize);
             const results: boolean[] = await Promise.all(
-                batch.map((uid) => this.aclUtils!.hasPermission(user, uid, action, reqCache)),
+                batch.map((uid) => this.aclUtils!.hasPermission(options?.user, uid, action, { transaction: txInfo })),
             );
             for (let j = 0; j < batch.length; j++) {
                 if (results[j]) {
@@ -288,15 +274,17 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         let count: number = 0;
         const action: string = options?.action ?? ACLAction.COUNT;
-        // Request-scoped so the class-level check below and the per-record loop further down share
-        // a single cache instead of each record paying a separate Redis/DB round trip.
-        const reqCache: Map<string, AccessControlList | undefined> = new Map();
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
         // on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, reqCache))) {
+            if (
+                !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, {
+                    transaction: txInfo,
+                }))
+            ) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -306,18 +294,19 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
-            const uids: string[] = await this.findAllUids(searchQuery);
-            const permitted: string[] = await this.filterPermittedUids(uids, options?.user, action, reqCache);
+            const uids: string[] = await this.findAllUids(searchQuery, options);
+            const permitted: string[] = await this.filterPermittedUids(uids, action, options);
             return permitted.length;
         }
 
         if (this.repo instanceof MongoRepository) {
             if (Array.isArray(searchQuery)) {
                 searchQuery.push({ $count: "count" });
-                const result: any = await this.repo.aggregate(searchQuery).next();
+                const result: any = await this.repo.aggregate(searchQuery, { session: txInfo?.session }).next();
                 count = result ? result.count : count;
             } else {
-                count = await this.repo.count(searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
+                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+                count = await repo.count(searchQuery["$match"] ? searchQuery["$match"] : searchQuery);
             }
         } else {
             count = await this.repo.count(searchQuery);
@@ -340,12 +329,17 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         let count: number = 0;
         const action: string = options?.action ?? ACLAction.EXISTS;
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
         // on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action))) {
+            if (
+                !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, {
+                    transaction: txInfo,
+                }))
+            ) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -362,7 +356,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // individually and counted rather than delegating the count to the database.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
             const uids: string[] = await this.findAllUids(query);
-            const permitted: string[] = await this.filterPermittedUids(uids, options?.user, action);
+            const permitted: string[] = await this.filterPermittedUids(uids, action, options);
             if (permitted.length > 0) {
                 count++;
             }
@@ -370,7 +364,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             return count;
         }
 
-        count = await this.repo.count(query);
+        if (this.repo instanceof MongoRepository) {
+            count = await this.repo.count(query, { session: txInfo?.session });
+        } else {
+            const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+            count = await repo.count(query);
+        }
 
         return Math.min(count, 1);
     }
@@ -382,208 +381,121 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      * @param obj The object to store.
      * @param acl The ACL to use
      */
+    @Transactional()
     public async create(obj: Partial<T>, options?: RepoCreateOptions): Promise<T> {
         if (!this.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
+
         // Verify the user's permission to create objects
         if (
             this.aclUtils?.enabled &&
             !options?.ignoreACL &&
-            !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.CREATE))
+            !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.CREATE, {
+                transaction: txInfo,
+            }))
         ) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
 
         // Instantiate the object if not already done
         const clazz: any = this.getClassType(obj);
-
-        // Reset any @ReadOnly property back to the class's own declared default, discarding whatever the client
-        // supplied. `obj` may already be a fully-constructed instance by this point (callers such as
-        // ModelRoute.doCreateObject() instantiate before calling create()), so simply deleting the incoming key
-        // wouldn't be enough — the constructor that would normally re-apply the default never runs again in
-        // that case. Setting the value directly works regardless of whether `obj` is a plain object or already
-        // an instance.
-        const readOnlyProps: string[] = ModelUtils.getReadOnlyPropertyNames(clazz);
-        if (readOnlyProps.length > 0) {
-            const defaults: any = new clazz();
-            for (const prop of readOnlyProps) {
-                (obj as any)[prop] = defaults[prop];
-            }
-        }
-
         const newObj: T = obj instanceof clazz ? (obj as T) : this.instantiateObject(obj, clazz);
         const repo: Repository<T> | MongoRepository<T> = this.repo;
 
         // Make sure an existing object doesn't already exist with the same identifiers
         const ids: any[] = [];
-        // Identifier values other than `uid` specifically, for use as the in-process lock key below. `uid`
-        // itself is excluded because it defaults to a fresh random value on every call that doesn't supply one
-        // explicitly (see BaseEntity.uid) — keying the lock on it would make concurrent calls for the very same
-        // non-uid identifier (e.g. the same `name`) hash to different lock keys, defeating the lock entirely.
-        const lockIds: any[] = [];
         const idProps: string[] = ModelUtils.getIdPropertyNames(clazz);
         for (const prop of idProps) {
             const val: string = (newObj as any)[prop];
             if (val) {
                 ids.push(val);
-                if (prop !== "uid") {
-                    lockIds.push(val);
-                }
             }
         }
 
-        // The count() pre-check and the save() below are not atomic on their own, so two concurrent create()
-        // calls for the same identifier can both pass the pre-check before either save() commits. Unlike
-        // `uid`, arbitrary identifier fields declared via @Identifier are deliberately NOT required to have a
-        // database-level unique constraint (e.g. child-entity collections and version-history records
-        // legitimately persist multiple documents that share a non-uid identifier value), so there's no
-        // general-purpose database guarantee to fall back on here. Instead, concurrent create() calls that
-        // target the same non-uid identifier value(s) are serialized in-process via runExclusive(): only one
-        // such call runs the check-then-insert at a time, so a later one's count() always observes an earlier
-        // one's completed save(). A model whose only identifier is `uid` needs no such lock — a genuine `uid`
-        // collision (e.g. a client-supplied duplicate) is already caught by the database's own unique index.
-        // Populated inside the runExclusive callback below (if applicable) and reused after save() to seed the
-        // new record's ACL — see the collision guard there for why this can't simply be re-looked-up afterward.
-        let existingAclForCreate: AccessControlList | undefined;
-
-        let saved: any;
-        try {
-            saved = await this.runExclusive(
-                lockIds.length > 0 ? JSON.stringify(lockIds) : crypto.randomUUID(),
-                async () => {
-                    const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, ids, undefined);
-                    const count: number = await repo.count(query);
-                    if (!this.modelClass.trackChanges && count > 0) {
-                        throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
-                    } else if (
-                        this.modelClass.trackChanges &&
-                        count > 0 &&
-                        this.modelClass.recordACL &&
-                        this.aclUtils?.enabled &&
-                        !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE))
-                    ) {
-                        // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new
-                        // version). That's only legitimate for someone who already has update rights on the
-                        // existing record — generic class-level CREATE permission isn't enough, otherwise any
-                        // creator could inject a new "latest version" of another user's record. Deliberately NOT
-                        // gated on `options.ignoreACL`: that flag exists so ModelRoute.doCreate() can skip
-                        // re-doing the class-level CREATE check it already performed upstream — it says nothing
-                        // about this distinct, additional per-record check, which has no upstream equivalent and
-                        // must always run.
-                        throw new ApiError(
-                            ApiErrors.AUTH_PERMISSION_FAILURE,
-                            403,
-                            ApiErrorMessages.AUTH_PERMISSION_FAILURE,
-                        );
-                    }
-
-                    if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-                        // Best-effort fast-fail only: this lock is scoped to this model's own RepoUtils instance
-                        // (keyed on non-uid identifiers, or a fresh random key when uid is the only identifier —
-                        // see `lockIds` above), so it cannot by itself prevent a *different* model's concurrent
-                        // create() for the same uid from also observing "no ACL yet" here. The actual race is
-                        // closed by the re-check under `aclUtils.runExclusiveForUid()` below, once the model row
-                        // has been saved and every model racing for this uid is serialized against each other.
-                        existingAclForCreate = await this.aclUtils.findACL((newObj as any).uid);
-                        // AccessControlLists are stored in a single global collection keyed only by `uid`, shared
-                        // across every model — there is no per-model namespacing. `count === 0` here means no prior
-                        // row exists for this model under this uid, so this is a genuinely new record for this
-                        // model; if an ACL already exists at that uid regardless, it can only belong to an unrelated
-                        // model or record that happens to share the (possibly client-supplied, see BaseEntity.uid)
-                        // uid value. Silently adopting it below would grant the creator full CRUD on whatever that
-                        // foreign ACL protects. The legitimate trackChanges "new version" case (count > 0) is
-                        // unaffected — its permission to reuse the existing ACL was already verified above.
-                        if (count === 0 && existingAclForCreate) {
-                            throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
-                        }
-                    }
-
-                    // Override the date and version fields with their defaults
-                    if (newObj instanceof BaseEntity) {
-                        newObj.dateCreated = new Date();
-                        newObj.dateModified = new Date();
-                        newObj.version = count;
-                    }
-
-                    // Are we tracking multiple versions for this object?
-                    if (newObj instanceof BaseEntity && this.modelClass.trackChanges === 0) {
-                        (newObj as any).version = 0;
-                    }
-
-                    // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile
-                    // since T extends BaseEntity.
-                    return await repo.save(newObj);
-                },
-            );
-        } catch (err: any) {
-            // A duplicate-key error can still legitimately occur here for identifier fields that DO have a
-            // database-level unique constraint (namely `uid`, via BaseMongoEntity's (uid, version) index) —
-            // e.g. a client explicitly supplying a `uid` that collides with an existing record. Translate that
-            // the same way the pre-check above reports it.
-            if (err?.code === 11000) {
-                throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
-            }
-            throw err;
+        const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, ids, undefined);
+        const count: number = await repo.count(query);
+        if (!this.modelClass.trackChanges && count > 0) {
+            throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+        } else if (
+            this.modelClass.trackChanges &&
+            count > 0 &&
+            this.modelClass.recordACL &&
+            this.aclUtils?.enabled &&
+            !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE, {
+                transaction: txInfo,
+            }))
+        ) {
+            // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new
+            // version). That's only legitimate for someone who already has update rights on the
+            // existing record — generic class-level CREATE permission isn't enough, otherwise any
+            // creator could inject a new "latest version" of another user's record. Deliberately NOT
+            // gated on `options.ignoreACL`: that flag exists so ModelRoute.doCreate() can skip
+            // re-doing the class-level CREATE check it already performed upstream — it says nothing
+            // about this distinct, additional per-record check, which has no upstream equivalent and
+            // must always run.
+            throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
-        const result: T = this.instantiateObject(saved);
 
-        if (this.cacheClient && this.modelClass.cacheTTL) {
-            // Cache the object for faster retrieval
-            const query: any = this.searchIdQuery(newObj.uid);
-            const cacheKey: string = `${this.baseCacheKey}.${this.hashQuery(query)}`;
-            void this.cacheClient.setex(cacheKey, this.modelClass.cacheTTL, JSON.stringify(result));
+        // Override the date and version fields with their defaults
+        if (newObj instanceof BaseEntity) {
+            newObj.dateCreated = new Date();
+            newObj.dateModified = new Date();
+            newObj.version = count;
         }
+
+        // Are we tracking multiple versions for this object?
+        if (newObj instanceof BaseEntity && this.modelClass.trackChanges === 0) {
+            (newObj as any).version = 0;
+        }
+
+        // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile
+        // since T extends BaseEntity.
+        const result: T = this.instantiateObject(repo.save(newObj));
 
         if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-            // Serialize the "does an ACL already exist for this uid, and if not, claim it" sequence against
-            // every other model's concurrent create() calls for the same uid. The check above is only a
-            // best-effort fast-fail (see comment there), so it's re-verified here under a lock that's actually
-            // shared across every model, closing the window where two different models could otherwise both
-            // observe "no ACL yet" and each claim/overwrite the same ACL record.
-            await this.aclUtils.runExclusiveForUid(result.uid, async () => {
-                // Re-check for a foreign ACL now that we hold the shared per-uid lock, unless the pre-check
-                // above already found (and was entitled to reuse) this exact record's own existing ACL.
-                if (!existingAclForCreate) {
-                    existingAclForCreate = await this.aclUtils!.findACL(result.uid);
-                    if (existingAclForCreate) {
-                        throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
-                    }
-                }
+            // Reuse the existing ACL if this is a legitimate trackChanges "new version" rather than building a fresh,
+            // version-less object from scratch. Building fresh here would let saveACL()'s optimistic-lock version
+            // check pass by coincidence (a never-updated ACL is also version 0), silently discarding the real records.
+            const acl: AccessControlList = (await this.aclUtils!.findACL(result.uid, undefined, {
+                transaction: txInfo,
+            })) ?? {
+                uid: result.uid,
+                parentUid: options?.acl?.parentUid || this.defaultACLUid,
+                records: options?.acl?.records || [],
+            };
 
-                // Reuse the existing ACL (and its real version/records) looked up above if this is a legitimate
-                // trackChanges "new version" — rather than building a fresh, version-less object from scratch.
-                // Building fresh here would let saveACL()'s optimistic-lock version check pass by coincidence (a
-                // never-updated ACL is also version 0), silently discarding the real records.
-                const acl: AccessControlList = existingAclForCreate || {
-                    uid: result.uid,
-                    parentUid: options?.acl?.parentUid || this.defaultACLUid,
-                    records: options?.acl?.records || [],
-                };
+            // Look for an existing record for the creator
+            let found: boolean = !!this.aclUtils!.getRecord(acl, options?.user);
 
-                // Look for an existing record for the creator
-                let found: boolean = !!this.aclUtils!.getRecord(acl, options?.user);
+            // Always grant the creator CRUD access, unless the user is a superuser.
+            if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
+                acl.records.push({
+                    userOrRoleId: options.user.uid,
+                    actions: [
+                        ACLAction.COUNT,
+                        ACLAction.CREATE,
+                        ACLAction.DELETE,
+                        ACLAction.EXISTS,
+                        ACLAction.READ,
+                        ACLAction.LIST,
+                        ACLAction.TRUNCATE,
+                        ACLAction.UPDATE,
+                    ],
+                });
+            }
 
-                // Always grant the creator CRUD access, unless the user is a superuser.
-                if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
-                    acl.records.push({
-                        userOrRoleId: options.user.uid,
-                        actions: [
-                            ACLAction.COUNT,
-                            ACLAction.CREATE,
-                            ACLAction.DELETE,
-                            ACLAction.EXISTS,
-                            ACLAction.READ,
-                            ACLAction.LIST,
-                            ACLAction.TRUNCATE,
-                            ACLAction.UPDATE,
-                        ],
-                    });
-                }
+            await this.aclUtils.saveACL(acl, { transaction: txInfo });
+        }
 
-                await this.aclUtils!.saveACL(acl);
-            });
+        if (this.cache) {
+            // Cache the object for faster retrieval
+            const query: any = this.searchIdQuery(newObj.uid);
+            const cacheKey: string = this.hashQuery(query);
+            void this.cache.save(cacheKey, result);
+            void this.cache.save(result.uid, result);
         }
 
         // Process the result to remove any properties that have been scoped with @RequiresScope that the user
@@ -599,14 +511,23 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         return result;
     }
 
+    @Transactional()
     public async delete(uid: string, options: RepoDeleteOptions): Promise<void> {
         if (!this.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
+
         if (this.aclUtils?.enabled && !options.ignoreACL) {
-            const acl: AccessControlList | undefined = await this.aclUtils.findACL(uid);
-            if (!(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.DELETE))) {
+            const acl: AccessControlList | undefined = await this.aclUtils.findACL(uid, undefined, {
+                transaction: txInfo,
+            });
+            if (
+                !(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.DELETE, {
+                    transaction: txInfo,
+                }))
+            ) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -626,32 +547,39 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // ACL(s). If the class type is recoverable and purge isn't desired, simply mark the object(s) as deleted.
         if (isPurge) {
             if (this.repo instanceof MongoRepository) {
-                await this.repo.deleteMany(query);
+                await this.repo.deleteMany(query, { session: txInfo?.session });
             } else {
-                await this.repo.delete(query.where);
+                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+                await repo.delete(query.where);
             }
 
             if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-                await this.aclUtils.removeACL(uid);
+                await this.aclUtils.removeACL(uid, { transaction: txInfo });
             }
         } else {
             if (this.repo instanceof MongoRepository) {
-                await this.repo.updateMany(query, {
-                    $set: {
-                        deleted: true,
+                await this.repo.updateMany(
+                    query,
+                    {
+                        $set: {
+                            deleted: true,
+                        },
                     },
-                });
+                    { session: txInfo?.session },
+                );
             } else {
-                await this.repo.update(query.where, {
+                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+                await repo.update(query.where, {
                     deleted: true,
                 } as any);
             }
         }
 
-        if (this.cacheClient && this.modelClass.cacheTTL) {
+        if (this.cache) {
             // Delete the object from cache
-            void this.cacheClient.del(`${this.baseCacheKey}.${this.hashQuery(query)}`);
-            void this.cacheClient.del(`${this.baseCacheKey}.${this.hashQuery(this.searchIdQuery(uid))}`);
+            void this.cache.delete(uid);
+            void this.cache.delete(this.hashQuery(query));
+            void this.cache.delete(this.hashQuery(this.searchIdQuery(uid)));
         }
 
         if (!options?.skipPush) {
@@ -675,14 +603,18 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        const reqCache: Map<string, AccessControlList | undefined> = new Map();
         const action: string = options?.action ?? ACLAction.LIST;
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below, right before the
         // results are returned) is an additional layer on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, reqCache))) {
+            if (
+                !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, {
+                    transaction: txInfo,
+                }))
+            ) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -700,57 +632,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         });
 
         // Pull from the cache if available
-        if (!options?.skipCache && this.cacheClient && this.modelClass.cacheTTL) {
-            const json: string | null = await this.cacheClient.get(`${this.baseCacheKey}.${searchQueryHash}`);
-            if (json) {
-                try {
-                    const uids: string[] = JSON.parse(json);
-                    // Attempt to retrieve as many objects from the cache simultaneously
-                    const keys: string[] = uids.map(
-                        (uid) => `${this.baseCacheKey}.${this.hashQuery(this.searchIdQuery(uid))}`,
-                    );
-
-                    // Retrieve all objects from the cache (if possible)
-                    const cresults: (string | null)[] = await this.cacheClient.mget(...keys);
-
-                    // Check for any missing objects that weren't in the cache. Build a list of missing
-                    // items that we can retrieve from the database directly.
-                    const missingUids: string[] = [];
-                    for (let i = 0; i < cresults.length; i++) {
-                        if (cresults[i] === null) {
-                            missingUids.push(uids[i]);
-                        }
-                    }
-
-                    // Now pull all missing items from the database
-                    let missing: T[] = [];
-                    if (missingUids.length > 0) {
-                        if (this.repo instanceof MongoRepository) {
-                            missing = await this.repo.find({ uid: { $in: missingUids } } as any).toArray();
-                        } else {
-                            const { In } = ModelUtils.orm;
-                            missing = await this.repo.find({ where: { uid: In(missingUids) } });
-                        }
-                    }
-
-                    // Merge the results back into the results array. We iterate through cresults to preserve
-                    // the order of the original query.
-                    for (let i = 0; i < cresults.length; i++) {
-                        if (cresults[i] !== null) {
-                            results.push(JSON.parse(cresults[i] as string));
-                        } else {
-                            // Find the desired object in the missing array
-                            for (const obj of missing) {
-                                if (obj.uid === uids[i]) {
-                                    results.push(obj);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                } catch (err) {
-                    // It doesn't matter if this fails
-                }
+        if (!options?.skipCache && this.cache) {
+            const cached: (T | undefined)[] | undefined = await this.cache.loadSet(searchQueryHash);
+            if (cached) {
+                results = cached.filter((obj) => obj !== undefined);
             }
         }
 
@@ -767,46 +652,32 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             if (this.repo instanceof MongoRepository) {
                 const skip: number = page * limit;
                 if (Array.isArray(searchQuery)) {
-                    results = await this.repo.aggregate(searchQuery).skip(skip).limit(limit).toArray();
+                    results = await this.repo
+                        .aggregate(searchQuery, { session: txInfo?.session })
+                        .skip(skip)
+                        .limit(limit)
+                        .toArray();
                 } else {
                     results = await this.repo
                         .find(searchQuery["$match"] ? searchQuery["$match"] : searchQuery, {
                             limit,
+                            session: txInfo?.session,
                             skip,
                             sort: searchQuery["$sort"],
                         })
                         .toArray();
                 }
             } else {
+                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
                 // `searchQuery.page` (set by `buildSearchQuerySQL`) isn't a TypeORM find option and is silently
                 // ignored by `repo.find()` - it must be translated to `skip` here, the same way the Mongo branch
                 // above translates `page` into its own `skip`, or every SQL page request returns page 0.
-                results = await this.repo.find({ ...searchQuery, skip: page * limit });
+                results = (await repo.find({ ...searchQuery, skip: page * limit })) as T[];
             }
 
             // Cache the results for future requests. Don't bother if there were no results.
-            if (results.length > 0 && this.cacheClient && this.modelClass.cacheTTL) {
-                const cmds: any[] = [];
-
-                // Add the query to the cache with only the list of uids. This ensures that changes to the underlying
-                // objects stays accurate.
-                const uids: string[] = results.map((obj: T) => obj.uid);
-                cmds.push([
-                    "setex",
-                    `${this.baseCacheKey}.${searchQueryHash}`,
-                    this.modelClass.cacheTTL,
-                    JSON.stringify(uids),
-                ]);
-
-                // Also seed individual object caches so the next request is fully cache-warm
-                for (const obj of results) {
-                    const query: any = this.searchIdQuery(obj.uid);
-                    const cacheKey: string = `${this.baseCacheKey}.${this.hashQuery(query)}`;
-                    cmds.push(["setex", cacheKey, this.modelClass.cacheTTL, JSON.stringify(obj)]);
-                }
-
-                // Now send all commands to redis at once
-                void this.cacheClient.multi(cmds).exec();
+            if (results.length > 0 && this.cache) {
+                void this.cache.saveSet(searchQueryHash, results);
             }
         }
 
@@ -817,7 +688,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // ACLs are rarely warm in Redis) instead of N sequential round trips.
         if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
             const permitted: boolean[] = await Promise.all(
-                results.map((obj) => this.aclUtils!.hasPermission(options?.user, obj.uid, action, reqCache)),
+                results.map((obj) =>
+                    this.aclUtils!.hasPermission(options?.user, obj.uid, action, { transaction: txInfo }),
+                ),
             );
             results = results.filter((_obj, i) => permitted[i]);
         }
@@ -841,28 +714,23 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        let existing: T | null = null;
+        let existing: T | null | undefined = undefined;
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
+
         // Deliberately uses the default (includeDeleted: true) query shape here — this result is cached under
         // a key shared with create()/update()/find()'s cache-seeding, all of which also use the default shape,
         // so changing it here alone would desync this read from what those write. Soft-deleted records are
         // filtered out below instead, after the cache/DB read, regardless of which one produced the result.
         const query: any = this.searchIdQuery(id, options?.version);
-        if (!options?.skipCache && this.cacheClient && this.modelClass.cacheTTL) {
-            // First attempt to retrieve the object from the cache
-            const json: string | null = await this.cacheClient.get(`${this.baseCacheKey}.${this.hashQuery(query)}`);
-            if (json) {
-                try {
-                    existing = JSON.parse(json);
-                } catch (err) {
-                    // It doesn't matter if this fails
-                }
-            }
+        if (!options?.skipCache && this.cache) {
+            existing = await this.cache.load(this.hashQuery(query));
         }
 
         if (!existing) {
             if (this.repo instanceof MongoRepository) {
                 existing = await this.repo
                     .find(query["$match"] ? query["$match"] : query, {
+                        session: txInfo?.session,
                         sort: { version: -1 },
                     })
                     .next();
@@ -872,9 +740,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // way the Mongo branch above does - otherwise TypeORM's `findOne()` returns whichever matching
                 // row it encounters first, which isn't guaranteed to be the latest. `SimpleEntity` has no
                 // `version` column to order by, so this only applies to `BaseEntity` subclasses.
-                existing = await this.repo.findOne({ ...query, order: { version: "DESC" } });
+                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+                existing = (await repo.findOne({ ...query, order: { version: "DESC" } })) as T | null;
             } else {
-                existing = await this.repo.findOne(query);
+                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+                existing = (await repo.findOne(query)) as T | null;
             }
         }
 
@@ -887,20 +757,22 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (existing) {
-            if (this.cacheClient && this.modelClass.cacheTTL) {
+            if (this.cache) {
                 // Cache the object for faster retrieval
-                void this.cacheClient.setex(
-                    `${this.baseCacheKey}.${this.hashQuery(query)}`,
-                    this.modelClass.cacheTTL,
-                    JSON.stringify(existing),
-                );
+                void this.cache.save(this.hashQuery(query), existing);
             }
 
             // Check user permissions
             if (this.aclUtils?.enabled && !options?.ignoreACL) {
-                const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid);
+                const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid, undefined, {
+                    transaction: txInfo,
+                });
                 const action: string = options?.action ?? ACLAction.READ;
-                if (!(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, action))) {
+                if (
+                    !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, action, {
+                        transaction: txInfo,
+                    }))
+                ) {
                     throw new ApiError(
                         ApiErrors.AUTH_PERMISSION_FAILURE,
                         403,
@@ -973,10 +845,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     public getClassType(obj: any): any {
         const className: string | null = obj._fqn || obj._type;
 
-        if (this.objectFactory) {
+        if (this._objectFactory) {
             if (className && typeof className === "string") {
                 const clazz: any =
-                    this.objectFactory.classes.get(className) || this.objectFactory.classes.get(`models.${className}`);
+                    this._objectFactory.classes.get(className) ||
+                    this._objectFactory.classes.get(`models.${className}`);
 
                 // Only accept the resolved class if it's actually this route's model or a subtype of it (e.g. a
                 // @ChildEntity()). `objectFactory.classes` contains every registered model in the app, so without
@@ -990,6 +863,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         return this.modelClass;
+    }
+
+    /** Returns the current transactional session information, if present. */
+    protected getTransaction(options?: RepoOperationOptions): TransactionInfo | undefined {
+        return options?.transaction ?? this._transaction;
     }
 
     /**
@@ -1022,19 +900,22 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         );
     }
 
+    @Transactional()
     public async truncate(query: any, options: RepoFindOptions): Promise<void> {
         if (!this.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        // Request-scoped so the class-level check below and the per-record loop further down share
-        // a single cache instead of each record paying a separate Redis/DB round trip.
-        const reqCache: Map<string, AccessControlList | undefined> = new Map();
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         // Check user permissions. Don't check if record-level ACLs are used as this will be done
         // per record later.
         if (this.aclUtils?.enabled && !options.ignoreACL && !this.modelClass.recordACL) {
-            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.TRUNCATE, reqCache))) {
+            if (
+                !(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.TRUNCATE, {
+                    transaction: txInfo,
+                }))
+            ) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -1047,7 +928,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 true,
                 options?.user,
             );
-            const uids: Array<string> = await this.findAllUids(searchQuery);
+            const uids: Array<string> = await this.findAllUids(searchQuery, options);
 
             if (uids.length > 0) {
                 let finalUids: string[] = uids;
@@ -1061,19 +942,24 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         // narrowing entirely rather than defaulting to an empty (i.e. no-op) delete set.
                         finalUids = uids;
                     } else {
-                        finalUids = await this.filterPermittedUids(uids, options.user, ACLAction.TRUNCATE, reqCache);
+                        finalUids = await this.filterPermittedUids(uids, ACLAction.TRUNCATE, options);
                     }
                 }
 
                 // Now delete all records that were found
                 if (this.repo instanceof MongoRepository) {
-                    await this.repo.deleteMany({ uid: { $in: finalUids } } as any);
+                    await this.repo.deleteMany({ uid: { $in: finalUids } } as any, {
+                        session: txInfo?.session,
+                    });
                 } else {
+                    const repo = txInfo?.entityManager
+                        ? txInfo.entityManager.getRepository(this.modelClass)
+                        : this.repo;
                     // A plain array of ids only maps to a WHERE ... IN clause when the primary key is a single
                     // column — for a trackChanges entity the SQL primary key is the composite (uid, version),
                     // so an explicit In() on the uid column is used instead of relying on that implicit form.
                     const { In } = ModelUtils.orm;
-                    await this.repo.delete({ uid: In(finalUids) });
+                    await repo.delete({ uid: In(finalUids) });
                 }
 
                 if (!options?.skipPush) {
@@ -1095,14 +981,23 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
     }
 
+    @Transactional()
     public async update(obj: Partial<T>, existing: T, options?: RepoUpdateOptions<T>): Promise<T> {
         if (!this.repo) {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
+
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid);
-            if (!(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.UPDATE))) {
+            const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid, undefined, {
+                transaction: txInfo,
+            });
+            if (
+                !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.UPDATE, {
+                    transaction: txInfo,
+                }))
+            ) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -1147,12 +1042,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     // lost optimistic-lock race rather than letting the raw duplicate-key error escape.
                     try {
                         result = this.instantiateObject(
-                            await this.repo.save({
-                                ...obj,
-                                _id: undefined, // Ensure we save a new document
-                                dateModified: new Date(),
-                                version: (obj as any).version + 1,
-                            } as any),
+                            await this.repo.save(
+                                {
+                                    ...obj,
+                                    _id: undefined, // Ensure we save a new document
+                                    dateModified: new Date(),
+                                    version: (obj as any).version + 1,
+                                } as any,
+                                { session: txInfo?.session },
+                            ),
                         );
                     } catch (err: any) {
                         if (err?.code === 11000) {
@@ -1174,16 +1072,22 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                                 version: (obj as any).version + 1,
                             },
                         },
+                        {
+                            session: txInfo?.session,
+                        },
                     );
                 }
             } else if (obj.uid) {
                 if (keepPrevious) {
                     try {
                         result = this.instantiateObject(
-                            await this.repo.save({
-                                ...obj,
-                                version: (obj as any).version + 1,
-                            } as any),
+                            await this.repo.save(
+                                {
+                                    ...obj,
+                                    version: (obj as any).version + 1,
+                                } as any,
+                                { session: txInfo?.session },
+                            ),
                         );
                     } catch (err: any) {
                         if (err?.code === 11000) {
@@ -1203,6 +1107,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                                 ...obj,
                             },
                         },
+                        { session: txInfo?.session },
                     );
                 }
             } else {
@@ -1211,18 +1116,19 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     toSave.version += 1;
                 }
 
-                result = await this.repo.save(toSave);
+                result = await this.repo.save(toSave, { session: txInfo?.session });
             }
         } else {
+            const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
             if (existing instanceof BaseEntity) {
                 if (keepPrevious) {
-                    await this.repo.insert({
+                    await repo.insert({
                         ...obj,
                         dateModified: new Date(),
                         version: (obj as any).version + 1,
-                    } as any);
+                    });
                 } else {
-                    await this.repo.update(query.where, {
+                    await repo.update(query.where, {
                         ...obj,
                         dateModified: new Date(),
                         version: (obj as any).version + 1,
@@ -1233,9 +1139,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
                 if (keepPrevious) {
                     toSave.version += 1;
-                    result = await this.repo.save(toSave);
+                    result = await repo.save(toSave);
                 } else {
-                    await this.repo.update(query.where, toSave);
+                    await repo.update(query.where, toSave);
                 }
             }
         }
@@ -1243,9 +1149,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         query = this.searchIdQuery(existing.uid, existing instanceof BaseEntity ? existing.version + 1 : undefined);
         if (!result) {
             if (this.repo instanceof MongoRepository) {
-                result = await this.repo.findOne(query["$match"] ? query["$match"] : query);
+                result = await this.repo.findOne(query["$match"] ? query["$match"] : query, {
+                    session: txInfo?.session,
+                });
             } else {
-                result = await this.repo.findOne(query);
+                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
+                result = (await repo.findOne(query)) as T | null;
             }
             if (!result) {
                 throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
@@ -1254,18 +1163,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         result = this.instantiateObject(result);
 
-        if (result && this.cacheClient && this.modelClass.cacheTTL) {
+        if (result && this.cache) {
             // Cache the object for faster retrieval
-            void this.cacheClient.setex(
-                `${this.baseCacheKey}.${this.hashQuery(query)}`,
-                this.modelClass.cacheTTL,
-                JSON.stringify(result),
-            );
-            void this.cacheClient.setex(
-                `${this.baseCacheKey}.${this.hashQuery(this.searchIdQuery(result.uid))}`,
-                this.modelClass.cacheTTL,
-                JSON.stringify(result),
-            );
+            void this.cache.save(this.hashQuery(query), result);
+            void this.cache.save(this.hashQuery(this.searchIdQuery(result.uid)), result);
         }
 
         // Process the result to remove any properties that have been scoped with @RequiresScope that the user
@@ -1300,8 +1201,16 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
                 ObjectUtils.validate(obj, (metadataObj as any).constructor);
 
-                // Iterate through all properties and look for `@Reference`
+                // Iterate through all properties
                 for (const member of Object.getOwnPropertyNames(obj)) {
+                    // Reset any @ReadOnly properties, discarding whatever the client supplied.
+                    const isReadOnly: boolean = Reflect.getMetadata("rrst:readOnly", metadataObj, member);
+                    if (member in obj && isReadOnly) {
+                        // Override the value from our default object
+                        obj[member] = metadataObj[member];
+                    }
+
+                    // Check for @Reference
                     const clazz: any = Reflect.getMetadata("rrst:reference", metadataObj, member);
                     if (clazz && clazz.datasource && obj[member]) {
                         // Attempt to grab the repository for this reference type

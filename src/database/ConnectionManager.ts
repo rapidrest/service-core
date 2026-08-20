@@ -2,11 +2,11 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 ///////////////////////////////////////////////////////////////////////////////
 import { ObjectDecorators } from "@rapidrest/core";
-import { Redis } from "ioredis";
 import type { DataSource } from "typeorm";
 import { isSqlDataSource } from "./ConnectionKinds.js";
 import { MongoConnection } from "./MongoConnection.js";
 import { MongoSchemaSync } from "./MongoSchemaSync.js";
+import type { RedisClientType } from "redis";
 const { Destroy, Logger } = ObjectDecorators;
 
 /**
@@ -15,7 +15,7 @@ const { Destroy, Logger } = ObjectDecorators;
  * @author Jean-Philippe Steinmetz
  */
 export class ConnectionManager {
-    public connections: Map<string, DataSource | MongoConnection | Redis> = new Map();
+    public connections: Map<string, DataSource | MongoConnection | RedisClientType> = new Map();
     @Logger
     private logger: any;
 
@@ -108,7 +108,9 @@ export class ConnectionManager {
             this.logger.info(`Connecting to database ${name} [${this.redactUri(url)}]...`);
 
             if (datasource.type === "redis") {
-                connection = new Redis(url);
+                const { createClient } = await this.importOptionalDependency("redis", name, datasource.type);
+                connection = createClient(url);
+                await connection.connect();
             } else {
                 // Make an array of all entities associated with this connection
                 const entities: any[] = [];

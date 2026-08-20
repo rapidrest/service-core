@@ -1,7 +1,7 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { Redis } from "ioredis";
+import type { RedisClientType } from "redis";
 
 /**
  * Utility functions for sending push notifications to registered clients.
@@ -10,14 +10,14 @@ import { Redis } from "ioredis";
  */
 export class NotificationUtils {
     /** The redis client to use for broadcasting messages. */
-    private redis: Redis;
+    private redis: RedisClientType;
 
     /**
      * Initializes the utility using the given redis connection.
      *
      * @param {any} redis The redis connection to publish to.
      */
-    constructor(redis: Redis) {
+    constructor(redis: RedisClientType) {
         this.redis = redis;
     }
 

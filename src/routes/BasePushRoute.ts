@@ -2,7 +2,7 @@ import { ApiError, ObjectDecorators } from "@rapidrest/core";
 import { Auth, Param, Post, Socket, User, WebSocket } from "../decorators/RouteDecorators.js";
 import { ACLUtils } from "../security/ACLUtils.js";
 import ws from "ws";
-import { Redis } from "ioredis";
+import type { RedisClientType } from "redis";
 import { Description, Summary } from "../decorators/DocDecorators.js";
 import { ACLAction } from "../security/AccessControlList.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
@@ -60,7 +60,7 @@ export class BasePushRoute {
     private maxSubscriptionsPerUser: number = 50;
 
     /** A persistent redis client used to publish outgoing push messages. */
-    private redisPub?: Redis;
+    private redisPub?: RedisClientType;
 
     @Init
     private init(): void {
@@ -106,7 +106,7 @@ export class BasePushRoute {
         // (e.g. a burst of connections opened milliseconds apart), or two calls could both read the same
         // pre-commit state: bypassing the per-user socket cap, or clobbering each other's committed
         // subscription list the same way the message handlers below already guard against via `runExclusive`.
-        const redis: Redis | undefined = await this.runExclusive(user.uid, async () => {
+        const redis: RedisClientType | undefined = await this.runExclusive(user.uid, async () => {
             // Cap the number of concurrent connections a single user may hold, to prevent an authenticated user
             // from exhausting server resources by opening unbounded sockets.
             if ((this.activeSocks.get(user.uid)?.length ?? 0) >= this.maxSocketsPerUser) {
@@ -117,7 +117,7 @@ export class BasePushRoute {
             }
 
             // Establish a new redis pub/sub client for this connection
-            const conn: Redis = new Redis(this.redisConfig.url, this.redisConfig.options);
+            const conn: RedisClientType = new Redis(this.redisConfig.url, this.redisConfig.options);
 
             // On a first-ever connection there's nothing stored yet, so just the user's own identity channel
             // (always implicitly permitted, same as the SUBSCRIBE message handler below never ACL-checks it).

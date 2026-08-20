@@ -4,3 +4,4 @@ export * from "./MongoConnection.js";
 export * from "./MongoRepository.js";
 export * from "./MongoSchemaSync.js";
 export * from "./NamingUtils.js";
+export * from "./RedisCache.js";

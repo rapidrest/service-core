@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import { Redis } from "ioredis";
+import type { RedisClientType } from "redis";
 import { Event, ObjectDecorators } from "@rapidrest/core";
 import { ObjectFactory } from "./ObjectFactory.js";
 const { Config, Destroy, Init, Logger } = ObjectDecorators;
@@ -25,32 +25,33 @@ export class EventListenerManager {
     // Compiled RegExp per registered handler-type key, populated lazily in onEvent() and reused across every
     // dispatch — avoids recompiling a pattern from scratch for every incoming event.
     private readonly typePatterns: Map<string, RegExp> = new Map();
-    private readonly redis: Redis;
+    private readonly redis: RedisClientType;
 
-    constructor(objectFactory: ObjectFactory, redis: Redis) {
+    constructor(objectFactory: ObjectFactory, redis: RedisClientType) {
         this.objectFactory = objectFactory;
-        this.redis = redis;
+        this.redis = redis.duplicate();
     }
 
     @Init
     public async init(): Promise<void> {
-        try {
-            await this.redis.subscribe(...this.channels);
-        } catch (err: any) {
-            this.logger.error("EventManager: Failed to subscribe to pubsub channels: " + this.channels);
-            this.logger.debug(err);
-        }
-        this.redis.on("message", (channel, message) => {
-            let decoded: any;
+        for (const channel of this.channels) {
             try {
-                decoded = JSON.parse(message);
-            } catch (err) {
-                this.logger.error("EventManager: Received event but could not parse it.");
-                this.logger.debug(`EventManager: Channel=${channel}, Event=${message}, Error=${err}`);
-                return;
+                await this.redis.subscribe(channel, (message) => {
+                    let decoded: any;
+                    try {
+                        decoded = JSON.parse(message);
+                    } catch (err) {
+                        this.logger.error("EventManager: Received event but could not parse it.");
+                        this.logger.debug(`EventManager: Channel=${channel}, Event=${message}, Error=${err}`);
+                        return;
+                    }
+                    this.onEvent(decoded);
+                });
+            } catch (err: any) {
+                this.logger.error("EventManager: Failed to subscribe to pubsub channel: " + channel);
+                this.logger.debug(err);
             }
-            this.onEvent(decoded);
-        });
+        }
 
         // Go through each class in the ObjectFactory and create any with event listener decorator.
         const classes: Map<string, any> | undefined = this.objectFactory.classes;

@@ -8,7 +8,7 @@ import type { RequestWS } from "../http/uWS/WebSocket.js";
 import type { AuthResult, AuthStrategy } from "./AuthStrategy.js";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { JWTStrategy } from "./JWTStrategy.js";
-const { Config, Init, Inject } = ObjectDecorators;
+const { Config, Init } = ObjectDecorators;
 
 /**
  * A set of common utilities for performing authentication using one or more strategies.
@@ -16,26 +16,26 @@ const { Config, Init, Inject } = ObjectDecorators;
  * @author Jean-Philippe Steinmetz <rapidrests@gmail.com>
  */
 export class AuthMiddleware {
+    // Automatically injected by ObjectFactory on instantiation
+    private _objectFactory?: ObjectFactory;
+
     @Config("auth")
     private authConfig: any;
 
     @Config("auth:socketTimeout", 2000)
     private authSocketTimeout: number = 2000;
 
-    @Inject(ObjectFactory)
-    private objectFactory?: ObjectFactory;
-
     /** The authentication strategies that have been registered. */
     public readonly strategies: Map<string, AuthStrategy> = new Map();
 
     @Init
     private async init() {
-        if (this.objectFactory) {
+        if (this._objectFactory) {
             // Register built-in strategy classes with ObjectFactory
-            this.objectFactory.register(JWTStrategy, "auth.JWTStrategy");
+            this._objectFactory.register(JWTStrategy, "auth.JWTStrategy");
 
             if (this.authConfig.strategy) {
-                const strategy = await this.objectFactory.newInstance<AuthStrategy>(this.authConfig.strategy);
+                const strategy = await this._objectFactory.newInstance<AuthStrategy>(this.authConfig.strategy);
                 this.strategies.set(strategy.name, strategy);
             }
         }

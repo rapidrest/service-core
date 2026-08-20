@@ -15,6 +15,7 @@ import { ACLUtils } from "../security/ACLUtils.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { NetUtils } from "../NetUtils.js";
 import { ObjectFactory } from "../ObjectFactory.js";
+import { ModelUtils } from "../models/ModelUtils.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -116,6 +117,9 @@ export interface UpdateRequestOptions<T extends BaseEntity | SimpleEntity> exten
  * @author Jean-Philippe Steinmetz
  */
 export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
+    // Automatically injected by ObjectFactory on instantiation
+    private _objectFactory?: ObjectFactory;
+
     @Inject(ACLUtils)
     protected aclUtils?: ACLUtils;
 
@@ -135,9 +139,6 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
 
     @Inject(NotificationUtils)
     protected notificationUtils?: NotificationUtils;
-
-    @Inject(ObjectFactory)
-    protected objectFactory?: ObjectFactory;
 
     /** The class of the RepoUtils to use when instantiating the utility. */
     protected abstract readonly repoUtilsClass: any;
@@ -167,11 +168,11 @@ export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
      */
     @Init
     private async superInitialize() {
-        if (!this.objectFactory) {
+        if (!this._objectFactory) {
             throw new Error("objectFactory is not set!");
         }
 
-        this.repoUtils = await this.objectFactory.newInstance(this.repoUtilsClass || RepoUtils, {
+        this.repoUtils = await this._objectFactory.newInstance(this.repoUtilsClass || RepoUtils, {
             name: this.modelClass.name,
             initialize: true,
             args: [this.modelClass],

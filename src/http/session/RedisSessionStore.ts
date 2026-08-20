@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
-import type { Redis } from "ioredis";
+import type { RedisClientType } from "redis";
 import type { SessionStore } from "./SessionStore.js";
 
 const KEY_PREFIX = "session:";
@@ -11,12 +11,12 @@ const KEY_PREFIX = "session:";
  * `MemorySessionStore` would not be shared across horizontally-scaled instances.
  */
 export class RedisSessionStore implements SessionStore {
-    private client: Redis;
+    private client: RedisClientType;
 
     /** The default record TTL (in seconds). */
     public defaultTTL: number = 60;
 
-    constructor(client: Redis) {
+    constructor(client: RedisClientType) {
         this.client = client;
     }
 

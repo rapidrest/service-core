@@ -2,16 +2,21 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
 import type {
+    Abortable,
+    AggregateOptions,
     AggregationCursor,
     Collection,
     CountDocumentsOptions,
     Db,
     DeleteOptions,
     DeleteResult,
+    DistinctOptions,
     Document,
     Filter,
     FindCursor,
     FindOptions,
+    InsertOneOptions,
+    ReplaceOptions,
     UpdateOptions,
     UpdateResult,
 } from "mongodb";
@@ -49,16 +54,16 @@ export class MongoRepository<T extends Document = any> {
      *
      * @param pipeline The aggregation pipeline stages to execute.
      */
-    public aggregate(pipeline: Document[]): AggregationCursor<any> {
-        return this.collection.aggregate(pipeline);
+    public aggregate(pipeline: Document[], options?: AggregateOptions & Abortable): AggregationCursor<any> {
+        return this.collection.aggregate(pipeline, options);
     }
 
     /**
      * Drops the entire collection from the database, removing all documents and indexes. Does nothing if the
      * collection does not exist.
      */
-    public async clear(): Promise<void> {
-        await this.collection.deleteMany({});
+    public async clear(options?: DeleteOptions & Abortable): Promise<void> {
+        await this.collection.deleteMany({}, options);
     }
 
     /**
@@ -67,7 +72,7 @@ export class MongoRepository<T extends Document = any> {
      * @param filter - The filter for the count
      * @param options - Optional settings for the command
      */
-    public count(filter?: Filter<T>, options?: CountDocumentsOptions): Promise<number> {
+    public count(filter?: Filter<T>, options?: CountDocumentsOptions & Abortable): Promise<number> {
         return this.collection.countDocuments(filter ?? {}, options);
     }
 
@@ -97,8 +102,12 @@ export class MongoRepository<T extends Document = any> {
      * @param field The name of the document field to return distinct values of.
      * @param filter The query filter to match documents against.
      */
-    public distinct(field: string, filter?: Filter<T>): Promise<any[]> {
-        return this.collection.distinct(field, filter ?? {});
+    public distinct(field: string, filter?: Filter<T>, options?: DistinctOptions): Promise<any[]> {
+        if (options) {
+            return this.collection.distinct(field, filter ?? {}, options);
+        } else {
+            return this.collection.distinct(field, filter ?? {});
+        }
     }
 
     /**
@@ -107,7 +116,7 @@ export class MongoRepository<T extends Document = any> {
      * @param filter The query filter to match documents against.
      * @param options - Optional settings for the command
      */
-    public find(filter?: Filter<T>, options?: FindOptions): FindCursor<T> {
+    public find(filter?: Filter<T>, options?: FindOptions & Abortable): FindCursor<T> {
         return this.collection.find(filter ?? {}, options) as FindCursor<T>;
     }
 
@@ -116,8 +125,8 @@ export class MongoRepository<T extends Document = any> {
      *
      * @param filter The query filter to match documents against.
      */
-    public findOne(filter: any): Promise<T | null> {
-        return this.collection.findOne(filter) as Promise<T | null>;
+    public findOne(filter: any, options?: FindOptions & Abortable): Promise<T | null> {
+        return this.collection.findOne(filter, options);
     }
 
     /**
@@ -128,7 +137,7 @@ export class MongoRepository<T extends Document = any> {
      * @param doc The document to save.
      * @returns The saved document.
      */
-    public async save(doc: any): Promise<T> {
+    public async save(doc: any, options?: InsertOneOptions | ReplaceOptions): Promise<T> {
         const copy: any = { ...doc };
         // Strip any undefined properties so they are omitted from the stored document
         for (const key of Object.keys(copy)) {
@@ -138,9 +147,9 @@ export class MongoRepository<T extends Document = any> {
         }
 
         if (doc._id !== undefined && doc._id !== null) {
-            await this.collection.replaceOne({ _id: doc._id }, copy, { upsert: true });
+            await this.collection.replaceOne({ _id: doc._id }, copy, { ...options, upsert: true });
         } else {
-            const result = await this.collection.insertOne(copy);
+            const result = await this.collection.insertOne(copy, options);
             doc._id = result.insertedId;
         }
 

@@ -76,26 +76,45 @@ export function Redis(name: string = "redis", required: boolean = true) {
 }
 
 /**
- * Apply this to perform all operations for the given datasource in a single transaction. The specified datasource can
- * be the name of a connection or the class type of a persistent data model.
+ * Apply this to perform all operations in a single transaction. The specified `source` can
+ * be the name of a connection or the class type of a persistent data model. If no `source` is specified it is inferred
+ * by lookup via `this.modelClass` which is injected when `@Model` is added to a class.
  *
  * For MongoDB, this has the effect of creating a new session and wrapping the function call in
  * `session.withTransaction()`. Note that you must pass in the `session` to each `MongoRepository` function you wish
- * to use the transaction. The `session` will be automatically injected when one of the function arguments is decorated
- * with `@MongoSession`.
+ * to use the transaction. The `session` will be automatically stored in the object under `this._transaction`.
+ * Optionally, it can also be injected to a function arguments that is decorated with `@MongoSession`.
  *
  * For TypeORM, this has the effect of creating a new transaction and wrapping the function call in
  * `datasource.transaction()`. Note that you must use the provided `EntityManager` for all database actions. The
- * `entityManager` will be automatically injected when one of the function arguments is decorated with `@EntityManager`.
+ * `entityManager` will be automatically stored in the object under `this._transaction`. Optionally, it can be injected
+ * to a function argument that is decorated with `@EntityManager`.
  *
  * Note: A `@Transactional` method *MUST* always return a promise (e.g. is async).
  *
+ * @example
+ * ```ts
+ * @Model(MongoModel)
+ * class MyClass {
+ *   // Note: You *must* declare an injected repository for you class
+ *   @Repository(MongoModel)
+ *   private myRepo: MongoRepository<MongoModel>;
+ *
+ *   @Transactional()
+ *   public myFunc(obj: MongoModel, @MongoSession session) {
+ *     await this.myRepo.save(obj, { session });
+ *   }
+ * }
+ * ```
  * @example
  * ```ts
  * class MyClass {
  *   // Note: You *must* declare an injected repository for you class
  *   @Repository(MongoModel)
  *   private myRepo: MongoRepository<MongoModel>;
+ *
+ *   @Repository(MongoModel)
+ *   private myRepo2: MongoRepository<MongoModel2>;
  *
  *   @Transactional(MongoModel)
  *   public myFunc(obj: MongoModel, @MongoSession session) {
@@ -116,10 +135,11 @@ export function Redis(name: string = "redis", required: boolean = true) {
  *   }
  * }
  * ```
- * @param datasource The name of the datasource or the class type that a transaction will be created for.
+ * @param source The name of the datasource or the class type that a transaction will be created for. If none specified,
+ * the source is inferred using `this.modelClass`.
  * @param options The transcation options to pass to the underlying datasource connection.
  */
-export function Transactional(source: string | any, options?: any) {
+export function Transactional(source?: string | any, options?: any) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         const original: Function = descriptor.value;
         const argMetadata: any = Reflect.getMetadata("rrst:args", target, propertyKey);
@@ -131,6 +151,7 @@ export function Transactional(source: string | any, options?: any) {
                 );
             }
 
+            source = source ?? this.modelClass;
             const datasource: string = typeof source === "string" ? source : source.datasource;
             const conn: any = this._datasources.get(datasource);
             if (!conn) {
@@ -146,23 +167,19 @@ export function Transactional(source: string | any, options?: any) {
                 try {
                     await session.withTransaction(async () => {
                         // Inject the session into the function arguments
-                        let injected: boolean = false;
                         for (const key in argMetadata) {
                             const i: number = Number(key);
                             if (argMetadata[i][0] === "mongoSession") {
                                 if (!argMetadata[i][1] || argMetadata[i][1] === datasource) {
                                     args[i] = session;
-                                    injected = true;
-                                    break;
                                 }
                             }
                         }
 
-                        if (!injected) {
-                            throw new Error(
-                                `Failed to inject session into function ${target.name}:${propertyKey}. Did you add an arg with @MongoSession() ?`,
-                            );
-                        }
+                        // Also add the session data to the target object
+                        this._transaction = {
+                            session,
+                        };
 
                         result = await original.apply(this, args);
                     });
@@ -177,23 +194,19 @@ export function Transactional(source: string | any, options?: any) {
                 // TODO Use QueryRunner instead
                 await conn.transaction(async (entityManager) => {
                     // Inject the entity manager into the function arguments+
-                    let injected: boolean = false;
                     for (const key in argMetadata) {
                         const i: number = Number(key);
                         if (argMetadata[i][0] === "entityManager") {
                             if (!argMetadata[i][1] || argMetadata[i][1] === datasource) {
                                 args[i] = entityManager;
-                                injected = true;
-                                break;
                             }
                         }
                     }
 
-                    if (!injected) {
-                        throw new Error(
-                            `Failed to inject entity manager into function ${target.name}:${propertyKey}. Did you add an arg with @EntityManager() ?`,
-                        );
-                    }
+                    // Also add the entityManager to the target object
+                    this._transaction = {
+                        entityManager,
+                    };
 
                     result = await original.apply(this, args);
                 });
