@@ -98,6 +98,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     // Automatically injected by ObjectFactory on instantiation
     private _objectFactory?: ObjectFactory;
 
+    // Populated in init() below; read by @Transactional to resolve the connection to transact against.
+    private _datasources?: Map<string, any>;
+
     @Inject("ACLUtils")
     protected aclUtils?: ACLUtils;
 
@@ -154,6 +157,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
 
             this.repo = ds.getRepository(this.modelClass);
+
+            // `@Transactional` (on create()/update()/delete()/truncate() below) resolves its connection via
+            // `this._datasources`. Unlike a `@Repository`-decorated field, `repo` here is resolved manually
+            // above rather than through ObjectFactory's injection path, so `_datasources` is never populated
+            // as a side effect of that injection the way it would be for a class that only declares
+            // `@Repository` fields — it must be set explicitly, or every `@Transactional` call on this
+            // instance would silently run without a transaction.
+            this._datasources = this._datasources ?? new Map();
+            this._datasources.set(this.modelClass.datasource, ds);
         }
 
         // Create the cache store if caching is enabled for this entity type

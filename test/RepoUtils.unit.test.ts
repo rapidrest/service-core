@@ -32,6 +32,19 @@ describe("RepoUtils.init guard clauses", () => {
         repoUtils.connectionManager = { connections: new Map([["mongodb", fakeConn]]) };
         await expect(repoUtils.init()).rejects.toThrow("No repository found for class User");
     });
+
+    it("populates _datasources with the resolved connection, for @Transactional to find", async () => {
+        // Regression test: `repo` is resolved manually here rather than through ObjectFactory's
+        // @Repository-injection path, so `_datasources` doesn't get populated as a side effect the way it
+        // would for a class with an injected `@Repository` field — it must be set explicitly in init(), or
+        // @Transactional would always silently run without a transaction for every RepoUtils instance.
+        const repoUtils: any = new RepoUtils(User);
+        const fakeRepo = {};
+        const fakeConn = { getRepository: () => fakeRepo };
+        repoUtils.connectionManager = { connections: new Map([["mongodb", fakeConn]]) };
+        await repoUtils.init();
+        expect(repoUtils._datasources.get("mongodb")).toBe(fakeConn);
+    });
 });
 
 // Every data-access method starts with the same `if (!this.repo) throw INTERNAL_ERROR` guard, for the case

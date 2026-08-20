@@ -60,6 +60,37 @@ export class ConnectionManager {
     }
 
     /**
+     * Determines whether the given MongoDB deployment supports multi-document transactions (i.e. is configured
+     * as a replica set or a sharded cluster) by inspecting the `hello` handshake response. A standalone
+     * `mongod` responds with neither `setName` (replica set membership) nor `msg: "isdbgrid"` (mongos), and
+     * doesn't support transactions at all.
+     *
+     * @param db The database to check.
+     * @param name The name of the datastore, used only for the log message if transactions aren't supported.
+     */
+    private async detectMongoTransactionSupport(db: any, name: string): Promise<boolean> {
+        try {
+            const hello: any = await db.admin().command({ hello: 1 });
+            const supported: boolean = !!hello.setName || hello.msg === "isdbgrid";
+            if (!supported) {
+                this.logger.warn(
+                    `Datastore '${name}' is a standalone MongoDB instance and does not support multi-document ` +
+                        `transactions. @Transactional will run without a transaction for models on this ` +
+                        `datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.`,
+                );
+            }
+            return supported;
+        } catch (err: any) {
+            this.logger.warn(
+                `Datastore '${name}': failed to determine whether the MongoDB deployment supports ` +
+                    `transactions (${err.message}). Assuming it does not; @Transactional will run without a ` +
+                    `transaction for models on this datastore.`,
+            );
+            return false;
+        }
+    }
+
+    /**
      * Attempts to initiate all database connections as defined in the config.
      *
      * @param datastores A map of configured datastores to be passed to the underlying engine.
@@ -155,7 +186,8 @@ export class ConnectionManager {
                     const client = new MongoClient(url, datasource.clientOptions);
                     await client.connect();
                     const db = client.db(datasource.database);
-                    connection = new MongoConnection(name, client, db, entities);
+                    const supportsTransactions: boolean = await this.detectMongoTransactionSupport(db, name);
+                    connection = new MongoConnection(name, client, db, entities, supportsTransactions);
 
                     // Perform structure synchronization when requested
                     if (datasource.synchronize) {

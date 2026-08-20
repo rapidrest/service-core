@@ -92,9 +92,10 @@ describe("DatabaseDecorators Tests", () => {
     });
 
     describe("@Transactional", () => {
-        function makeMongoConnection(session: any): MongoConnection {
+        function makeMongoConnection(session: any, supportsTransactions: boolean = true): MongoConnection {
             const conn: any = Object.create(MongoConnection.prototype);
             conn.startSession = vi.fn().mockReturnValue(session);
+            conn.supportsTransactions = supportsTransactions;
             return conn as MongoConnection;
         }
 
@@ -145,6 +146,27 @@ describe("DatabaseDecorators Tests", () => {
                 }
             }
             await expect(new Foo().doIt()).resolves.toBe("ran");
+        });
+
+        it("runs the method directly, without starting a session, when the Mongo connection doesn't support transactions", async () => {
+            // A standalone `mongod` (no replica set) doesn't support multi-document transactions at all —
+            // ConnectionManager's detectMongoTransactionSupport() detects this at connection time and sets
+            // `supportsTransactions: false`, which must stop @Transactional from ever calling startSession()
+            // (which would just fail against a standalone deployment).
+            const session = makeMongoSession();
+            const conn = makeMongoConnection(session, false);
+
+            class Foo {
+                public modelClass = { datasource: "mongodb" };
+                public _datasources = new Map([["mongodb", conn]]);
+                @Transactional()
+                public async doIt(): Promise<string> {
+                    return "ran";
+                }
+            }
+
+            await expect(new Foo().doIt()).resolves.toBe("ran");
+            expect((conn as any).startSession).not.toHaveBeenCalled();
         });
 
         it("wraps the call in a MongoDB session/transaction and makes it available via transactionContext", async () => {

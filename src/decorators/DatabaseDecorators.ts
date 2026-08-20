@@ -42,8 +42,7 @@ export function DataSource(name: string, required: boolean = true) {
  */
 export function EntityManager(nameOrType?: string | any) {
     return function (target: any, propertyKey: string, index: number) {
-        const datasource: string | undefined =
-            typeof nameOrType === "string" ? nameOrType : nameOrType?.datasource;
+        const datasource: string | undefined = typeof nameOrType === "string" ? nameOrType : nameOrType?.datasource;
         // Falls back to a fresh object rather than assuming some other parameter decorator (e.g. `@Param`)
         // already initialized this metadata — a `@Transactional` method using only `@EntityManager` has no
         // such decorator, and indexing into `undefined` here would throw at class-definition time.
@@ -58,8 +57,7 @@ export function EntityManager(nameOrType?: string | any) {
  */
 export function MongoSession(nameOrType?: string | any) {
     return function (target: any, propertyKey: string, index: number) {
-        const datasource: string | undefined =
-            typeof nameOrType === "string" ? nameOrType : nameOrType?.datasource;
+        const datasource: string | undefined = typeof nameOrType === "string" ? nameOrType : nameOrType?.datasource;
         const args: any = Reflect.getMetadata("rrst:args", target, propertyKey) ?? {};
         args[index] = ["mongoSession", datasource];
         Reflect.defineMetadata("rrst:args", args, target, propertyKey);
@@ -171,22 +169,18 @@ export function Transactional(source?: string | any, options?: any) {
                 typeof resolvedSource === "string" ? resolvedSource : resolvedSource?.datasource;
             const conn: any = datasource ? this._datasources?.get(datasource) : undefined;
 
-            // No usable transactional connection could be resolved — not yet initialized, no datasource
-            // registered under that name, or a connection type that doesn't support transactions. Run the
-            // method directly rather than throwing a transactional-plumbing error that would mask whatever
-            // more specific guard clause the method itself has (e.g. "repository not initialized"), and
-            // rather than silently skipping the call the way falling through the two branches below without
-            // ever calling `original` used to.
-            if (
-                !(conn instanceof MongoConnection) &&
-                !(isSqlDataSource(conn) && typeof conn.transaction === "function")
-            ) {
+            // Check if the connection supports transactions. If it doesn't we will fallback to the default
+            // (non-transactional) behavior. A log message warns the developer at startup about the missing
+            // transaction support.
+            const canUseMongoTransaction: boolean = conn instanceof MongoConnection && conn.supportsTransactions;
+            const canUseSqlTransaction: boolean = isSqlDataSource(conn) && typeof conn.transaction === "function";
+            if (!canUseMongoTransaction && !canUseSqlTransaction) {
                 return await original.apply(this, args);
             }
 
             let result = undefined;
 
-            if (conn instanceof MongoConnection) {
+            if (canUseMongoTransaction) {
                 // Implement transactions according to the MongoDB docs:
                 // https://www.mongodb.com/docs/manual/core/transactions/?language-no-dependencies=nodejs
                 const session = conn.startSession(options);
@@ -212,7 +206,7 @@ export function Transactional(source?: string | any, options?: any) {
                 } finally {
                     await session.endSession();
                 }
-            } else if (isSqlDataSource(conn) && typeof conn.transaction === "function") {
+            } else if (canUseSqlTransaction) {
                 // Implement transaction according to the TypeORM docs:
                 // https://typeorm.io/docs/transactions/
                 // TODO Use QueryRunner instead

@@ -87,6 +87,43 @@ describe("ConnectionManager Tests", () => {
         });
     });
 
+    describe("detectMongoTransactionSupport", () => {
+        function makeDb(helloResult: any): any {
+            return { admin: () => ({ command: vi.fn().mockResolvedValue(helloResult) }) };
+        }
+
+        it("returns true and does not warn for a replica set (setName present)", async () => {
+            const manager = makeManager();
+            const supported = await manager.detectMongoTransactionSupport(makeDb({ setName: "rs0" }), "mongodb");
+            expect(supported).toBe(true);
+            expect(manager.logger.warn).not.toHaveBeenCalled();
+        });
+
+        it("returns true and does not warn for a sharded cluster (msg: isdbgrid)", async () => {
+            const manager = makeManager();
+            const supported = await manager.detectMongoTransactionSupport(makeDb({ msg: "isdbgrid" }), "mongodb");
+            expect(supported).toBe(true);
+            expect(manager.logger.warn).not.toHaveBeenCalled();
+        });
+
+        it("returns false and warns for a standalone deployment (neither setName nor isdbgrid)", async () => {
+            const manager = makeManager();
+            const supported = await manager.detectMongoTransactionSupport(makeDb({}), "mongodb");
+            expect(supported).toBe(false);
+            expect(manager.logger.warn).toHaveBeenCalledWith(
+                expect.stringContaining("does not support multi-document"),
+            );
+        });
+
+        it("returns false and warns when the hello command itself fails", async () => {
+            const manager = makeManager();
+            const db: any = { admin: () => ({ command: vi.fn().mockRejectedValue(new Error("boom")) }) };
+            const supported = await manager.detectMongoTransactionSupport(db, "mongodb");
+            expect(supported).toBe(false);
+            expect(manager.logger.warn).toHaveBeenCalledWith(expect.stringContaining("boom"));
+        });
+    });
+
     describe("connect() redis path", () => {
         it("creates and connects a redis client for a 'redis' type datastore", async () => {
             const manager = makeManager();

@@ -22,14 +22,27 @@ export class MongoConnection {
     /** The name of the datasource that this connection was created for. */
     public readonly name: string;
 
+    /**
+     * Indicates whether this connection's MongoDB deployment supports multi-document transactions.
+     * Defaults to `false`.
+     */
+    public readonly supportsTransactions: boolean;
+
     private connected: boolean = true;
     private entities: Map<string, any> = new Map();
     private repos: Map<any, MongoRepository<any>> = new Map();
 
-    constructor(name: string, client: MongoClient, db: Db, entities?: Iterable<any>) {
+    constructor(
+        name: string,
+        client: MongoClient,
+        db: Db,
+        entities?: Iterable<any>,
+        supportsTransactions: boolean = false,
+    ) {
         this.name = name;
         this.client = client;
         this.db = db;
+        this.supportsTransactions = supportsTransactions;
 
         if (entities) {
             for (const clazz of entities) {
