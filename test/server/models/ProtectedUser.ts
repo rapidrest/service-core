@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { Column, Entity, Index } from "../../../src/decorators/PersistenceDecorators";
 import { ModelDecorators } from "../../../src/decorators";
@@ -23,7 +24,7 @@ const { DataStore, Identifier, Protect } = ModelDecorators;
             },
         ],
     },
-    true
+    true,
 )
 export default class ProtectedUser extends BaseMongoEntity {
     @Identifier

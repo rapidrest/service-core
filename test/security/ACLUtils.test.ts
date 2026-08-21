@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "../config";
 import { MongoConnection, MongoRepository } from "../../src";
@@ -178,7 +179,7 @@ describe("ACLUtils Tests", () => {
 
         it("Can find ACL identified by uuid.", async () => {
             const acl: AccessControlList | null | undefined = await aclUtils?.findACL(
-                "bf98b869-cabe-452a-bf8d-674c48f2b5bd"
+                "bf98b869-cabe-452a-bf8d-674c48f2b5bd",
             );
             expect(acl).toBeDefined();
             if (acl) {
@@ -275,7 +276,7 @@ describe("ACLUtils Tests", () => {
 
         it("Can get record for user by uid.", async () => {
             const acl: AccessControlList | null | undefined = await aclUtils?.findACL(
-                "bf98b869-cabe-452a-bf8d-674c48f2b5bd"
+                "bf98b869-cabe-452a-bf8d-674c48f2b5bd",
             );
             expect(acl).toBeDefined();
             if (acl) {
@@ -420,7 +421,7 @@ describe("ACLUtils Tests", () => {
 
         it("Can test permissions.", async () => {
             const acl: AccessControlList | null | undefined = await aclUtils?.findACL(
-                "bf98b869-cabe-452a-bf8d-674c48f2b5bd"
+                "bf98b869-cabe-452a-bf8d-674c48f2b5bd",
             );
             expect(acl).toBeDefined();
             if (acl) {
@@ -631,7 +632,14 @@ describe("ACLUtils Tests", () => {
                 records: [
                     {
                         userOrRoleId: "admin",
-                        actions: [ACLAction.CREATE, ACLAction.DELETE, ACLAction.FULL, ACLAction.READ, "special", ACLAction.UPDATE],
+                        actions: [
+                            ACLAction.CREATE,
+                            ACLAction.DELETE,
+                            ACLAction.FULL,
+                            ACLAction.READ,
+                            "special",
+                            ACLAction.UPDATE,
+                        ],
                     },
                 ],
             };
@@ -648,7 +656,7 @@ describe("ACLUtils Tests", () => {
 
         it("Can update an existing ACL", async () => {
             const acl: AccessControlList | null | undefined = await aclUtils?.findACL(
-                "bf98b869-cabe-452a-bf8d-674c48f2b5bd"
+                "bf98b869-cabe-452a-bf8d-674c48f2b5bd",
             );
             expect(acl).toBeDefined();
             if (acl) {
@@ -670,7 +678,7 @@ describe("ACLUtils Tests", () => {
         // This test works when run solo but for some reason fails when running all tests together
         it("Cannot update an existing ACL with incorrect version.", async () => {
             const acl: AccessControlList | null | undefined = await aclUtils?.findACL(
-                "bf98b869-cabe-452a-bf8d-674c48f2b5bd"
+                "bf98b869-cabe-452a-bf8d-674c48f2b5bd",
             );
             expect(acl).toBeDefined();
             if (acl) {
@@ -698,7 +706,7 @@ describe("ACLUtils Tests", () => {
 
         it("Ignores update if the ACL has no changes.", async () => {
             let acl: AccessControlList | null | undefined = await aclUtils?.findACL(
-                "bf98b869-cabe-452a-bf8d-674c48f2b5bd"
+                "bf98b869-cabe-452a-bf8d-674c48f2b5bd",
             );
             expect(acl).toBeDefined();
             if (acl) {

@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import type { HttpRequest, HttpResponse } from "../types.js";
 import type { HttpRequest as UWSHttpRequest, HttpResponse as UWSHttpResponse } from "uWebSockets.js";
@@ -35,7 +36,11 @@ export function parseQueryString(qs: string): Record<string, string | string[]> 
         const idx = part.indexOf("=");
         if (idx < 0) {
             let key: string;
-            try { key = decodeURIComponent(part); } catch { key = part; }
+            try {
+                key = decodeURIComponent(part);
+            } catch {
+                key = part;
+            }
             result[key] = "";
             continue;
         }
@@ -332,13 +337,29 @@ export class UWSResponse implements HttpResponse {
     /** Converts a numeric status code to the "200 OK" string format uWS expects. */
     private _statusToString(code: number): string {
         const messages: Record<number, string> = {
-            100: "Continue", 101: "Switching Protocols",
-            200: "OK", 201: "Created", 202: "Accepted", 204: "No Content", 206: "Partial Content",
-            301: "Moved Permanently", 302: "Found", 304: "Not Modified",
-            400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found",
-            405: "Method Not Allowed", 409: "Conflict", 410: "Gone", 422: "Unprocessable Entity",
+            100: "Continue",
+            101: "Switching Protocols",
+            200: "OK",
+            201: "Created",
+            202: "Accepted",
+            204: "No Content",
+            206: "Partial Content",
+            301: "Moved Permanently",
+            302: "Found",
+            304: "Not Modified",
+            400: "Bad Request",
+            401: "Unauthorized",
+            403: "Forbidden",
+            404: "Not Found",
+            405: "Method Not Allowed",
+            409: "Conflict",
+            410: "Gone",
+            422: "Unprocessable Entity",
             429: "Too Many Requests",
-            500: "Internal Server Error", 501: "Not Implemented", 502: "Bad Gateway", 503: "Service Unavailable",
+            500: "Internal Server Error",
+            501: "Not Implemented",
+            502: "Bad Gateway",
+            503: "Service Unavailable",
         };
         return `${code} ${messages[code] || "Unknown"}`;
     }

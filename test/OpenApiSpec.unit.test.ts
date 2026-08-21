@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level tests for the thin OpenApiBuilder wrapper methods and createSchemaObject's generic
 // (Array/Map/enum) handling — these aren't exercised by the full-server integration test in
@@ -53,7 +54,7 @@ describe("OpenApiSpec wrapper methods", () => {
                 version: "1.2.3",
                 contact: { name: "support" },
                 license: { name: "MIT" },
-            })
+            }),
         );
     });
 
@@ -127,14 +128,14 @@ describe("OpenApiSpec.createSchemaObject generic type handling", () => {
     it("throws when a map's key type is not string", () => {
         const spec = new OpenApiSpec();
         expect(() => spec.createSchemaObject([Map, Number, String])).toThrow(
-            "Maps in OpenAPI must have a key type of string."
+            "Maps in OpenAPI must have a key type of string.",
         );
     });
 
     it("throws when a map is missing its value type argument", () => {
         const spec = new OpenApiSpec();
         expect(() => spec.createSchemaObject([Map, String])).toThrow(
-            "Map types require three arguments. e.g. `[Map, string, string]`"
+            "Map types require three arguments. e.g. `[Map, string, string]`",
         );
     });
 
@@ -181,15 +182,7 @@ describe("OpenApiSpec.addRoute isWebSocket flag", () => {
     it("marks the route with x-upgrade and strips response schemas when isWebSocket is true", () => {
         const spec = new OpenApiSpec();
         class FakeRoute {}
-        spec.addRoute(
-            "logs",
-            "/logs",
-            "get",
-            { authRequired: false },
-            { description: "test" } as any,
-            FakeRoute,
-            true
-        );
+        spec.addRoute("logs", "/logs", "get", { authRequired: false }, { description: "test" } as any, FakeRoute, true);
         const pathItem: any = spec.paths?.["/logs"];
         expect(pathItem["x-upgrade"]).toBe(true);
         expect(pathItem.get.responses["200"]).toBeUndefined();

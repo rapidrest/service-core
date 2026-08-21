@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // A minimal in-memory fake of the `redis` (node-redis v4+) client, covering exactly the subset of the API
 // this codebase actually uses: get/set/setEx/ttl/del/unlink/scanIterator/multi(...).execAsPipeline[Typed](),

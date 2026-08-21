@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { EventEmitter } from "events";
 import { Duplex } from "stream";
@@ -54,10 +55,7 @@ export class UWSWebSocketShim extends EventEmitter implements IWebSocketShim {
      */
     public send(data: any, cb?: (err?: Error) => void): void {
         try {
-            const ok = this._ws.send(
-                typeof data === "string" ? data : Buffer.from(data),
-                typeof data !== "string"
-            );
+            const ok = this._ws.send(typeof data === "string" ? data : Buffer.from(data), typeof data !== "string");
             if (cb) cb(ok ? undefined : new Error("uWS backpressure: send failed"));
         } catch (err: any) {
             if (cb) cb(err);
@@ -85,7 +83,9 @@ export class UWSWebSocketShim extends EventEmitter implements IWebSocketShim {
  */
 export function createWebSocketStream(shim: UWSWebSocketShim): Duplex {
     const duplex = new Duplex({
-        read() { return; },
+        read() {
+            return;
+        },
         write(chunk, _encoding, callback) {
             shim.send(chunk, (err) => callback(err));
         },

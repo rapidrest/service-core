@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level test for SessionManager's defensive `objectFactory` guard, which never triggers in
 // Session.test.ts's ObjectFactory-driven integration tests since @Inject always resolves it there.

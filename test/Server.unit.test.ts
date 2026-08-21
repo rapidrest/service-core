@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level test for Server.stop()'s shutdown watchdog timer — doesn't need a real HTTP listener or
 // database connection, so it's kept separate from the full-server integration tests in Server.test.ts.

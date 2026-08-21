@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server).
 // A synchronous factory (backed by a normal, statically-resolved import rather than a dynamic one inside the
@@ -134,9 +135,7 @@ describe("BasePushRoute Tests", () => {
         });
 
         it("Cannot connect without ever providing authentication.", async () => {
-            await requestws(server)
-                .ws(basePath)
-                .expectClosed(1002, "Invalid or missing authentication token.");
+            await requestws(server).ws(basePath).expectClosed(1002, "Invalid or missing authentication token.");
         });
 
         it("Closes a connection beyond the per-user concurrent socket cap.", async () => {

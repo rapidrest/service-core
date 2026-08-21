@@ -1,5 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { JWTUtils, ObjectDecorators, type JWTUtilsConfig, type JWTUser, type JWTPayload } from "@rapidrest/core";
 import type { HttpRequest, HttpResponse } from "../http/types.js";

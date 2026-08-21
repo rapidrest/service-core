@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 /**
  * Superwstest-compatible WebSocket test helper built on the `ws` package.
@@ -59,13 +60,13 @@ export class WsChain {
     /** Execute the queued actions and resolve when all pass. */
     then<TResult1 = void, TResult2 = never>(
         onFulfilled?: ((value: void) => TResult1 | PromiseLike<TResult1>) | null,
-        onRejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+        onRejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
     ): Promise<TResult1 | TResult2> {
         return this._run().then(onFulfilled, onRejected);
     }
 
     catch<TResult = never>(
-        onRejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null
+        onRejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null,
     ): Promise<void | TResult> {
         return this._run().catch(onRejected);
     }
@@ -79,7 +80,11 @@ export class WsChain {
             const ws = new WebSocket(this.url, this.wsOptions);
             const timeout = setTimeout(() => {
                 ws.terminate();
-                reject(new Error(`WebSocket test timed out at action ${actionIndex}: ${JSON.stringify(actions[actionIndex])}`));
+                reject(
+                    new Error(
+                        `WebSocket test timed out at action ${actionIndex}: ${JSON.stringify(actions[actionIndex])}`,
+                    ),
+                );
             }, 10000);
 
             const fail = (err: any) => {
@@ -132,12 +137,18 @@ export class WsChain {
 
                 if (action.kind === "sendText") {
                     ws.send(action.value, (err) => {
-                        if (err) { fail(err); return; }
+                        if (err) {
+                            fail(err);
+                            return;
+                        }
                         next();
                     });
                 } else if (action.kind === "sendJson") {
                     ws.send(JSON.stringify(action.value), (err) => {
-                        if (err) { fail(err); return; }
+                        if (err) {
+                            fail(err);
+                            return;
+                        }
                         next();
                     });
                 } else if (action.kind === "close") {
@@ -192,7 +203,9 @@ export class WsChain {
             };
 
             ws.on("error", fail);
-            ws.on("close", () => { closed = true; });
+            ws.on("close", () => {
+                closed = true;
+            });
 
             ws.on("open", () => {
                 next();
@@ -203,9 +216,7 @@ export class WsChain {
 
 /** Creates a superwstest-style chain connected to `ws://localhost:<port>`. */
 export function requestws(appOrPort: any) {
-    const port = typeof appOrPort === "number"
-        ? appOrPort
-        : appOrPort?.port ?? appOrPort?.listenPort;
+    const port = typeof appOrPort === "number" ? appOrPort : (appOrPort?.port ?? appOrPort?.listenPort);
 
     if (!port) {
         throw new Error("requestws(): cannot determine port from argument");
@@ -213,9 +224,7 @@ export function requestws(appOrPort: any) {
 
     return {
         ws(path: string, options?: any): WsChain {
-            const wsOptions = options
-                ? { headers: options.headers }
-                : undefined;
+            const wsOptions = options ? { headers: options.headers } : undefined;
             return new WsChain(`ws://localhost:${port}${path}`, wsOptions);
         },
     };

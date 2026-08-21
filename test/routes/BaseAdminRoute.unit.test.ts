@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level tests for BaseAdminRoute that exercise edge cases (disabled datastores, error paths)
 // that are impractical to reach through the full-server integration test in AdminRoute.test.ts.

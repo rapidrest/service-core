@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Covers RepoUtils' SQL/TypeORM write paths that ModelRoute.SQL.test.ts's plain (non-trackChanges) Item
 // fixture never exercises: create()/update() against a @TrackChanges()-enabled SQL entity, which takes a
@@ -41,11 +42,9 @@ describe("RepoUtils Tests [SQL, trackChanges]", () => {
         const created = await repoUtils.create({ name: "sword-" + uuid.v4(), cost: 10 }, { ignoreACL: true });
         expect(created.version).toBe(0);
 
-        const updated = await repoUtils.update(
-            { ...created, cost: 20, version: created.version },
-            created,
-            { ignoreACL: true },
-        );
+        const updated = await repoUtils.update({ ...created, cost: 20, version: created.version }, created, {
+            ignoreACL: true,
+        });
         expect(updated.version).toBe(created.version + 1);
         expect(updated.cost).toBe(20);
 

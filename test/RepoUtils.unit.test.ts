@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level tests for RepoUtils.init()'s guard clauses — the full Mongo/SQL integration
 // tests always have a healthy, fully-configured repo, so these error paths never trigger there.
@@ -237,16 +238,8 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
 
             const result = await repoUtils.findOne("u1", { includeDeleted: true });
             expect(result?.uid).toBe("u1");
-            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
-                undefined,
-                repoUtils.defaultACLUid,
-                "delete",
-            );
-            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
-                undefined,
-                repoUtils.defaultACLUid,
-                "update",
-            );
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(undefined, repoUtils.defaultACLUid, "delete");
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(undefined, repoUtils.defaultACLUid, "update");
         });
     });
 
@@ -300,7 +293,9 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
                 enabled: true,
                 // Grants the ordinary EXISTS action (so the class-level gate at the top of exists() passes),
                 // but not DELETE/UPDATE (the restore-permission gate for the includeDeleted pass).
-                hasPermission: vi.fn().mockImplementation(async (_user: any, _acl: any, action: string) => action === "exists"),
+                hasPermission: vi
+                    .fn()
+                    .mockImplementation(async (_user: any, _acl: any, action: string) => action === "exists"),
             };
             repoUtils.defaultACLUid = "default-acl";
 
@@ -528,11 +523,7 @@ describe("RepoUtils cache writes are fire-and-forget", () => {
         repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
         repoUtils.cache = { save: vi.fn().mockRejectedValue(new Error("cache down")) };
 
-        const result = await repoUtils.update(
-            { uid: "u1", version: 0, name: "after" },
-            existing,
-            { ignoreACL: true },
-        );
+        const result = await repoUtils.update({ uid: "u1", version: 0, name: "after" }, existing, { ignoreACL: true });
         expect(result).toBeDefined();
 
         await flush();

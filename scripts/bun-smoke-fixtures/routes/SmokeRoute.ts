@@ -1,7 +1,18 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-import { Auth, Get, Param, Post, Request, Route, Socket, User, WebSocket } from "../../../src/decorators/RouteDecorators.js";
+import {
+    Auth,
+    Get,
+    Param,
+    Post,
+    Request,
+    Route,
+    Socket,
+    User,
+    WebSocket,
+} from "../../../src/decorators/RouteDecorators.js";
 import type { IWebSocketShim } from "../../../src/http/IWebSocketShim.js";
 import type { HttpRequest } from "../../../src/http/types.js";
 

@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level tests for ModelRoute covering edge cases (missing repoUtils, the "me" keyword,
 // not-found, and recordEvent) that are impractical to reach through the full Mongo/SQL
@@ -172,7 +173,10 @@ describe("ModelRoute.doExists", () => {
         route.repoUtils.exists.mockResolvedValue(1);
         const res = { status: vi.fn().mockReturnThis(), setHeader: vi.fn().mockReturnThis() };
         await route.doExists("me", { query: {}, res, user: { uid: "user-1" } });
-        expect(route.repoUtils.exists).toHaveBeenCalledWith("user-1", expect.objectContaining({ user: { uid: "user-1" } }));
+        expect(route.repoUtils.exists).toHaveBeenCalledWith(
+            "user-1",
+            expect.objectContaining({ user: { uid: "user-1" } }),
+        );
     });
 
     it("throws when 'me' is used without an authenticated user", async () => {
@@ -191,10 +195,7 @@ describe("ModelRoute.doExists", () => {
         const route = makeRoute();
         const res = { status: vi.fn().mockReturnThis(), setHeader: vi.fn().mockReturnThis() };
         await route.doExists("id1", { query: {}, res });
-        expect(route.repoUtils.exists).toHaveBeenCalledWith(
-            "id1",
-            expect.objectContaining({ includeDeleted: false }),
-        );
+        expect(route.repoUtils.exists).toHaveBeenCalledWith("id1", expect.objectContaining({ includeDeleted: false }));
     });
 });
 

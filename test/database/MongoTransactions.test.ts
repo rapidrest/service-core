@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Integration test verifying `@Transactional` — and, through it, every transactional operation on
 // `RepoUtils` (create/update/delete/truncate) — against a *real* MongoDB replica set, the one deployment
@@ -175,11 +176,9 @@ describe("RepoUtils @Transactional Tests [MongoDB replica set]", () => {
     describe("update()", () => {
         it("commits the new field values", async () => {
             const created = await repoUtils.create({ name: "original" }, { user });
-            const updated = await repoUtils.update(
-                { ...created, name: "updated", version: created.version },
-                created,
-                { user },
-            );
+            const updated = await repoUtils.update({ ...created, name: "updated", version: created.version }, created, {
+                user,
+            });
             expect(updated.name).toBe("updated");
 
             const found = await itemRepo.findOne({ uid: created.uid } as any);
@@ -188,11 +187,9 @@ describe("RepoUtils @Transactional Tests [MongoDB replica set]", () => {
 
         it("rolls back the write when a downstream step fails inside the transaction", async () => {
             const created = await repoUtils.create({ name: "will-fail-update" }, { user });
-            const sendMessage = vi
-                .spyOn(repoUtils.notificationUtils, "sendMessage")
-                .mockImplementationOnce(() => {
-                    throw new Error("boom");
-                });
+            const sendMessage = vi.spyOn(repoUtils.notificationUtils, "sendMessage").mockImplementationOnce(() => {
+                throw new Error("boom");
+            });
             try {
                 await expect(
                     repoUtils.update({ ...created, name: "should-not-persist", version: created.version }, created, {
@@ -249,11 +246,9 @@ describe("RepoUtils @Transactional Tests [MongoDB replica set]", () => {
             const marker = "truncate-fail-" + uuid.v4();
             await repoUtils.create({ name: marker }, { user });
 
-            const sendMessage = vi
-                .spyOn(repoUtils.notificationUtils, "sendMessage")
-                .mockImplementationOnce(() => {
-                    throw new Error("boom");
-                });
+            const sendMessage = vi.spyOn(repoUtils.notificationUtils, "sendMessage").mockImplementationOnce(() => {
+                throw new Error("boom");
+            });
             try {
                 await expect(repoUtils.truncate({ name: marker }, { user, ignoreACL: true })).rejects.toThrow("boom");
 

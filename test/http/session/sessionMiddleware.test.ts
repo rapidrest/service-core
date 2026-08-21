@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { createSessionMiddleware } from "../../../src/http/session/sessionMiddleware";
 import type { SessionManager } from "../../../src/http/session/SessionManager";
@@ -47,7 +48,7 @@ describe("createSessionMiddleware Tests", () => {
         expect(mgr.generateId).toHaveBeenCalled();
         expect(res.appendHeader).toHaveBeenCalledWith(
             "Set-Cookie",
-            expect.stringContaining("rrst.sid=new-session-id.sig")
+            expect.stringContaining("rrst.sid=new-session-id.sig"),
         );
         expect(req.session).toEqual({});
         expect(next).toHaveBeenCalled();

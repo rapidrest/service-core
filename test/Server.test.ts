@@ -1,5 +1,6 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 const corsOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"];
 process.env[`cors__origins`] = JSON.stringify(corsOrigins);

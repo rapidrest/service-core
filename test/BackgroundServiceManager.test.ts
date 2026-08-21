@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import config from "./config";
 import { BackgroundServiceManager } from "../src/BackgroundServiceManager";
@@ -118,7 +119,7 @@ describe("BackgroundServiceManager Tests", () => {
 
     afterAll(async () => {
         await objectFactory.destroy();
-    })
+    });
 
     it("Can start/stop single background service.", async () => {
         const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {

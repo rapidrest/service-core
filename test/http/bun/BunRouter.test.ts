@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiErrorMessages, ApiErrors } from "../../../src/ApiErrors";
 import { DEFAULT_MAX_BODY_SIZE } from "../../../src/http/uWS/Adapters";
@@ -65,7 +66,7 @@ describe("BunRouter HTTP dispatch", () => {
         expect(nested!.status).toBe(200);
     });
 
-    it("a bare /* route matches the root path \"/\" itself, not just nested paths", async () => {
+    it('a bare /* route matches the root path "/" itself, not just nested paths', async () => {
         const router = new BunRouter();
         router.get("/*", jsonHandler({ from: "root-wildcard" }));
 
@@ -496,7 +497,11 @@ describe("BunRouter websocketConfig lifecycle", () => {
 
         it("closes with 1002 and the error's code when a middleware rejects with no downstream handler to catch it", async () => {
             const router = new BunRouter();
-            const err = { code: "api-102", status: 403, message: "User does not have permission to perform this action." };
+            const err = {
+                code: "api-102",
+                status: 403,
+                message: "User does not have permission to perform this action.",
+            };
             const ws = makeFakeWs({
                 data: {
                     req: {},

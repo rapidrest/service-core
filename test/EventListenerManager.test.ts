@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 import { Logger } from "@rapidrest/core";
@@ -136,9 +137,7 @@ describe("EventListenerManager Tests", () => {
         manager.register(new ThrowingHandler());
         manager.register(new WorkingHandler());
 
-        expect(() =>
-            redis.emit("channel1", JSON.stringify({ type: "thing.happened" }))
-        ).not.toThrow();
+        expect(() => redis.emit("channel1", JSON.stringify({ type: "thing.happened" }))).not.toThrow();
         expect(received).toEqual([{ type: "thing.happened" }]);
     });
 

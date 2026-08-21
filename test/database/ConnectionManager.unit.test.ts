@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // A synchronous factory (backed by a normal, statically-resolved import rather than a dynamic one inside the
 // factory) avoids a race where ConnectionManager.connect() dynamically imports "redis" for two datastores

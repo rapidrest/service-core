@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { NotificationUtils } from "../src/NotificationUtils";
 
@@ -12,12 +13,12 @@ describe("NotificationUtils Tests", () => {
         expect(redis.publish).toHaveBeenNthCalledWith(
             1,
             "uid1",
-            JSON.stringify({ type: "type", action: "action", data: { a: 1 } })
+            JSON.stringify({ type: "type", action: "action", data: { a: 1 } }),
         );
         expect(redis.publish).toHaveBeenNthCalledWith(
             2,
             "uid2",
-            JSON.stringify({ type: "type", action: "action", data: { a: 1 } })
+            JSON.stringify({ type: "type", action: "action", data: { a: 1 } }),
         );
     });
 
@@ -27,7 +28,7 @@ describe("NotificationUtils Tests", () => {
         utils.sendMessage("uid1", "type", "action", { a: 1 });
         expect(redis.publish).toHaveBeenCalledWith(
             "uid1",
-            JSON.stringify({ type: "type", action: "action", data: { a: 1 } })
+            JSON.stringify({ type: "type", action: "action", data: { a: 1 } }),
         );
     });
 

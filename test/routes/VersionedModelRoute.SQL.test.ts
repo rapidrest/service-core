@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "../config";
 import { request } from "../../src/test/request.js";
@@ -120,9 +121,7 @@ describe("VersionedModelRoute Tests [SQL]", () => {
 
         it("Can find document by id (latest version). [SQL]", async () => {
             const items: VersionedItem[] = await createItem("Sword", 100, 3);
-            const result = await request(server)
-                .get(`${baseUrl}/${items[0].uid}`)
-                .send();
+            const result = await request(server).get(`${baseUrl}/${items[0].uid}`).send();
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(items[0].uid);
             expect(result.body.version).toEqual(items[2].version);
@@ -131,9 +130,7 @@ describe("VersionedModelRoute Tests [SQL]", () => {
 
         it("Can find document by id and version. [SQL]", async () => {
             const items: VersionedItem[] = await createItem("Sword", 100, 5);
-            const result = await request(server)
-                .get(`${baseUrl}/${items[2].uid}?version=${items[2].version}`)
-                .send();
+            const result = await request(server).get(`${baseUrl}/${items[2].uid}?version=${items[2].version}`).send();
             expect(result).toHaveProperty("body");
             expect(result.body.uid).toEqual(items[2].uid);
             expect(result.body.version).toEqual(items[2].version);
@@ -142,9 +139,7 @@ describe("VersionedModelRoute Tests [SQL]", () => {
 
         it("Can test if document exists (latest version). [SQL]", async () => {
             const items: VersionedItem[] = await createItem("Sword", 100, 3);
-            const result = await request(server)
-                .head(`${baseUrl}/${items[0].uid}`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${items[0].uid}`).send();
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result.headers).toHaveProperty("content-length");
@@ -153,9 +148,7 @@ describe("VersionedModelRoute Tests [SQL]", () => {
 
         it("Can test if a specific existing version exists. [SQL]", async () => {
             const items: VersionedItem[] = await createItem("Sword", 100, 5);
-            const result = await request(server)
-                .head(`${baseUrl}/${items[2].uid}?version=${items[2].version}`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${items[2].uid}?version=${items[2].version}`).send();
             expect(result.status).toBeGreaterThanOrEqual(200);
             expect(result.status).toBeLessThan(300);
             expect(result.headers).toHaveProperty("content-length");
@@ -167,16 +160,12 @@ describe("VersionedModelRoute Tests [SQL]", () => {
             // request for a version that was never created (or already deleted) would incorrectly report
             // the record as existing just because *some* version of that uid is present.
             const items: VersionedItem[] = await createItem("Sword", 100, 3);
-            const result = await request(server)
-                .head(`${baseUrl}/${items[0].uid}?version=999`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${items[0].uid}?version=999`).send();
             expect(result.status).toBe(404);
         });
 
         it("Can test if document doesn't exist. [SQL]", async () => {
-            const result = await request(server)
-                .head(`${baseUrl}/${uuid.v4()}`)
-                .send();
+            const result = await request(server).head(`${baseUrl}/${uuid.v4()}`).send();
             expect(result.status).toBe(404);
         });
     });

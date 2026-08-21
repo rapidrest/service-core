@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 import { Logger } from "@rapidrest/core";
@@ -101,7 +102,6 @@ describe("ObjectFactory Tests", () => {
             await objectFactory.initialize<Target>(new Target());
             expect(getRepository).toHaveBeenCalledWith(SqlEntity);
         });
-
     });
 
     describe("MongoDB @Repository injection", () => {

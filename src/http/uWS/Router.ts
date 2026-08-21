@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import uWS from "uWebSockets.js";
 import { DEFAULT_MAX_BODY_SIZE, UWSRequest, UWSResponse, readBody } from "./Adapters.js";

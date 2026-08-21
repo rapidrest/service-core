@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import {
     DEFAULT_MAX_BODY_SIZE,
@@ -107,7 +108,9 @@ describe("parseBodyByContentType Tests", () => {
     });
 });
 
-function makeUwsReq(overrides: Partial<{ method: string; url: string; query: string; headers: Record<string, string> }> = {}) {
+function makeUwsReq(
+    overrides: Partial<{ method: string; url: string; query: string; headers: Record<string, string> }> = {},
+) {
     const headers = overrides.headers ?? { cookie: "foo=bar" };
     return {
         getMethod: () => overrides.method ?? "get",

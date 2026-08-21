@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 /// <reference types="bun" />
 import type { IHttpRouter, NextFunction, RequestHandler } from "../types.js";
@@ -432,7 +433,12 @@ export class BunRouter implements IHttpRouter {
             next(new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND));
         };
         const verbs: Array<"get" | "post" | "put" | "delete" | "patch" | "head"> = [
-            "get", "post", "put", "delete", "patch", "head",
+            "get",
+            "post",
+            "put",
+            "delete",
+            "patch",
+            "head",
         ];
         for (const verb of verbs) {
             if (!this.rootWildcardVerbs.has(verb)) {

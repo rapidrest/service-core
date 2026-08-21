@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { Route, Get, User, Auth, WebSocket, Socket, Query } from "../../../src/decorators/RouteDecorators";
 import { ApiError, Logger, ObjectDecorators } from "@rapidrest/core";
@@ -100,10 +101,12 @@ class DefaultRoute {
 
     @Summary("Request")
     @WebSocket("connect-query")
-    @Description("Establishes a socket connection that responds to all messages with the query message and message `echo ${message} ${msg}` or `echo ${msg}`.")
+    @Description(
+        "Establishes a socket connection that responds to all messages with the query message and message `echo ${message} ${msg}` or `echo ${msg}`.",
+    )
     protected wsConnectQuery(@Query("message") message, @Socket ws: ws, @User user?: any): void {
         ws.on("message", (msg) => {
-            ws.send(`echo ${message ? `${message} ` : ''}${msg}`);
+            ws.send(`echo ${message ? `${message} ` : ""}${msg}`);
         });
         ws.send(`hello ${user && user.uid ? user.uid : "guest"}`);
     }

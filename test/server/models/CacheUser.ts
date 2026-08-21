@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { BaseMongoEntity } from "../../../src/models/BaseMongoEntity";
 import { Column, Entity } from "../../../src/decorators/PersistenceDecorators";

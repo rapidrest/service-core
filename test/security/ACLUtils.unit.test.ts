@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level tests for ACLUtils's disabled/no-repo fast paths -- the full Mongo-backed
 // ACLUtils.test.ts always has a healthy, fully-configured repo, so these guard branches never
@@ -226,7 +227,10 @@ describe("ACLUtils Tests (unit)", () => {
                 // `version: existing ? existing.version + 1 : 0` from a *fresh* lookup - since a restore always
                 // targets a uid nothing currently exists at (that's the point of restoring), that fresh lookup
                 // is null, silently resetting the restored ACL's version to 0 instead of its real prior value.
-                const fakeRepo = { findOne: vi.fn().mockResolvedValue(null), save: vi.fn().mockImplementation(async (x: any) => x) };
+                const fakeRepo = {
+                    findOne: vi.fn().mockResolvedValue(null),
+                    save: vi.fn().mockImplementation(async (x: any) => x),
+                };
                 const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
                 const aclUtils = makeAclUtils({
                     enabled: true,

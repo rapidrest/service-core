@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "../config";
 import { BaseMetricsRoute, ObjectFactory, Server } from "../../src";
@@ -50,7 +51,9 @@ describe("MetricsRoute Tests", () => {
 
     it("Can serve metrics as a trusted user.", async () => {
         expect(server.isRunning()).toBe(true);
-        const result = await request(server).get("/metrics").set("Authorization", "jwt " + adminToken);
+        const result = await request(server)
+            .get("/metrics")
+            .set("Authorization", "jwt " + adminToken);
         expect(result).toHaveProperty("status");
         expect(result.status).toBe(200);
         expect(result).toHaveProperty("text");
@@ -74,7 +77,9 @@ describe("MetricsRoute Tests", () => {
     });
 
     it("Cannot serve metrics as an untrusted user.", async () => {
-        const result = await request(server).get("/metrics").set("Authorization", "jwt " + userToken);
+        const result = await request(server)
+            .get("/metrics")
+            .set("Authorization", "jwt " + userToken);
         expect(result.status).toBe(403);
     });
 

@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 
@@ -7,7 +8,7 @@ export interface DocumentsData {
     default?: any;
     description?: string;
     example?: any;
-    format?: 'int32' | 'int64' | 'float' | 'double' | 'byte' | 'binary' | 'date' | 'date-time' | 'password' | string;
+    format?: "int32" | "int64" | "float" | "double" | "byte" | "binary" | "date" | "date-time" | "password" | string;
     summary?: string;
     tags?: string[];
 }
@@ -20,8 +21,10 @@ export interface DocumentsData {
 export function Document(value: DocumentsData) {
     return function (target: any, propertyKey?: string) {
         const docs: any = {
-            ...(propertyKey ? Reflect.getMetadata("rrst:docs", target, propertyKey) : Reflect.getMetadata("rrst:docs", target)),
-            ...value
+            ...(propertyKey
+                ? Reflect.getMetadata("rrst:docs", target, propertyKey)
+                : Reflect.getMetadata("rrst:docs", target)),
+            ...value,
         };
 
         if (propertyKey) {
@@ -39,7 +42,7 @@ export function Document(value: DocumentsData) {
  */
 export function Default(value: string) {
     return Document({
-        default: value
+        default: value,
     });
 }
 
@@ -50,7 +53,7 @@ export function Default(value: string) {
  */
 export function Description(value: string) {
     return Document({
-        description: value
+        description: value,
     });
 }
 
@@ -61,7 +64,7 @@ export function Description(value: string) {
  */
 export function Example(value: any) {
     return Document({
-        example: value
+        example: value,
     });
 }
 
@@ -70,9 +73,11 @@ export function Example(value: any) {
  *
  * @param value The format of the property's property.
  */
-export function Format(value: 'int32' | 'int64' | 'float' | 'double' | 'byte' | 'binary' | 'date' | 'date-time' | 'password' | string) {
+export function Format(
+    value: "int32" | "int64" | "float" | "double" | "byte" | "binary" | "date" | "date-time" | "password" | string,
+) {
     return Document({
-        format: value
+        format: value,
     });
 }
 
@@ -83,7 +88,7 @@ export function Format(value: 'int32' | 'int64' | 'float' | 'double' | 'byte' | 
  */
 export function Summary(value: string) {
     return Document({
-        summary: value
+        summary: value,
     });
 }
 
@@ -94,7 +99,7 @@ export function Summary(value: string) {
  */
 export function Tags(value: string[]) {
     return Document({
-        tags: value
+        tags: value,
     });
 }
 

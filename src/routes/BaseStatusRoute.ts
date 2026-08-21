@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { Get } from "../decorators/RouteDecorators.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";

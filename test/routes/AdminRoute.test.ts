@@ -1,5 +1,6 @@
 ﻿///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // This mock MUST be defined before we import ConnectionManager (or anything that pulls it in such as Server).
 // A synchronous factory (backed by a normal, statically-resolved import rather than a dynamic one inside the

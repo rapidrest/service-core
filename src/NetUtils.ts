@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { promises as dns, LookupAddress } from "dns";
 import type { HttpRequest as XRequest } from "./http/index.js";
@@ -24,8 +25,12 @@ export class NetUtils {
             const tmp: URL = new URL(url);
             // Check that the host isn't already an IPv4/IPv6 address
             let matches: RegExpMatchArray | null = null;
-            if ((matches = tmp.host.match(/^((?:[0-9]{1,3}\.){3}[0-9]{1,3}):?([0-9]+)?$/)) ||
-                (matches = tmp.host.match(/^\[?((::)?([0-9a-fA-F]{1,4}:){0,7}:?([0-9a-fA-F]{1,4}:?){1,7})\]?:?([0-9]+)?$/))) {
+            if (
+                (matches = tmp.host.match(/^((?:[0-9]{1,3}\.){3}[0-9]{1,3}):?([0-9]+)?$/)) ||
+                (matches = tmp.host.match(
+                    /^\[?((::)?([0-9a-fA-F]{1,4}:){0,7}:?([0-9a-fA-F]{1,4}:?){1,7})\]?:?([0-9]+)?$/,
+                ))
+            ) {
                 result = matches[1];
             } else {
                 // Attempt to resolve the domain name
@@ -60,8 +65,12 @@ export class NetUtils {
         if (typeof urlOrRequest === "string") {
             // Check that for IPv4/IPv6 addresses
             let matches: RegExpMatchArray | null = null;
-            if ((matches = urlOrRequest.match(/^((?:[0-9]{1,3}\.){3}[0-9]{1,3}):?([0-9]+)?$/)) ||
-                (matches = urlOrRequest.match(/^\[?((::)?([0-9a-fA-F]{1,4}:){0,7}:?([0-9a-fA-F]{1,4}:?){1,7})\]?:?([0-9]+)?$/))) {
+            if (
+                (matches = urlOrRequest.match(/^((?:[0-9]{1,3}\.){3}[0-9]{1,3}):?([0-9]+)?$/)) ||
+                (matches = urlOrRequest.match(
+                    /^\[?((::)?([0-9a-fA-F]{1,4}:){0,7}:?([0-9a-fA-F]{1,4}:?){1,7})\]?:?([0-9]+)?$/,
+                ))
+            ) {
                 result = matches[1];
             }
             // Maybe it's a URL?
@@ -70,8 +79,12 @@ export class NetUtils {
                     const tmp: URL = new URL(urlOrRequest);
                     // Check that the host isn't already an IPv4/IPv6 address
                     let matches: RegExpMatchArray | null = null;
-                    if ((matches = tmp.host.match(/^((?:[0-9]{1,3}\.){3}[0-9]{1,3}):?([0-9]+)?$/)) ||
-                        (matches = tmp.host.match(/^\[?((::)?([0-9a-fA-F]{1,4}:){0,7}:?([0-9a-fA-F]{1,4}:?){1,7})\]?:?([0-9]+)?$/))) {
+                    if (
+                        (matches = tmp.host.match(/^((?:[0-9]{1,3}\.){3}[0-9]{1,3}):?([0-9]+)?$/)) ||
+                        (matches = tmp.host.match(
+                            /^\[?((::)?([0-9a-fA-F]{1,4}:){0,7}:?([0-9a-fA-F]{1,4}:?){1,7})\]?:?([0-9]+)?$/,
+                        ))
+                    ) {
                         result = matches[1];
                     } else {
                         result = tmp.host;

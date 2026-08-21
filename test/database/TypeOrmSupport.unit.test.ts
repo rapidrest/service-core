@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 import * as typeorm from "typeorm";
@@ -37,17 +38,13 @@ describe("TypeOrmSupport Tests (unit)", () => {
 
         registerFrameworkMetadata([]);
         const storage = typeorm.getMetadataArgsStorage();
-        const before = storage.columns.filter(
-            (c) => c.target === originalTarget && c.propertyName === "_type",
-        ).length;
+        const before = storage.columns.filter((c) => c.target === originalTarget && c.propertyName === "_type").length;
         expect(before).toBe(1);
 
         // Nothing new queued this time (pendingTypeOrmColumns already drained above), so a second pass must
         // not push a duplicate entry for the same target/propertyName.
         registerFrameworkMetadata([]);
-        const after = storage.columns.filter(
-            (c) => c.target === originalTarget && c.propertyName === "_type",
-        ).length;
+        const after = storage.columns.filter((c) => c.target === originalTarget && c.propertyName === "_type").length;
         expect(after).toBe(1);
     });
 
@@ -82,13 +79,9 @@ describe("TypeOrmSupport Tests (unit)", () => {
         registerFrameworkMetadata([ObjectIdTestClass]);
 
         const storage = typeorm.getMetadataArgsStorage();
-        const idColumn = storage.columns.find(
-            (c) => c.target === ObjectIdTestClass && c.propertyName === "_id",
-        );
+        const idColumn = storage.columns.find((c) => c.target === ObjectIdTestClass && c.propertyName === "_id");
         expect(idColumn).toBeUndefined();
-        const nameColumn = storage.columns.find(
-            (c) => c.target === ObjectIdTestClass && c.propertyName === "name",
-        );
+        const nameColumn = storage.columns.find((c) => c.target === ObjectIdTestClass && c.propertyName === "name");
         expect(nameColumn).toBeDefined();
     });
 });

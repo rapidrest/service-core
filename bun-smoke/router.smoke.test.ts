@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Real-Bun smoke test for BunRouter — run via `bun test bun-smoke/router.smoke.test.ts`,
 // NOT picked up by `yarn vitest run` (outside test/**) or `yarn lint`/`yarn build` (outside

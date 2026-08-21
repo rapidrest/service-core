@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // NOTE: This is the only module in the library that is permitted to import the optional `typeorm` package at
 // runtime. It is loaded dynamically by `ConnectionManager` if (and only if) a SQL datasource is configured.

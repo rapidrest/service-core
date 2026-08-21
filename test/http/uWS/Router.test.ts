@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // General HttpRouter coverage, complementing Router.upgradeAuth.test.ts (which only covers
 // ws()'s pre-upgrade auth branch). Uses the same fake-uwsApp/uwsReq/uwsRes approach: the
@@ -161,7 +162,11 @@ describe("HttpRouter", () => {
         it("closes with 1002 and the error's code when a middleware rejects with no downstream handler to catch it", async () => {
             const fakeApp: any = makeFakeUwsApp();
             const router = new HttpRouter(fakeApp);
-            const err = { code: "api-102", status: 403, message: "User does not have permission to perform this action." };
+            const err = {
+                code: "api-102",
+                status: 403,
+                message: "User does not have permission to perform this action.",
+            };
             router.ws("/chat", [(_req: any, _res: any, next: any) => next(err)]);
             const behavior = fakeApp._wsBehaviors[0];
 

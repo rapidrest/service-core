@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { ACLRecordMongo } from "../../src/security/AccessControlListMongo";
 import { ACLRecordSQL } from "../../src/security/AccessControlListSQL";

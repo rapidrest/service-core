@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { MongoClient } from "mongodb";
@@ -238,7 +239,9 @@ describe("MongoConnection Tests", () => {
             const gadgetIndexes = await conn.db.collection("gadget").listIndexes().toArray();
             const serial = gadgetIndexes.find((i) => i.name === "serial");
             expect(serial?.unique).toBe(true);
-            const compound = gadgetIndexes.find((i) => JSON.stringify(i.key) === JSON.stringify({ category: 1, rank: 1 }));
+            const compound = gadgetIndexes.find(
+                (i) => JSON.stringify(i.key) === JSON.stringify({ category: 1, rank: 1 }),
+            );
             expect(compound).toBeDefined();
             expect(compound?.unique).toBe(true);
         });

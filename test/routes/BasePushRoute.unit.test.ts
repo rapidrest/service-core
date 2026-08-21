@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Unit-level tests for BasePushRoute's error/edge-case branches that PushRoute.test.ts's
 // real-server integration tests don't reach: the `events` datasource being unconfigured, a

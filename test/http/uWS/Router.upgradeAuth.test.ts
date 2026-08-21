@@ -1,5 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
+// SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 // Covers HttpRouter.ws()'s pre-upgrade auth handling directly, without a real uWS server: the
 // `behavior.upgrade` closure built by `.ws()` is captured off a fake `uwsApp` stub (mirroring
