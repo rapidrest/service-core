@@ -226,6 +226,14 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
             const canUseMongoTransaction: boolean = conn instanceof MongoConnection && conn.supportsTransactions;
             const canUseSqlTransaction: boolean = isSqlDataSource(conn) && typeof conn.transaction === "function";
             if (!canUseMongoTransaction && !canUseSqlTransaction) {
+                // A connection WAS resolved for this call's own datasource but it doesn't support
+                // transactions. If an ambient context from an *different* datasource is active (e.g. this call
+                // is `acl`, nested inside an outer `mongodb` transaction), that context's session/entityManager
+                // belongs to a different connection and must not leak into this call.
+                const existingContext: TransactionContext | undefined = transactionContext.getStore();
+                if (conn !== undefined && existingContext !== undefined && existingContext.datasource !== datasource) {
+                    return await transactionContext.run({ datasource }, () => original.apply(this, args));
+                }
                 return await original.apply(this, args);
             }
 

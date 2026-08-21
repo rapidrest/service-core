@@ -180,6 +180,42 @@ describe("DatabaseDecorators Tests", () => {
             expect((conn as any).startSession).not.toHaveBeenCalled();
         });
 
+        it("does not leak an outer transaction's session into a nested call whose own connection doesn't support transactions", async () => {
+            // Regression test: `acl` is commonly its own separate connection from an entity's own datasource
+            // (see ACLUtils.saveACL/removeACL, both @Transactional("acl")). If `acl` itself doesn't support
+            // transactions, the old fallback ran the inner call's body directly - inheriting whatever ambient
+            // context the *outer* (entity-side) transaction had established, unchanged. Code that reads the
+            // ambient context directly (rather than only via injected @MongoSession/@EntityManager args) would
+            // then hand the outer connection's own session to a repository bound to a different connection,
+            // which the driver rejects. The inner call must instead see no session at all.
+            const outerSession = makeMongoSession();
+            const outerConn = makeMongoConnection(outerSession, true);
+            const innerConn: any = Object.create(MongoConnection.prototype);
+            innerConn.supportsTransactions = false;
+            innerConn.startSession = vi.fn();
+
+            class Foo {
+                public modelClass = { datasource: "mongodb" };
+                public _objectFactory = makeObjectFactory({ mongodb: outerConn, acl: innerConn });
+
+                @Transactional()
+                public async outer(): Promise<any> {
+                    return this.inner();
+                }
+
+                @Transactional("acl")
+                public async inner(): Promise<any> {
+                    return transactionContext.getStore();
+                }
+            }
+
+            const result = await new Foo().outer();
+
+            expect(innerConn.startSession).not.toHaveBeenCalled();
+            expect(result?.session).toBeUndefined();
+            expect(result?.datasource).toBe("acl");
+        });
+
         it("wraps the call in a MongoDB session/transaction and makes it available via transactionContext", async () => {
             const session = makeMongoSession();
             const conn = makeMongoConnection(session);

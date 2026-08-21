@@ -492,36 +492,35 @@ export class ACLUtils {
     }
 
     /**
-     * Batched, atomic removal of multiple ACLs in a single `acl`-scoped transaction (see `Transactional`) —
-     * either all of them are removed or none are, from `acl`'s perspective. Used by bulk operations like
-     * `RepoUtils.truncate()`, where each entity row deleted has (or may have) its own per-record ACL. Batched
-     * in bounded chunks (matching `RepoUtils.filterPermittedUids()`'s convention) rather than one unbounded
-     * `Promise.all`, so a large uid list can't fire an unbounded number of concurrent deletes at once.
+     * Atomic removal of multiple ACLs in a single `acl`-scoped transaction (see `@Transactional`).
+     *
+     * Deliberately sequential, not batched-concurrent: every `removeACL()` call below resolves to this same
+     * `acl` datasource, so `@Transactional`'s merge logic joins all of them onto the one MongoDB
+     * `ClientSession`/SQL `EntityManager` this method opened. Running these with `Promise.all`
+     * would issue overlapping commands against one session, which drivers reject or misorder.
      *
      * @param uids The unique identifiers of the ACLs to remove.
      */
     @Transactional("acl")
     public async removeACLs(uids: string[]): Promise<void> {
-        const batchSize = 100;
-        for (let i = 0; i < uids.length; i += batchSize) {
-            const batch: string[] = uids.slice(i, i + batchSize);
-            await Promise.all(batch.map((uid) => this.removeACL(uid)));
+        for (const uid of uids) {
+            await this.removeACL(uid);
         }
     }
 
     /**
-     * Batched, atomic save of multiple ACLs in a single `acl`-scoped transaction (see `Transactional`). Used to
-     * restore a batch of ACL snapshots — e.g. by a `registerRollbackHook()` compensating action — if the
-     * entity-side transaction they were removed alongside subsequently fails.
+     * Atomic save of multiple ACLs in a single `acl`-scoped transaction (see `Transactional`). Used to restore
+     * a batch of ACL snapshots — e.g. by a `registerRollbackHook()` compensating action — if the entity-side
+     * transaction they were removed alongside subsequently fails.
+     *
+     * Deliberately sequential. See `removeACLs()`'s doc comment for why.
      *
      * @param acls The ACLs to store.
      */
     @Transactional("acl")
     public async saveACLs(acls: AccessControlList[]): Promise<void> {
-        const batchSize = 100;
-        for (let i = 0; i < acls.length; i += batchSize) {
-            const batch: AccessControlList[] = acls.slice(i, i + batchSize);
-            await Promise.all(batch.map((acl) => this.saveACL(acl)));
+        for (const acl of acls) {
+            await this.saveACL(acl);
         }
     }
 
