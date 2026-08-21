@@ -4,6 +4,7 @@
 
 - Changed scope of `_objectFactory` declaration from private to protected for `AuthMiddleware`, `SessionManager`,
   `RepoUtils`, `ModelRoute`, and `ACLUtils`
+- Fixed CI publish workflow
 
 ## v1.1.0
 
