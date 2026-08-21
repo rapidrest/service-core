@@ -7,6 +7,7 @@ import {
     EntityManager,
     MongoSession,
     Redis,
+    registerRollbackHook,
     Repository,
     Transactional,
     TransactionalMode,
@@ -541,6 +542,119 @@ describe("DatabaseDecorators Tests", () => {
                 expect((conn as any).startSession).toHaveBeenCalledTimes(1);
                 expect(innerWrite).toHaveBeenCalledTimes(1);
                 expect(session.endSession).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        describe("registerRollbackHook / onRollback", () => {
+            it("is a no-op when there is no active transaction", async () => {
+                const hook = vi.fn();
+                expect(() => registerRollbackHook(hook)).not.toThrow();
+                expect(hook).not.toHaveBeenCalled();
+            });
+
+            it("does not run a registered hook when a Mongo transaction succeeds", async () => {
+                const session = makeMongoSession();
+                const conn = makeMongoConnection(session);
+                const hook = vi.fn().mockResolvedValue(undefined);
+
+                class Foo {
+                    public modelClass = { datasource: "mongodb" };
+                    public _objectFactory = makeObjectFactory({ mongodb: conn });
+
+                    @Transactional()
+                    public async doIt(): Promise<string> {
+                        registerRollbackHook(hook);
+                        return "ok";
+                    }
+                }
+
+                await expect(new Foo().doIt()).resolves.toBe("ok");
+                expect(hook).not.toHaveBeenCalled();
+            });
+
+            it("runs a registered hook when a Mongo transaction fails", async () => {
+                const session = makeMongoSession();
+                const conn = makeMongoConnection(session);
+                const hook = vi.fn().mockResolvedValue(undefined);
+
+                class Foo {
+                    public modelClass = { datasource: "mongodb" };
+                    public _objectFactory = makeObjectFactory({ mongodb: conn });
+
+                    @Transactional()
+                    public async doIt(): Promise<void> {
+                        registerRollbackHook(hook);
+                        throw new Error("boom");
+                    }
+                }
+
+                await expect(new Foo().doIt()).rejects.toThrow("boom");
+                expect(hook).toHaveBeenCalledTimes(1);
+            });
+
+            it("runs a registered hook when a SQL transaction fails", async () => {
+                const entityManager = { save: vi.fn() };
+                const conn = makeSqlConnection(entityManager);
+                const hook = vi.fn().mockResolvedValue(undefined);
+
+                class Foo {
+                    public modelClass = { datasource: "sqlite" };
+                    public _objectFactory = makeObjectFactory({ sqlite: conn });
+
+                    @Transactional()
+                    public async doIt(): Promise<void> {
+                        registerRollbackHook(hook);
+                        throw new Error("boom");
+                    }
+                }
+
+                await expect(new Foo().doIt()).rejects.toThrow("boom");
+                expect(hook).toHaveBeenCalledTimes(1);
+            });
+
+            it("still propagates the original error even if a rollback hook itself throws", async () => {
+                const session = makeMongoSession();
+                const conn = makeMongoConnection(session);
+                const throwingHook = vi.fn().mockRejectedValue(new Error("hook failed"));
+
+                class Foo {
+                    public modelClass = { datasource: "mongodb" };
+                    public _objectFactory = makeObjectFactory({ mongodb: conn });
+
+                    @Transactional()
+                    public async doIt(): Promise<void> {
+                        registerRollbackHook(throwingHook);
+                        throw new Error("original failure");
+                    }
+                }
+
+                await expect(new Foo().doIt()).rejects.toThrow("original failure");
+                expect(throwingHook).toHaveBeenCalledTimes(1);
+            });
+
+            it("shares the onRollback array across a merged nested call, so an inner-registered hook runs on the outer transaction's failure", async () => {
+                const session = makeMongoSession();
+                const conn = makeMongoConnection(session);
+                const hook = vi.fn().mockResolvedValue(undefined);
+
+                class Foo {
+                    public modelClass = { datasource: "mongodb" };
+                    public _objectFactory = makeObjectFactory({ mongodb: conn });
+
+                    @Transactional()
+                    public async outer(): Promise<void> {
+                        await this.inner();
+                        throw new Error("outer failed");
+                    }
+
+                    @Transactional()
+                    public async inner(): Promise<void> {
+                        registerRollbackHook(hook);
+                    }
+                }
+
+                await expect(new Foo().outer()).rejects.toThrow("outer failed");
+                expect(hook).toHaveBeenCalledTimes(1);
             });
         });
     });

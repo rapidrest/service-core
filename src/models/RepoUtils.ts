@@ -19,7 +19,7 @@ import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
 import { ACLAction, type AccessControlList } from "../security/index.js";
 import type { ACLUtils } from "../security/ACLUtils.js";
 import { ConnectionManager, RedisCache } from "../database/index.js";
-import { Transactional, transactionContext } from "../decorators/DatabaseDecorators.js";
+import { registerRollbackHook, Transactional, transactionContext } from "../decorators/DatabaseDecorators.js";
 import type { ClientSession } from "mongodb";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
@@ -246,13 +246,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      * number of concurrent permission-check round trips at once.
      */
     private async filterPermittedUids(uids: string[], action: string, options?: RepoFindOptions): Promise<string[]> {
-        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
         const batchSize = 100;
         const permitted: string[] = [];
         for (let i = 0; i < uids.length; i += batchSize) {
             const batch: string[] = uids.slice(i, i + batchSize);
             const results: boolean[] = await Promise.all(
-                batch.map((uid) => this.aclUtils!.hasPermission(options?.user, uid, action, { transaction: txInfo })),
+                batch.map((uid) => this.aclUtils!.hasPermission(options?.user, uid, action)),
             );
             for (let j = 0; j < batch.length; j++) {
                 if (results[j]) {
@@ -276,11 +275,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
         // on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (
-                !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, {
-                    transaction: txInfo,
-                }))
-            ) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -291,7 +286,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         const recordACL: boolean = !!this.modelClass.recordACL;
         let effectiveQuery: any = query;
         if (clientRequestsDeleted && this.aclUtils?.enabled && !options?.ignoreACL && !recordACL) {
-            if (!(await this.canViewDeleted(options?.user, this.defaultACLUid, txInfo))) {
+            if (!(await this.canViewDeleted(options?.user, this.defaultACLUid))) {
                 effectiveQuery = { ...query };
                 delete effectiveQuery.deleted;
             }
@@ -368,17 +363,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         const action: string = options?.action ?? ACLAction.EXISTS;
-        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         // Check user permissions against the class-level ACL. This is a fast-fail gate for users with no
         // legitimate access to the resource type at all; per-record narrowing (below) is an additional layer
         // on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (
-                !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, {
-                    transaction: txInfo,
-                }))
-            ) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -391,7 +381,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             let canRestore: boolean = true;
             if (this.aclUtils?.enabled && !options?.ignoreACL) {
                 const restoreAclUid: string = this.modelClass.recordACL ? id : this.defaultACLUid;
-                canRestore = await this.canViewDeleted(options?.user, restoreAclUid, txInfo);
+                canRestore = await this.canViewDeleted(options?.user, restoreAclUid);
             }
             if (canRestore) {
                 // Permission for the deleted record was already established above, so this pass runs as a raw
@@ -470,9 +460,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         if (
             this.aclUtils?.enabled &&
             !options?.ignoreACL &&
-            !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.CREATE, {
-                transaction: txInfo,
-            }))
+            !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, ACLAction.CREATE))
         ) {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
@@ -506,9 +494,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             count > 0 &&
             this.modelClass.recordACL &&
             this.aclUtils?.enabled &&
-            !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE, {
-                transaction: txInfo,
-            }))
+            !(await this.aclUtils.hasPermission(options?.user, (newObj as any).uid, ACLAction.UPDATE))
         ) {
             // A trackChanges + recordACL model is being "re-created" under an existing uid (i.e. a new
             // version). That's only legitimate for someone who already has update rights on the
@@ -548,9 +534,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             // Reuse the existing ACL if this is a legitimate trackChanges "new version" rather than building a fresh,
             // version-less object from scratch. Building fresh here would let saveACL()'s optimistic-lock version
             // check pass by coincidence (a never-updated ACL is also version 0), silently discarding the real records.
-            const acl: AccessControlList = (await this.aclUtils.findACL(result.uid, undefined, {
-                transaction: txInfo,
-            })) ?? {
+            const existingAcl: AccessControlList | undefined = await this.aclUtils.findACL(result.uid);
+            const isFreshAcl: boolean = !existingAcl;
+            const acl: AccessControlList = existingAcl ?? {
                 uid: result.uid,
                 parentUid: options?.acl?.parentUid || this.defaultACLUid,
                 records: options?.acl?.records || [],
@@ -558,6 +544,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
             // Look for an existing record for the creator
             let found: boolean = !!this.aclUtils.getRecord(acl, options?.user);
+            let modifiedExistingAcl: boolean = false;
 
             // Always grant the creator CRUD access, unless the user is a superuser.
             if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
@@ -574,9 +561,37 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         ACLAction.UPDATE,
                     ],
                 });
+                modifiedExistingAcl = !isFreshAcl;
             }
 
-            await this.aclUtils.saveACL(acl, { transaction: txInfo });
+            await this.aclUtils.saveACL(acl);
+
+            // `saveACL()` commits independently, on the `acl` connection's own transaction (see its doc
+            // comment). That means it can't be rolled back by this (the entity-side) transaction's own abort if this
+            // transaction fails later. Register a compensating action so a later failure doesn't leave an orphaned
+            // ACL behind.
+            if (isFreshAcl) {
+                const newAclUid: string = acl.uid;
+                registerRollbackHook(async () => {
+                    try {
+                        await this.aclUtils!.removeACL(newAclUid);
+                    } catch (err) {
+                        this.logger?.warn(
+                            `RepoUtils: Failed to roll back orphaned ACL ${newAclUid} after a failed create().`,
+                        );
+                        this.logger?.debug(err);
+                    }
+                });
+            } else if (modifiedExistingAcl) {
+                // Reverting a change to an already-existing ACL isn't well-defined in general (it may carry
+                // other, unrelated state) — log loudly instead so this is visible for manual reconciliation.
+                const modifiedAclUid: string = acl.uid;
+                registerRollbackHook(async () => {
+                    this.logger?.warn(
+                        `RepoUtils: create() failed after modifying existing ACL ${modifiedAclUid} — that change was not automatically reverted.`,
+                    );
+                });
+            }
         }
 
         if (this.cache) {
@@ -609,14 +624,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         if (this.aclUtils?.enabled && !options.ignoreACL) {
-            const acl: AccessControlList | undefined = await this.aclUtils.findACL(uid, undefined, {
-                transaction: txInfo,
-            });
-            if (
-                !(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.DELETE, {
-                    transaction: txInfo,
-                }))
-            ) {
+            const acl: AccessControlList | undefined = await this.aclUtils.findACL(uid);
+            if (!(await this.aclUtils.hasPermission(options.user, acl ? acl : this.defaultACLUid, ACLAction.DELETE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -643,7 +652,21 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
 
             if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-                await this.aclUtils.removeACL(uid, { transaction: txInfo });
+                // Snapshot before removing: `removeACL()` commits independently, on the `acl` connection's own
+                // transaction (see its doc comment) — if this (the entity-side) transaction later fails, its
+                // own abort can't undo that removal. The rollback hook restores this exact snapshot in that case.
+                const aclSnapshot: AccessControlList | undefined = await this.aclUtils.findACL(uid);
+                await this.aclUtils.removeACL(uid);
+                if (aclSnapshot) {
+                    registerRollbackHook(async () => {
+                        try {
+                            await this.aclUtils!.saveACL(aclSnapshot);
+                        } catch (err) {
+                            this.logger?.warn(`RepoUtils: Failed to restore ACL ${uid} after a failed delete().`);
+                            this.logger?.debug(err);
+                        }
+                    });
+                }
             }
         } else {
             if (this.repo instanceof MongoRepository) {
@@ -701,11 +724,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // legitimate access to the resource type at all; per-record narrowing (below, right before the
         // results are returned) is an additional layer on top of this, not a replacement for it.
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            if (
-                !(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action, {
-                    transaction: txInfo,
-                }))
-            ) {
+            if (!(await this.aclUtils.hasPermission(options?.user, this.defaultACLUid, action))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -789,10 +808,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             const permitted: boolean[] = await Promise.all(
                 results.map((obj) => {
                     if ((obj as any).deleted === true) {
-                        return this.canViewDeleted(options?.user, recordACL ? obj.uid : this.defaultACLUid, txInfo);
+                        return this.canViewDeleted(options?.user, recordACL ? obj.uid : this.defaultACLUid);
                     }
                     return recordACL
-                        ? this.aclUtils!.hasPermission(options?.user, obj.uid, action, { transaction: txInfo })
+                        ? this.aclUtils!.hasPermission(options?.user, obj.uid, action)
                         : Promise.resolve(true);
                 }),
             );
@@ -869,23 +888,17 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
             // Check user permissions
             if (this.aclUtils?.enabled && !options?.ignoreACL) {
-                const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid, undefined, {
-                    transaction: txInfo,
-                });
+                const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid);
 
                 if ((existing as any).deleted === true) {
                     // Viewing a soft-deleted record (opted into via `includeDeleted`) requires both DELETE and UPDATE
                     // permission, the two actions actually needed to restore the record.
-                    if (!(await this.canViewDeleted(options?.user, acl ? acl : this.defaultACLUid, txInfo))) {
+                    if (!(await this.canViewDeleted(options?.user, acl ? acl : this.defaultACLUid))) {
                         existing = null;
                     }
                 } else {
                     const action: string = options?.action ?? ACLAction.READ;
-                    if (
-                        !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, action, {
-                            transaction: txInfo,
-                        }))
-                    ) {
+                    if (!(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, action))) {
                         throw new ApiError(
                             ApiErrors.AUTH_PERMISSION_FAILURE,
                             403,
@@ -935,16 +948,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      *
      * @param user The user to check.
      * @param acl The ACL (or ACL uid) governing the record.
-     * @param txInfo The active transaction, if any.
      */
-    private async canViewDeleted(
-        user: JWTUser | undefined,
-        acl: AccessControlList | string,
-        txInfo: TransactionInfo | undefined,
-    ): Promise<boolean> {
+    private async canViewDeleted(user: JWTUser | undefined, acl: AccessControlList | string): Promise<boolean> {
         return (
-            (await this.aclUtils!.hasPermission(user, acl, ACLAction.DELETE, { transaction: txInfo })) &&
-            (await this.aclUtils!.hasPermission(user, acl, ACLAction.UPDATE, { transaction: txInfo }))
+            (await this.aclUtils!.hasPermission(user, acl, ACLAction.DELETE)) &&
+            (await this.aclUtils!.hasPermission(user, acl, ACLAction.UPDATE))
         );
     }
 
@@ -1059,11 +1067,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Check user permissions. Don't check if record-level ACLs are used as this will be done
         // per record later.
         if (this.aclUtils?.enabled && !options.ignoreACL && !this.modelClass.recordACL) {
-            if (
-                !(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.TRUNCATE, {
-                    transaction: txInfo,
-                }))
-            ) {
+            if (!(await this.aclUtils.hasPermission(options.user, this.defaultACLUid, ACLAction.TRUNCATE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }
@@ -1094,6 +1098,22 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     }
                 }
 
+                // Snapshot each record's ACL before removing it below, so a rollback hook can restore them if
+                // this (entity-side) transaction subsequently fails - `removeACLs()` commits independently, on
+                // the `acl` connection's own transaction, and can't be rolled back by this transaction's abort.
+                const cleansUpRecordACLs: boolean = !!(this.aclUtils?.enabled && this.modelClass.recordACL);
+                const aclSnapshots: AccessControlList[] = [];
+                if (cleansUpRecordACLs) {
+                    const batchSize = 100;
+                    for (let i = 0; i < finalUids.length; i += batchSize) {
+                        const batch: string[] = finalUids.slice(i, i + batchSize);
+                        const found: (AccessControlList | undefined)[] = await Promise.all(
+                            batch.map((uid) => this.aclUtils!.findACL(uid)),
+                        );
+                        aclSnapshots.push(...found.filter((acl): acl is AccessControlList => !!acl));
+                    }
+                }
+
                 // Now delete all records that were found
                 if (this.repo instanceof MongoRepository) {
                     await this.repo.deleteMany({ uid: { $in: finalUids } } as any, {
@@ -1108,6 +1128,22 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     // so an explicit In() on the uid column is used instead of relying on that implicit form.
                     const { In } = ModelUtils.orm;
                     await repo.delete({ uid: In(finalUids) });
+                }
+
+                if (cleansUpRecordACLs && finalUids.length > 0) {
+                    await this.aclUtils!.removeACLs(finalUids);
+                    if (aclSnapshots.length > 0) {
+                        registerRollbackHook(async () => {
+                            try {
+                                await this.aclUtils!.saveACLs(aclSnapshots);
+                            } catch (err) {
+                                this.logger?.warn(
+                                    `RepoUtils: Failed to restore ${aclSnapshots.length} ACL(s) after a failed truncate().`,
+                                );
+                                this.logger?.debug(err);
+                            }
+                        });
+                    }
                 }
 
                 if (!options?.skipPush) {
@@ -1138,14 +1174,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         if (this.aclUtils?.enabled && !options?.ignoreACL) {
-            const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid, undefined, {
-                transaction: txInfo,
-            });
-            if (
-                !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.UPDATE, {
-                    transaction: txInfo,
-                }))
-            ) {
+            const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid);
+            if (!(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, ACLAction.UPDATE))) {
                 throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
             }
         }

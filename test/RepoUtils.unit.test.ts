@@ -241,13 +241,11 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
                 undefined,
                 repoUtils.defaultACLUid,
                 "delete",
-                expect.anything(),
             );
             expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
                 undefined,
                 repoUtils.defaultACLUid,
                 "update",
-                expect.anything(),
             );
         });
     });
@@ -327,18 +325,8 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
 
             expect(result).toBe(1);
             expect(fakeRepo.count).toHaveBeenCalledTimes(2);
-            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
-                undefined,
-                "default-acl",
-                "delete",
-                expect.anything(),
-            );
-            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
-                undefined,
-                "default-acl",
-                "update",
-                expect.anything(),
-            );
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(undefined, "default-acl", "delete");
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(undefined, "default-acl", "update");
         });
     });
 
@@ -392,18 +380,8 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
             const result = await repoUtils.find({});
 
             expect(result.map((r: any) => r.uid).sort()).toEqual(["gone", "live"]);
-            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
-                undefined,
-                "default-acl",
-                "delete",
-                expect.anything(),
-            );
-            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
-                undefined,
-                "default-acl",
-                "update",
-                expect.anything(),
-            );
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(undefined, "default-acl", "delete");
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(undefined, "default-acl", "update");
         });
 
         it("checks a soft-deleted result's own record ACL (not the class ACL) for a recordACL model", async () => {
@@ -422,8 +400,8 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
 
             expect(result.map((r: any) => r.uid)).toEqual(["gone"]);
             // Checked against the record's own uid, not the (unset) class-level defaultACLUid.
-            expect(hasPermission).toHaveBeenCalledWith(undefined, "gone", "delete", expect.anything());
-            expect(hasPermission).toHaveBeenCalledWith(undefined, "gone", "update", expect.anything());
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "gone", "delete");
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "gone", "update");
         });
     });
 
@@ -494,9 +472,9 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
             const result = await repoUtils.count({ uid: "u1", deleted: true });
 
             expect(result).toBe(1);
-            expect(hasPermission).toHaveBeenCalledWith(undefined, "allowed", "delete", expect.anything());
-            expect(hasPermission).toHaveBeenCalledWith(undefined, "allowed", "update", expect.anything());
-            expect(hasPermission).toHaveBeenCalledWith(undefined, "denied", "delete", expect.anything());
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "allowed", "delete");
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "allowed", "update");
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "denied", "delete");
         });
     });
 });
@@ -598,5 +576,179 @@ describe("RepoUtils cache writes are fire-and-forget", () => {
         await flush();
         expect(repoUtils.cache.save).toHaveBeenCalled();
         expect(repoUtils.logger.warn).toHaveBeenCalled();
+    });
+});
+
+// `ACLUtils.saveACL()`/`removeACL()` commit independently, on the `acl` connection's own transaction — they
+// can't be rolled back by the entity-side transaction's own abort. RepoUtils compensates by registering a
+// best-effort cleanup hook (via `registerRollbackHook`) against the active outer transaction. These tests run
+// the decorated methods inside a manually-established `transactionContext` (rather than a real Mongo/SQL
+// connection) so the registered hooks can be inspected and invoked directly, simulating "the outer transaction
+// subsequently failed" without needing to fake a whole driver-level transaction.
+describe("RepoUtils ACL compensating actions on transaction rollback", () => {
+    class RecordACLItem extends RecoverableBaseMongoEntity {}
+    (RecordACLItem as any).recordACL = true;
+
+    const creator = { uid: "creator", roles: [] };
+
+    it("create(): registers a hook that deletes a freshly-created ACL", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.count = vi.fn().mockResolvedValue(0);
+        fakeRepo.save = vi.fn().mockImplementation(async (obj: any) => obj);
+        const repoUtils: any = new RepoUtils(RecordACLItem, fakeRepo);
+        const aclUtils = {
+            enabled: true,
+            hasPermission: vi.fn().mockResolvedValue(true),
+            findACL: vi.fn().mockResolvedValue(undefined),
+            getRecord: vi.fn().mockReturnValue(undefined),
+            saveACL: vi.fn().mockImplementation(async (acl: any) => acl),
+            removeACL: vi.fn().mockResolvedValue(undefined),
+        };
+        repoUtils.aclUtils = aclUtils;
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+
+        const onRollback: Array<() => Promise<void>> = [];
+        const result = await transactionContext.run({ session: {}, datasource: "mongodb", onRollback }, () =>
+            repoUtils.create({ name: "u-1" }, { user: creator }),
+        );
+
+        expect(aclUtils.saveACL).toHaveBeenCalledTimes(1);
+        expect(onRollback.length).toBe(1);
+
+        // Simulate the outer (entity-side) transaction subsequently failing.
+        await onRollback[0]();
+        expect(aclUtils.removeACL).toHaveBeenCalledWith(result.uid);
+    });
+
+    it("create(): logs instead of reverting when saveACL() modified an already-existing ACL", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.count = vi.fn().mockResolvedValue(0);
+        fakeRepo.save = vi.fn().mockImplementation(async (obj: any) => obj);
+        const repoUtils: any = new RepoUtils(RecordACLItem, fakeRepo);
+        const existingAcl: any = { uid: "existing-acl", records: [] };
+        const aclUtils = {
+            enabled: true,
+            hasPermission: vi.fn().mockResolvedValue(true),
+            findACL: vi.fn().mockResolvedValue(existingAcl),
+            getRecord: vi.fn().mockReturnValue(undefined), // creator has no record yet -> one gets appended
+            saveACL: vi.fn().mockImplementation(async (acl: any) => acl),
+            removeACL: vi.fn().mockResolvedValue(undefined),
+        };
+        repoUtils.aclUtils = aclUtils;
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+
+        const onRollback: Array<() => Promise<void>> = [];
+        await transactionContext.run({ session: {}, datasource: "mongodb", onRollback }, () =>
+            repoUtils.create({ name: "u-1" }, { user: creator }),
+        );
+
+        expect(onRollback.length).toBe(1);
+        await onRollback[0]();
+        expect(aclUtils.removeACL).not.toHaveBeenCalled();
+        expect(repoUtils.logger.warn).toHaveBeenCalled();
+    });
+
+    it("create(): registers no rollback hook when the ACL didn't actually need to change", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.count = vi.fn().mockResolvedValue(0);
+        fakeRepo.save = vi.fn().mockImplementation(async (obj: any) => obj);
+        const repoUtils: any = new RepoUtils(RecordACLItem, fakeRepo);
+        const existingRecord = { userOrRoleId: "creator", actions: ["read"] };
+        const existingAcl: any = { uid: "existing-acl", records: [existingRecord] };
+        const aclUtils = {
+            enabled: true,
+            hasPermission: vi.fn().mockResolvedValue(true),
+            findACL: vi.fn().mockResolvedValue(existingAcl),
+            getRecord: vi.fn().mockReturnValue(existingRecord), // creator already has a record
+            saveACL: vi.fn().mockImplementation(async (acl: any) => acl),
+            removeACL: vi.fn().mockResolvedValue(undefined),
+        };
+        repoUtils.aclUtils = aclUtils;
+
+        const onRollback: Array<() => Promise<void>> = [];
+        await transactionContext.run({ session: {}, datasource: "mongodb", onRollback }, () =>
+            repoUtils.create({ name: "u-1" }, { user: creator }),
+        );
+
+        expect(onRollback.length).toBe(0);
+    });
+
+    it("delete() purge: registers a hook that restores the removed ACL snapshot", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.deleteMany = vi.fn().mockResolvedValue(undefined);
+        const repoUtils: any = new RepoUtils(RecordACLItem, fakeRepo);
+        const snapshot: any = { uid: "u1", records: [{ userOrRoleId: "owner", actions: ["read"] }] };
+        const aclUtils = {
+            enabled: true,
+            findACL: vi.fn().mockResolvedValue(snapshot),
+            hasPermission: vi.fn().mockResolvedValue(true),
+            removeACL: vi.fn().mockResolvedValue(undefined),
+            saveACL: vi.fn().mockResolvedValue(undefined),
+        };
+        repoUtils.aclUtils = aclUtils;
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+
+        const onRollback: Array<() => Promise<void>> = [];
+        await transactionContext.run({ session: {}, datasource: "mongodb", onRollback }, () =>
+            repoUtils.delete("u1", { user: { uid: "owner", roles: [] }, purge: true }),
+        );
+
+        expect(aclUtils.removeACL).toHaveBeenCalledWith("u1");
+        expect(onRollback.length).toBe(1);
+
+        await onRollback[0]();
+        expect(aclUtils.saveACL).toHaveBeenCalledWith(snapshot);
+    });
+
+    it("delete() purge: registers no rollback hook when the record had no ACL to begin with", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.deleteMany = vi.fn().mockResolvedValue(undefined);
+        const repoUtils: any = new RepoUtils(RecordACLItem, fakeRepo);
+        const aclUtils = {
+            enabled: true,
+            findACL: vi.fn().mockResolvedValue(undefined),
+            hasPermission: vi.fn().mockResolvedValue(true),
+            removeACL: vi.fn().mockResolvedValue(undefined),
+            saveACL: vi.fn().mockResolvedValue(undefined),
+        };
+        repoUtils.aclUtils = aclUtils;
+
+        const onRollback: Array<() => Promise<void>> = [];
+        await transactionContext.run({ session: {}, datasource: "mongodb", onRollback }, () =>
+            repoUtils.delete("u1", { user: { uid: "owner", roles: [] }, purge: true }),
+        );
+
+        expect(onRollback.length).toBe(0);
+    });
+
+    it("truncate(): registers a hook that batch-restores every removed ACL snapshot", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.distinct = vi.fn().mockResolvedValue(["u1", "u2"]);
+        fakeRepo.deleteMany = vi.fn().mockResolvedValue(undefined);
+        const repoUtils: any = new RepoUtils(RecordACLItem, fakeRepo);
+        const snapshots: Record<string, any> = {
+            u1: { uid: "u1", records: [] },
+            u2: { uid: "u2", records: [] },
+        };
+        const aclUtils = {
+            enabled: true,
+            hasPermission: vi.fn().mockResolvedValue(true),
+            findACL: vi.fn().mockImplementation(async (uid: string) => snapshots[uid]),
+            removeACLs: vi.fn().mockResolvedValue(undefined),
+            saveACLs: vi.fn().mockResolvedValue(undefined),
+        };
+        repoUtils.aclUtils = aclUtils;
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+
+        const onRollback: Array<() => Promise<void>> = [];
+        await transactionContext.run({ session: {}, datasource: "mongodb", onRollback }, () =>
+            repoUtils.truncate({}, { user: { uid: "u", roles: [] } }),
+        );
+
+        expect(aclUtils.removeACLs).toHaveBeenCalledWith(["u1", "u2"]);
+        expect(onRollback.length).toBe(1);
+
+        await onRollback[0]();
+        expect(aclUtils.saveACLs).toHaveBeenCalledWith([snapshots.u1, snapshots.u2]);
     });
 });

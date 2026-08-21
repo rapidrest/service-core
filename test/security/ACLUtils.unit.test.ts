@@ -301,4 +301,57 @@ describe("ACLUtils Tests (unit)", () => {
             expect(aclUtils.logger.warn).toHaveBeenCalled();
         });
     });
+
+    // RepoUtils.truncate() uses these to clean up (and, on a later rollback, restore) every deleted record's
+    // ACL in one call, without duplicating removeACL()/saveACL()'s own per-record logic.
+    describe("removeACLs / saveACLs (batched)", () => {
+        it("removeACLs() removes every uid, batched in groups of 100", async () => {
+            // The `repo` getter special-cases `instanceof MongoConnection`; a plain object with
+            // getRepository() duck-types as a SQL DataSource instead (see the `removeACL` tests above), which
+            // routes through `repo.delete()` rather than the Mongo `.deleteOne()` branch.
+            const fakeRepo = { delete: vi.fn().mockResolvedValue(undefined) };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+
+            const uids: string[] = Array.from({ length: 250 }, (_, i) => `uid-${i}`);
+            await aclUtils.removeACLs(uids);
+
+            expect(fakeRepo.delete).toHaveBeenCalledTimes(250);
+            for (const uid of uids) {
+                expect(fakeRepo.delete).toHaveBeenCalledWith({ uid });
+            }
+        });
+
+        it("saveACLs() saves every ACL, batched in groups of 100", async () => {
+            const fakeRepo = {
+                findOne: vi.fn().mockResolvedValue(null),
+                save: vi.fn().mockImplementation(async (x: any) => x),
+            };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+
+            const acls: any[] = Array.from({ length: 150 }, (_, i) => ({ uid: `uid-${i}`, records: [] }));
+            await aclUtils.saveACLs(acls);
+
+            expect(fakeRepo.save).toHaveBeenCalledTimes(150);
+        });
+
+        it("removeACLs() with an empty list does nothing", async () => {
+            const fakeRepo = { delete: vi.fn() };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+
+            await expect(aclUtils.removeACLs([])).resolves.toBeUndefined();
+            expect(fakeRepo.delete).not.toHaveBeenCalled();
+        });
+    });
 });

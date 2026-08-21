@@ -9,10 +9,18 @@ import { MongoConnection } from "../database/MongoConnection.js";
 
 /** The transactional context (`session` and/or `entityManager`) established by `@Transactional`, if any. */
 export interface TransactionContext {
+    /** The MongoDB-specific session object to pass in to MongoRepository for each operation. */
     session?: any;
+    /** The TypeORM-specific entity manager to perform all operations with. */
     entityManager?: any;
     /** The datasource name this context's session/entityManager belongs to, used to guard merging (see `Transactional`). */
     datasource?: string;
+    /**
+     * Best-effort compensating actions to run if this transaction ultimately fails, populated via
+     * `registerRollbackHook()`. Owned by whichever `@Transactional` call actually opened the real transaction
+     * (nested/merged calls share the same array via the ambient context, rather than each getting their own).
+     */
+    onRollback?: Array<() => Promise<void>>;
 }
 
 /**
@@ -20,6 +28,22 @@ export interface TransactionContext {
  * decorated method, keyed to that specific invocation rather than to the object instance the method runs on.
  */
 export const transactionContext = new AsyncLocalStorage<TransactionContext>();
+
+/**
+ * Registers a best-effort compensating action to run if the currently active transaction (the one owning the
+ * ambient `transactionContext`) ultimately fails. Intended for code that just committed a write on a *different*
+ * connection than the active transaction's own (e.g. one that can't be rolled back by that transaction's own
+ * abort) and needs its own explicit cleanup to avoid an orphaned write if the active transaction later fails.
+ * A no-op if there's no active transaction to register against.
+ *
+ * The hook is responsible for catching and logging its own errors; if it throws anyway, that's swallowed (via
+ * `Promise.allSettled`) rather than masking the original failure that triggered the rollback.
+ *
+ * @param hook The compensating action to run.
+ */
+export function registerRollbackHook(hook: () => Promise<void>): void {
+    transactionContext.getStore()?.onRollback?.push(hook);
+}
 
 /**
  * Apply this to a property to have the datasource connection with the given name injected at instantiation.
@@ -248,6 +272,7 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
                 // Implement transactions according to the MongoDB docs:
                 // https://www.mongodb.com/docs/manual/core/transactions/?language-no-dependencies=nodejs
                 const session = conn.startSession(options?.driverOptions);
+                const onRollback: Array<() => Promise<void>> = [];
                 try {
                     // `withTransaction()` already aborts the transaction automatically if the callback throws
                     // or its returned promise rejects, so no explicit `abortTransaction()` call is needed here
@@ -257,10 +282,15 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
 
                         // Scope the session to this call's async context (see `transactionContext`) rather than
                         // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
-                        result = await transactionContext.run({ session, datasource }, () =>
+                        result = await transactionContext.run({ session, datasource, onRollback }, () =>
                             original.apply(this, args),
                         );
                     });
+                } catch (err) {
+                    // Best-effort: undo whatever independently-committed side effects nested code registered
+                    // against this transaction (see `registerRollbackHook`) before propagating the failure.
+                    await Promise.allSettled(onRollback.map((hook) => hook()));
+                    throw err;
                 } finally {
                     await session.endSession();
                 }
@@ -268,15 +298,22 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
                 // Implement transaction according to the TypeORM docs:
                 // https://typeorm.io/docs/transactions/
                 // TODO Use QueryRunner instead
-                await conn.transaction(async (entityManager) => {
-                    injectContextArgs({ entityManager });
+                const onRollback: Array<() => Promise<void>> = [];
+                try {
+                    await conn.transaction(async (entityManager) => {
+                        injectContextArgs({ entityManager });
 
-                    // Scope the entityManager to this call's async context (see `transactionContext`) rather than
-                    // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
-                    result = await transactionContext.run({ entityManager, datasource }, () =>
-                        original.apply(this, args),
-                    );
-                });
+                        // Scope the entityManager to this call's async context (see `transactionContext`) rather
+                        // than stashing it on `this`, which may be a singleton shared with concurrent, unrelated
+                        // calls.
+                        result = await transactionContext.run({ entityManager, datasource, onRollback }, () =>
+                            original.apply(this, args),
+                        );
+                    });
+                } catch (err) {
+                    await Promise.allSettled(onRollback.map((hook) => hook()));
+                    throw err;
+                }
             }
 
             return result;

@@ -4,21 +4,17 @@
 import { ObjectDecorators, UserUtils, sleep, type JWTUser } from "@rapidrest/core";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
 import { AccessControlListMongo } from "./AccessControlListMongo.js";
-import type { EntityManager, Repository } from "typeorm";
+import type { Repository } from "typeorm";
 import type { HttpRequest } from "../http/index.js";
 import { ACLAction, type AccessControlList, type ACLRecord } from "./AccessControlList.js";
 import { ConnectionManager } from "../database/ConnectionManager.js";
 import { isSqlDataSource } from "../database/ConnectionKinds.js";
 import { MongoConnection } from "../database/MongoConnection.js";
 import { MongoRepository } from "../database/MongoRepository.js";
-import type { ClientSession } from "mongodb";
 import { RedisCache } from "../database/RedisCache.js";
 import { ObjectFactory } from "../ObjectFactory.js";
+import { registerRollbackHook, Transactional, transactionContext } from "../decorators/DatabaseDecorators.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
-
-export interface ACLUtilsOptions {
-    transaction?: { entityManager?: EntityManager; session?: ClientSession };
-}
 
 /**
  * Common utility functions for working with `AccessControlList` objects and validating user permissions.
@@ -84,10 +80,7 @@ export class ACLUtils {
      * @returns `"exact"` for a direct uid/anonymous match, `"role"` for a role match, `"wildcard"` for a `.*`/`*`
      * match, or `"none"` if the user doesn't match this id at all.
      */
-    private matchSpecificity(
-        user: JWTUser | undefined,
-        userOrRoleId: string,
-    ): "exact" | "role" | "wildcard" | "none" {
+    private matchSpecificity(user: JWTUser | undefined, userOrRoleId: string): "exact" | "role" | "wildcard" | "none" {
         if (!user?.uid) {
             // Wildcards only ever match an *authenticated* user (see the check below) — an anonymous caller
             // can only match a record explicitly keyed "anonymous".
@@ -108,14 +101,8 @@ export class ACLUtils {
      * @param uid The uid of the access control list to verify against.
      * @param user The user to validate.
      * @param req The HTTP request to check permissions for.
-     * @param options The additional options for this check. Note that `options.request` is required.
      */
-    public async checkRequestPerms(
-        uid: string,
-        user: JWTUser | undefined,
-        req: HttpRequest,
-        options?: ACLUtilsOptions,
-    ): Promise<boolean> {
+    public async checkRequestPerms(uid: string, user: JWTUser | undefined, req: HttpRequest): Promise<boolean> {
         // If RBAC is disabled just return
         if (!this.enabled) {
             return true;
@@ -129,7 +116,7 @@ export class ACLUtils {
         // registration time) a `@Protect`-ed route must not silently become open to everyone.
         let result: boolean = false;
 
-        let acl: AccessControlList | undefined = await this.findACL(uid, [], options);
+        let acl: AccessControlList | undefined = await this.findACL(uid, []);
         if (acl) {
             // Make sure all parents are populated
             if (!acl.parent) {
@@ -152,7 +139,7 @@ export class ACLUtils {
                     put: ACLAction.UPDATE,
                 };
                 const action: string | undefined = methodToAction[req.method.toLowerCase()];
-                result = action ? await this.hasPermission(user, acl, action, options) : false;
+                result = action ? await this.hasPermission(user, acl, action) : false;
             }
         }
 
@@ -165,14 +152,12 @@ export class ACLUtils {
      * @param user The user to validate permissions of.
      * @param acl The ACL or uid of an ACL to validate permissions against.
      * @param action The action that the user desires permission for.
-     * @param options Additional options to use when checking permission.
      * @returns `true` if the user has at least one of the permissions granted for the given entity, otherwise `false`.
      */
     public async hasPermission(
         user: JWTUser | undefined,
         acl: AccessControlList | string,
         action: string,
-        options?: ACLUtilsOptions,
     ): Promise<boolean> {
         // If the repo isn't available, no acl was provided or the ACL string is empty just return, assume always true
         if (!this.enabled || !this.repo || !acl || acl === "") {
@@ -187,8 +172,8 @@ export class ACLUtils {
 
         // If a uid has been given look up the ACL associated with it and then process
         if (typeof acl === "string") {
-            const entry: AccessControlList | undefined = await this.findACL(acl, [], options);
-            return entry ? await this.hasPermission(user, entry, action, options) : false;
+            const entry: AccessControlList | undefined = await this.findACL(acl, []);
+            return entry ? await this.hasPermission(user, entry, action) : false;
         }
 
         // Look for the first available record for the given user
@@ -201,14 +186,15 @@ export class ACLUtils {
     /**
      * Retrieves the access control list with the associated identifier and populates the parent(s).
      *
+     * Deliberately not `@Transactional` and never participates in a caller's transaction: it's on the hot path
+     * for every permission check (`hasPermission`/`checkRequestPerms`), not just writes, so wrapping it would
+     * add a session open/close to every authorization check. It also has no way to safely reuse a *caller's*
+     * transaction context.
+     *
      * @param entityId The unique identifier of the ACL to retrieve.
      * @param parentUids The list of already found parent UIDs. This is used to break circular dependencies.
      */
-    public async findACL(
-        entityId: string,
-        parentUids: string[] = [],
-        options?: ACLUtilsOptions,
-    ): Promise<AccessControlList | undefined> {
+    public async findACL(entityId: string, parentUids: string[] = []): Promise<AccessControlList | undefined> {
         if (!this.enabled || !this.repo) {
             return undefined;
         }
@@ -222,13 +208,10 @@ export class ACLUtils {
         // If the acl wasn't found in the cache look in the database
         if (!acl) {
             if (this.repo instanceof MongoRepository) {
-                acl = await this.repo.findOne({ uid: entityId }, { session: options?.transaction?.session });
+                acl = await this.repo.findOne({ uid: entityId });
                 acl = acl ? new AccessControlListMongo(acl) : undefined;
             } else {
-                const repo = options?.transaction?.entityManager
-                    ? options.transaction.entityManager.getRepository(AccessControlListSQL)
-                    : this.repo;
-                acl = await repo.findOne({ where: { uid: entityId } });
+                acl = await this.repo.findOne({ where: { uid: entityId } });
                 acl = acl ? new AccessControlListSQL(acl) : undefined;
             }
         }
@@ -245,7 +228,7 @@ export class ACLUtils {
         // already found to prevent a circular dependency.
         if (acl && acl.parentUid && !parentUids.includes(acl.parentUid)) {
             parentUids.push(acl.parentUid);
-            acl.parent = await this.findACL(acl.parentUid, parentUids, options);
+            acl.parent = await this.findACL(acl.parentUid, parentUids);
         }
 
         return acl;
@@ -253,22 +236,30 @@ export class ACLUtils {
 
     /**
      * Deletes the ACL with the given identifier from the database.
+     *
+     * Runs in its own transaction scoped to the `acl` connection (see `Transactional`) rather than trying to
+     * join whatever transaction the caller is itself in — `acl` is frequently configured as its own, separate
+     * datastore (a documented, supported deployment shape), so a caller's session/entityManager almost never
+     * actually belongs to the same physical connection this repo does. Reusing it directly used to throw
+     * (Mongo) or silently target the wrong connection (SQL). Callers that need the entity-side write and this
+     * ACL removal to stay consistent should register a compensating action via `registerRollbackHook()`.
+     *
      * @param uid The unique identifier of the ACL to remove.
-     * @param transaction The transactional session to use.
      */
-    public async removeACL(uid: string, options?: ACLUtilsOptions): Promise<void> {
+    @Transactional("acl")
+    public async removeACL(uid: string): Promise<void> {
         if (this.enabled) {
             if (!this.repo) {
                 throw new Error("repo is not set.");
             }
 
+            const ctx = transactionContext.getStore();
+
             try {
                 if (this.repo instanceof MongoRepository) {
-                    await this.repo.deleteOne({ uid }, { session: options?.transaction?.session });
+                    await this.repo.deleteOne({ uid }, { session: ctx?.session });
                 } else {
-                    const repo = options?.transaction?.entityManager
-                        ? options.transaction.entityManager.getRepository(AccessControlListSQL)
-                        : this.repo;
+                    const repo = ctx?.entityManager ? ctx.entityManager.getRepository(AccessControlListSQL) : this.repo;
                     await repo.delete({ uid });
                 }
             } catch (err) {
@@ -356,11 +347,16 @@ export class ACLUtils {
     /**
      * Stores the given access control list into the ACL database.
      *
+     * Runs in its own transaction scoped to the `acl` connection (see `Transactional`) rather than trying to
+     * join whatever transaction the caller is itself in — see `removeACL`'s doc comment for why. Callers that
+     * need the entity-side write and this ACL save to stay consistent should register a compensating action
+     * via `registerRollbackHook()`.
+     *
      * @param acl The ACL to store.
-     * @param transaction The transactional session to use.
      * @return Returns the ACL that was stored in the database.
      */
-    public async saveACL(acl: AccessControlList, options?: ACLUtilsOptions): Promise<AccessControlList | null> {
+    @Transactional("acl")
+    public async saveACL(acl: AccessControlList): Promise<AccessControlList | null> {
         let result: AccessControlList | null = null;
         if (!this.enabled || !acl) {
             return result;
@@ -370,10 +366,12 @@ export class ACLUtils {
             throw new Error("repo is not set.");
         }
 
+        const ctx = transactionContext.getStore();
+
         if (this.repo instanceof MongoRepository) {
             const mACL: AccessControlListMongo = new AccessControlListMongo(acl);
             const existing: AccessControlListMongo | null = await this.repo.findOne({ uid: acl.uid } as any, {
-                session: options?.transaction?.session,
+                session: ctx?.session,
             });
             // If no changes have been made between versions ignore this request
             if (existing && this.diffACL(existing, acl) === 0) {
@@ -390,11 +388,9 @@ export class ACLUtils {
                 dateModifed: new Date(),
                 version: existing ? mACL.version + 1 : 0,
             });
-            result = await this.repo.save(aclMongo, { session: options?.transaction?.session });
+            result = await this.repo.save(aclMongo, { session: ctx?.session });
         } else {
-            const repo = options?.transaction?.entityManager
-                ? options.transaction.entityManager.getRepository(AccessControlListSQL)
-                : this.repo;
+            const repo = ctx?.entityManager ? ctx.entityManager.getRepository(AccessControlListSQL) : this.repo;
             const sACL: AccessControlListSQL = new AccessControlListSQL(acl);
             const existing: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } });
             // If no changes have been made between versions ignore this request
@@ -438,7 +434,7 @@ export class ACLUtils {
      * @param defaultAcl
      * @returns
      */
-    public async saveDefaultACL(acl: AccessControlList, options?: ACLUtilsOptions): Promise<AccessControlList | null> {
+    public async saveDefaultACL(acl: AccessControlList): Promise<AccessControlList | null> {
         let result: AccessControlList | null = null;
         if (!this.enabled || !acl) {
             return result;
@@ -459,7 +455,7 @@ export class ACLUtils {
                 // and another named `<NAME>`. The `<NAME>` record stores the user-defined
                 // overrides that overlay the `default_<NAME>` document. The `default_<NAME>` is
                 // therefore always updated with whatever is provided as the `defaultAcl` argument.
-                const existing: AccessControlList | undefined = await this.findACL(defaultAcl.uid, undefined, options);
+                const existing: AccessControlList | undefined = await this.findACL(defaultAcl.uid);
 
                 if (existing) {
                     // Copy over the new records from code
@@ -468,21 +464,18 @@ export class ACLUtils {
 
                     // The user-defined override record was already created on a previous run. Look it
                     // up so callers still receive a valid ACL to register routes against instead of `null`.
-                    result = (await this.findACL(acl.uid, undefined, options)) ?? null;
+                    result = (await this.findACL(acl.uid)) ?? null;
                 } else {
                     // Create the user-defined override record
-                    result = await this.saveACL(
-                        {
-                            uid: acl.uid,
-                            parentUid: defaultAcl.uid,
-                            records: [],
-                        },
-                        options,
-                    );
+                    result = await this.saveACL({
+                        uid: acl.uid,
+                        parentUid: defaultAcl.uid,
+                        records: [],
+                    });
                 }
 
                 // Always save the ACL into the datasource
-                await this.saveACL(defaultAcl, options);
+                await this.saveACL(defaultAcl);
                 attempts = maxAttempts;
             } catch (err) {
                 if (attempts < maxAttempts) {
@@ -496,6 +489,40 @@ export class ACLUtils {
         }
 
         return result;
+    }
+
+    /**
+     * Batched, atomic removal of multiple ACLs in a single `acl`-scoped transaction (see `Transactional`) —
+     * either all of them are removed or none are, from `acl`'s perspective. Used by bulk operations like
+     * `RepoUtils.truncate()`, where each entity row deleted has (or may have) its own per-record ACL. Batched
+     * in bounded chunks (matching `RepoUtils.filterPermittedUids()`'s convention) rather than one unbounded
+     * `Promise.all`, so a large uid list can't fire an unbounded number of concurrent deletes at once.
+     *
+     * @param uids The unique identifiers of the ACLs to remove.
+     */
+    @Transactional("acl")
+    public async removeACLs(uids: string[]): Promise<void> {
+        const batchSize = 100;
+        for (let i = 0; i < uids.length; i += batchSize) {
+            const batch: string[] = uids.slice(i, i + batchSize);
+            await Promise.all(batch.map((uid) => this.removeACL(uid)));
+        }
+    }
+
+    /**
+     * Batched, atomic save of multiple ACLs in a single `acl`-scoped transaction (see `Transactional`). Used to
+     * restore a batch of ACL snapshots — e.g. by a `registerRollbackHook()` compensating action — if the
+     * entity-side transaction they were removed alongside subsequently fails.
+     *
+     * @param acls The ACLs to store.
+     */
+    @Transactional("acl")
+    public async saveACLs(acls: AccessControlList[]): Promise<void> {
+        const batchSize = 100;
+        for (let i = 0; i < acls.length; i += batchSize) {
+            const batch: AccessControlList[] = acls.slice(i, i + batchSize);
+            await Promise.all(batch.map((acl) => this.saveACL(acl)));
+        }
     }
 
     /**
