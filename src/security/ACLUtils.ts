@@ -193,8 +193,15 @@ export class ACLUtils {
      *
      * @param entityId The unique identifier of the ACL to retrieve.
      * @param parentUids The list of already found parent UIDs. This is used to break circular dependencies.
+     * @param options Set `skipCache: true` to bypass the cache and always read the current database state —
+     * mirrors `RepoUtils`'s `RepoFindOptions.skipCache`. The result is still written back into the cache
+     * afterward, same as a normal (non-skipped) lookup.
      */
-    public async findACL(entityId: string, parentUids: string[] = []): Promise<AccessControlList | undefined> {
+    public async findACL(
+        entityId: string,
+        parentUids: string[] = [],
+        options?: { skipCache?: boolean },
+    ): Promise<AccessControlList | undefined> {
         if (!this.enabled || !this.repo) {
             return undefined;
         }
@@ -203,9 +210,9 @@ export class ACLUtils {
         // population below (not return early) — a cached ACL was stored via its own plain, unpopulated `.parent`
         // (see the cache write below), so skipping that step here would silently return an ACL with no parent
         // chain, which `hasPermission()` needs to find inherited records.
-        let acl: AccessControlList | undefined = await this.cache?.load(entityId);
+        let acl: AccessControlList | undefined = options?.skipCache ? undefined : await this.cache?.load(entityId);
 
-        // If the acl wasn't found in the cache look in the database
+        // If the acl wasn't found in the cache (or the cache was skipped) look in the database
         if (!acl) {
             if (this.repo instanceof MongoRepository) {
                 acl = await this.repo.findOne({ uid: entityId });
@@ -228,50 +235,71 @@ export class ACLUtils {
         // already found to prevent a circular dependency.
         if (acl && acl.parentUid && !parentUids.includes(acl.parentUid)) {
             parentUids.push(acl.parentUid);
-            acl.parent = await this.findACL(acl.parentUid, parentUids);
+            acl.parent = await this.findACL(acl.parentUid, parentUids, options);
         }
 
         return acl;
     }
 
     /**
-     * Deletes the ACL with the given identifier from the database.
+     * Deletes the ACL with the given identifier from the database, returning the document that was actually
+     * deleted (or `undefined` if none existed) — captured atomically as part of the delete itself (Mongo:
+     * `findOneAndDelete`; SQL: a `findOne` immediately followed by the `delete`, both inside this method's own
+     * `acl` transaction), not a separate, earlier read. A caller using the return value as a restore snapshot
+     * (see `RepoUtils.delete()`/`truncate()`'s `registerRollbackHook()` usage) always gets the exact row that
+     * was removed, never a possibly-stale one raced by a concurrent legitimate write between an earlier read
+     * and this delete — and restoring it later still goes through `saveACL()`'s own optimistic-lock version
+     * check, so a restore attempt can't clobber a *newer* row that appeared after this delete either.
      *
      * Runs in its own transaction scoped to the `acl` connection (see `Transactional`) rather than trying to
      * join whatever transaction the caller is itself in — `acl` is frequently configured as its own, separate
      * datastore (a documented, supported deployment shape), so a caller's session/entityManager almost never
      * actually belongs to the same physical connection this repo does. Reusing it directly used to throw
-     * (Mongo) or silently target the wrong connection (SQL). Callers that need the entity-side write and this
-     * ACL removal to stay consistent should register a compensating action via `registerRollbackHook()`.
+     * (Mongo) or silently target the wrong connection (SQL).
      *
      * @param uid The unique identifier of the ACL to remove.
      */
     @Transactional("acl")
-    public async removeACL(uid: string): Promise<void> {
-        if (this.enabled) {
-            if (!this.repo) {
-                throw new Error("repo is not set.");
-            }
+    public async removeACL(uid: string): Promise<AccessControlList | undefined> {
+        if (!this.enabled) {
+            return undefined;
+        }
+        if (!this.repo) {
+            throw new Error("repo is not set.");
+        }
 
-            const ctx = transactionContext.getStore();
+        const ctx = transactionContext.getStore();
+        let removed: AccessControlList | undefined;
 
-            try {
-                if (this.repo instanceof MongoRepository) {
-                    await this.repo.deleteOne({ uid }, { session: ctx?.session });
-                } else {
-                    const repo = ctx?.entityManager ? ctx.entityManager.getRepository(AccessControlListSQL) : this.repo;
+        try {
+            if (this.repo instanceof MongoRepository) {
+                const deleted = await this.repo.findOneAndDelete({ uid } as any, { session: ctx?.session });
+                removed = deleted ? new AccessControlListMongo(deleted) : undefined;
+            } else {
+                const repo = ctx?.entityManager ? ctx.entityManager.getRepository(AccessControlListSQL) : this.repo;
+                const existing = await repo.findOne({ where: { uid } });
+                if (existing) {
                     await repo.delete({ uid });
+                    removed = new AccessControlListSQL(existing);
                 }
-            } catch (err) {
-                // It's okay if this fails because no document exists
             }
-
-            // Without this, a deleted ACL stays readable from the cache for up to `cacheTTL` seconds,
-            // so permissions the deletion was meant to revoke would continue to apply during that window.
-            if (this.cache) {
-                await this.cache.delete(uid);
+        } catch (err: any) {
+            // The error "ns not found" occurs when the collection doesn't exist yet (e.g. a fresh deployment
+            // that has never written an ACL) - matches RepoUtils.truncate()'s handling of the same driver
+            // quirk. Any other error is a genuine failure and must propagate, not be silently treated as "this
+            // ACL is already gone".
+            if (err?.message !== "ns not found") {
+                throw err;
             }
         }
+
+        // Without this, a deleted ACL stays readable from the cache for up to `cacheTTL` seconds,
+        // so permissions the deletion was meant to revoke would continue to apply during that window.
+        if (this.cache) {
+            await this.cache.delete(uid);
+        }
+
+        return removed;
     }
 
     /**
@@ -388,7 +416,10 @@ export class ACLUtils {
                 dateModifed: new Date(),
                 version: existing ? mACL.version + 1 : 0,
             });
-            result = await this.repo.save(aclMongo, { session: ctx?.session });
+            // ACLs are single-row-per-uid (never trackChanges) - merge by `uid` rather than requiring `_id` to
+            // have survived the `{...acl, ...}` spread above, or a stale/missing `_id` would insert a
+            // duplicate document instead of updating the one `existing` just found.
+            result = await this.repo.save(aclMongo, { session: ctx?.session, mergeByUid: true });
         } else {
             const repo = ctx?.entityManager ? ctx.entityManager.getRepository(AccessControlListSQL) : this.repo;
             const sACL: AccessControlListSQL = new AccessControlListSQL(acl);
@@ -492,7 +523,9 @@ export class ACLUtils {
     }
 
     /**
-     * Atomic removal of multiple ACLs in a single `acl`-scoped transaction (see `@Transactional`).
+     * Atomic removal of multiple ACLs in a single `acl`-scoped transaction (see `@Transactional`), returning
+     * whichever of them actually existed to be deleted (see `removeACL()`'s doc comment for why the returned
+     * documents — not a separate, earlier read — are the right thing to snapshot for a possible restore).
      *
      * Deliberately sequential, not batched-concurrent: every `removeACL()` call below resolves to this same
      * `acl` datasource, so `@Transactional`'s merge logic joins all of them onto the one MongoDB
@@ -502,10 +535,15 @@ export class ACLUtils {
      * @param uids The unique identifiers of the ACLs to remove.
      */
     @Transactional("acl")
-    public async removeACLs(uids: string[]): Promise<void> {
+    public async removeACLs(uids: string[]): Promise<AccessControlList[]> {
+        const removed: AccessControlList[] = [];
         for (const uid of uids) {
-            await this.removeACL(uid);
+            const acl = await this.removeACL(uid);
+            if (acl) {
+                removed.push(acl);
+            }
         }
+        return removed;
     }
 
     /**

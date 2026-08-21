@@ -54,21 +54,68 @@ describe("ACLUtils Tests (unit)", () => {
             await expect(aclUtils.removeACL("some-uid")).resolves.toBeUndefined();
         });
 
-        it("swallows an error thrown by the repo's delete call", async () => {
+        it("atomically finds-then-deletes and returns the document that was removed", async () => {
             // ACLUtils's private `repo` getter treats the stored "acl" connection as a SQL
             // DataSource/MongoConnection and calls .getRepository() on it -- it's not itself the repo.
-            const fakeRepo = { delete: vi.fn().mockRejectedValue(new Error("boom")) };
+            const existing = { uid: "some-uid", records: [{ userOrRoleId: "u1", actions: ["read"] }] };
+            const fakeRepo = {
+                findOne: vi.fn().mockResolvedValue(existing),
+                delete: vi.fn().mockResolvedValue(undefined),
+            };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+            const result = await aclUtils.removeACL("some-uid");
+            expect(result?.uid).toBe("some-uid");
+            expect(fakeRepo.delete).toHaveBeenCalledWith({ uid: "some-uid" });
+        });
+
+        it("returns undefined and skips the delete call when there was nothing to remove", async () => {
+            const fakeRepo = { findOne: vi.fn().mockResolvedValue(null), delete: vi.fn() };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+            const result = await aclUtils.removeACL("some-uid");
+            expect(result).toBeUndefined();
+            expect(fakeRepo.delete).not.toHaveBeenCalled();
+        });
+
+        it("propagates a genuine error instead of swallowing it", async () => {
+            // Narrowed error handling: only "ns not found" (the collection doesn't exist yet) is treated as
+            // harmless - see RepoUtils.truncate()'s identical handling of the same driver quirk. Any other
+            // failure (a network blip, etc.) must propagate, since a caller relying on the return value as a
+            // restore snapshot needs to know the removal didn't actually happen.
+            const fakeRepo = {
+                findOne: vi.fn().mockResolvedValue({ uid: "some-uid", records: [] }),
+                delete: vi.fn().mockRejectedValue(new Error("boom")),
+            };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+            await expect(aclUtils.removeACL("some-uid")).rejects.toThrow("boom");
+        });
+
+        it("swallows an 'ns not found' error (collection doesn't exist yet)", async () => {
+            const fakeRepo = { findOne: vi.fn().mockRejectedValue(new Error("ns not found")), delete: vi.fn() };
             const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
             const aclUtils = makeAclUtils({
                 enabled: true,
                 connMgr: { connections: new Map([["acl", fakeConnection]]) },
             });
             await expect(aclUtils.removeACL("some-uid")).resolves.toBeUndefined();
-            expect(fakeRepo.delete).toHaveBeenCalledWith({ uid: "some-uid" });
         });
 
         it("invalidates the cached ACL entry so a deletion isn't masked by a stale cache hit", async () => {
-            const fakeRepo = { delete: vi.fn().mockResolvedValue(undefined) };
+            const fakeRepo = {
+                findOne: vi.fn().mockResolvedValue({ uid: "some-uid", records: [] }),
+                delete: vi.fn().mockResolvedValue(undefined),
+            };
             const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
             const aclUtils = makeAclUtils({
                 enabled: true,
@@ -83,14 +130,18 @@ describe("ACLUtils Tests (unit)", () => {
         });
 
         it("does not touch the cache when none is configured", async () => {
-            const fakeRepo = { delete: vi.fn().mockResolvedValue(undefined) };
+            const fakeRepo = {
+                findOne: vi.fn().mockResolvedValue({ uid: "some-uid", records: [] }),
+                delete: vi.fn().mockResolvedValue(undefined),
+            };
             const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
             const aclUtils = makeAclUtils({
                 enabled: true,
                 connMgr: { connections: new Map([["acl", fakeConnection]]) },
             });
             // No "cache" connection registered -- cacheClient is undefined, so removeACL must not attempt del().
-            await expect(aclUtils.removeACL("some-uid")).resolves.toBeUndefined();
+            await expect(aclUtils.removeACL("some-uid")).resolves.toBeDefined();
+            expect(fakeRepo.delete).toHaveBeenCalledWith({ uid: "some-uid" });
         });
     });
 
@@ -305,11 +356,14 @@ describe("ACLUtils Tests (unit)", () => {
     // RepoUtils.truncate() uses these to clean up (and, on a later rollback, restore) every deleted record's
     // ACL in one call, without duplicating removeACL()/saveACL()'s own per-record logic.
     describe("removeACLs / saveACLs (batched)", () => {
-        it("removeACLs() removes every uid, batched in groups of 100", async () => {
+        it("removeACLs() removes every uid, batched in groups of 100, and returns the deleted documents", async () => {
             // The `repo` getter special-cases `instanceof MongoConnection`; a plain object with
             // getRepository() duck-types as a SQL DataSource instead (see the `removeACL` tests above), which
             // routes through `repo.delete()` rather than the Mongo `.deleteOne()` branch.
-            const fakeRepo = { delete: vi.fn().mockResolvedValue(undefined) };
+            const fakeRepo = {
+                findOne: vi.fn().mockImplementation(async ({ where: { uid } }: any) => ({ uid, records: [] })),
+                delete: vi.fn().mockResolvedValue(undefined),
+            };
             const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
             const aclUtils = makeAclUtils({
                 enabled: true,
@@ -317,9 +371,10 @@ describe("ACLUtils Tests (unit)", () => {
             });
 
             const uids: string[] = Array.from({ length: 250 }, (_, i) => `uid-${i}`);
-            await aclUtils.removeACLs(uids);
+            const removed = await aclUtils.removeACLs(uids);
 
             expect(fakeRepo.delete).toHaveBeenCalledTimes(250);
+            expect(removed.map((acl: any) => acl.uid)).toEqual(uids);
             for (const uid of uids) {
                 expect(fakeRepo.delete).toHaveBeenCalledWith({ uid });
             }
@@ -342,15 +397,15 @@ describe("ACLUtils Tests (unit)", () => {
             expect(fakeRepo.save).toHaveBeenCalledTimes(150);
         });
 
-        it("removeACLs() with an empty list does nothing", async () => {
-            const fakeRepo = { delete: vi.fn() };
+        it("removeACLs() with an empty list does nothing and returns an empty array", async () => {
+            const fakeRepo = { findOne: vi.fn(), delete: vi.fn() };
             const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
             const aclUtils = makeAclUtils({
                 enabled: true,
                 connMgr: { connections: new Map([["acl", fakeConnection]]) },
             });
 
-            await expect(aclUtils.removeACLs([])).resolves.toBeUndefined();
+            await expect(aclUtils.removeACLs([])).resolves.toEqual([]);
             expect(fakeRepo.delete).not.toHaveBeenCalled();
         });
     });

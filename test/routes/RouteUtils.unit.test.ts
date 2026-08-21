@@ -412,7 +412,10 @@ describe("RouteUtils.registerRoute", () => {
         expect(result).toEqual({ method: "jwt", user: { uid: "u1" } });
     });
 
-    it("rejects the pre-upgrade auth when authenticateSync throws", async () => {
+    it("falls through anonymous (does not reject) when authenticateSync throws and auth is not required", async () => {
+        // Regression test: an invalid/expired token on an optional-auth WS route must not reject the whole
+        // connection - it has to fall through the same as no token at all, matching the post-upgrade
+        // LOGIN-message path's (authWebSocket) equivalent handling for the same situation.
         @Route("/ws-route2")
         class WsRoute2 {
             @WebSocket("/connect")
@@ -431,6 +434,30 @@ describe("RouteUtils.registerRoute", () => {
         const app = makeApp();
         await routeUtils.registerRoute(app, new WsRoute2());
         const registered = app._registered["ws /ws-route2/connect"];
+        const result = registered.upgradeAuth(makeReq());
+        expect(result).toEqual({});
+    });
+
+    it("rejects the pre-upgrade auth when authenticateSync throws and auth is required", async () => {
+        @Route("/ws-route3")
+        class WsRoute3 {
+            @Auth(["jwt"], true)
+            @WebSocket("/connect")
+            public connect() {
+                return undefined;
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        routeUtils.authMiddleware = {
+            authenticateSync: vi.fn().mockImplementation(() => {
+                throw new Error("bad token");
+            }),
+            authWebSocket: vi.fn().mockReturnValue(vi.fn()),
+        };
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new WsRoute3());
+        const registered = app._registered["ws /ws-route3/connect"];
         const result = registered.upgradeAuth(makeReq());
         expect(result).toEqual({ reject: true });
     });

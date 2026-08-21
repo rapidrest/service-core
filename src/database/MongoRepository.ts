@@ -14,6 +14,7 @@ import type {
     Document,
     Filter,
     FindCursor,
+    FindOneAndDeleteOptions,
     FindOptions,
     InsertOneOptions,
     ReplaceOptions,
@@ -97,6 +98,19 @@ export class MongoRepository<T extends Document = any> {
     }
 
     /**
+     * Atomically finds and deletes the first document matching the given filter, returning the document that
+     * was deleted (or `null` if none matched). This is a single round trip rather than a separate `findOne()` +
+     * `deleteOne()`, so a caller that needs to know exactly what it removed (e.g. to snapshot it for a
+     * possible restore) isn't racing its own read against a concurrent write to the same document.
+     *
+     * @param filter The query filter to match documents against.
+     * @param options - Optional settings for the command
+     */
+    public findOneAndDelete(filter: Filter<T>, options?: FindOneAndDeleteOptions): Promise<T | null> {
+        return this.collection.findOneAndDelete(filter, options ?? {}) as Promise<T | null>;
+    }
+
+    /**
      * Returns the list of distinct values of the given field for all documents matching the given filter.
      *
      * @param field The name of the document field to return distinct values of.
@@ -130,14 +144,24 @@ export class MongoRepository<T extends Document = any> {
     }
 
     /**
-     * Saves the given document to the collection. If the document has an existing `_id` the stored document is
-     * replaced (inserting if missing), otherwise the document is inserted and its newly assigned `_id` is set on
-     * the returned object.
+     * Saves the given document to the collection. By default, if the document has an existing `_id` the stored
+     * document is replaced (inserting if missing), otherwise the document is inserted and its newly assigned
+     * `_id` is set on the returned object. This is the behavior a trackChanges-style caller relies on to keep
+     * multiple documents per `uid` (one per version): a document built for a fresh version deliberately carries
+     * no `_id` yet, and must always become a genuinely new row, never merged into an existing one.
+     *
+     * Pass `mergeByUid: true` to instead match (and replace, or insert if missing) by the document's `uid`, the
+     * framework's true logical primary key, regardless of whether `_id` was carried forward from a prior read.
+     * Useful for a single-row-per-uid document that may have been built fresh (e.g. by spreading an update onto
+     * a plain object) without preserving `_id`, where the default `_id`-only behavior would insert a *second*,
+     * duplicate document instead of updating the existing one (see `ACLUtils.saveACL()`).
      *
      * @param doc The document to save.
+     * @param options Driver options, plus optionally `mergeByUid` (see above).
      * @returns The saved document.
      */
-    public async save(doc: any, options?: InsertOneOptions | ReplaceOptions): Promise<T> {
+    public async save(doc: any, options?: (InsertOneOptions | ReplaceOptions) & { mergeByUid?: boolean }): Promise<T> {
+        const { mergeByUid, ...driverOptions } = options ?? {};
         const copy: any = { ...doc };
         // Strip any undefined properties so they are omitted from the stored document
         for (const key of Object.keys(copy)) {
@@ -146,10 +170,22 @@ export class MongoRepository<T extends Document = any> {
             }
         }
 
-        if (doc._id !== undefined && doc._id !== null) {
-            await this.collection.replaceOne({ _id: doc._id }, copy, { ...options, upsert: true });
+        if (mergeByUid && doc.uid !== undefined && doc.uid !== null) {
+            // MongoDB rejects a replacement document that tries to change an existing document's immutable
+            // `_id` — when matching by `uid` instead, drop whatever `_id` `doc` happened to carry and let the
+            // matched document keep its own (or let Mongo assign a fresh one on insert, captured below).
+            delete copy._id;
+            const result = await this.collection.replaceOne({ uid: doc.uid }, copy, {
+                ...driverOptions,
+                upsert: true,
+            });
+            if (result.upsertedId) {
+                doc._id = result.upsertedId;
+            }
+        } else if (doc._id !== undefined && doc._id !== null) {
+            await this.collection.replaceOne({ _id: doc._id }, copy, { ...driverOptions, upsert: true });
         } else {
-            const result = await this.collection.insertOne(copy, options);
+            const result = await this.collection.insertOne(copy, driverOptions);
             doc._id = result.insertedId;
         }
 

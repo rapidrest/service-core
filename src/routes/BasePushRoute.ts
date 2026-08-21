@@ -238,31 +238,36 @@ export class BasePushRoute {
 
         // Set up the close connection handler
         sock.on("close", async (code: number, reason: string) => {
-            // Unsubscribe from all redis pub/sub channels
-            const subs: string[] | undefined = this.activeSubs.get(user.uid);
-            if (subs && subs.length > 0) {
-                await redis.unsubscribe(subs);
-            }
+            // Serialized per user, same as SUBSCRIBE/UNSUBSCRIBE above: a close racing a concurrent
+            // connect()/SUBSCRIBE for the same user (a second open socket) must not interleave its
+            // read-modify-write of activeSocks/activeSubs with theirs, or one of the two updates is lost.
+            await this.runExclusive(user.uid, async () => {
+                // Unsubscribe from all redis pub/sub channels
+                const subs: string[] | undefined = this.activeSubs.get(user.uid);
+                if (subs && subs.length > 0) {
+                    await redis.unsubscribe(subs);
+                }
 
-            // Disconnect the redis client
-            await redis.disconnect();
+                // Disconnect the redis client
+                await redis.disconnect();
 
-            // Remove the socket from our tracked list
-            const socks: ws[] = this.activeSocks.get(user.uid) || [];
-            const idx: number = socks.indexOf(sock);
-            if (idx !== -1) {
-                socks.splice(idx, 1);
-            }
+                // Remove the socket from our tracked list
+                const socks: ws[] = this.activeSocks.get(user.uid) || [];
+                const idx: number = socks.indexOf(sock);
+                if (idx !== -1) {
+                    socks.splice(idx, 1);
+                }
 
-            // Once the user has no other open connections, drop their tracked state entirely rather than
-            // leaving a stale (activeSocks) or permanently-growing (activeSubs) entry behind — otherwise
-            // every distinct uid that ever connects, even once, leaks a map entry for the life of the process.
-            if (socks.length === 0) {
-                this.activeSocks.delete(user.uid);
-                this.activeSubs.delete(user.uid);
-            } else {
-                this.activeSocks.set(user.uid, socks);
-            }
+                // Once the user has no other open connections, drop their tracked state entirely rather than
+                // leaving a stale (activeSocks) or permanently-growing (activeSubs) entry behind — otherwise
+                // every distinct uid that ever connects, even once, leaks a map entry for the life of the process.
+                if (socks.length === 0) {
+                    this.activeSocks.delete(user.uid);
+                    this.activeSubs.delete(user.uid);
+                } else {
+                    this.activeSocks.set(user.uid, socks);
+                }
+            });
         });
     }
 

@@ -177,6 +177,25 @@ describe("BasePushRoute Tests (unit)", () => {
             expect(finalSubs.length).toBe(3);
         });
 
+        it("serializes the close handler through the same per-user lock as connect()/SUBSCRIBE/UNSUBSCRIBE", async () => {
+            // Regression test: the close handler used to mutate activeSocks/activeSubs directly, unguarded,
+            // unlike every other read-modify-write site on these maps - a close racing a concurrent
+            // connect()/SUBSCRIBE for the same user could interleave and lose one side's update.
+            const route = makeRoute();
+            const user = { uid: "u1" };
+            const sock = makeSock();
+
+            await route.connect(sock, user);
+            const runExclusiveSpy = vi.spyOn(route, "runExclusive");
+
+            const onClose = sock.on.mock.calls.find(([event]: [string]) => event === "close")![1];
+            await onClose(1000, "done");
+
+            expect(runExclusiveSpy).toHaveBeenCalledWith("u1", expect.any(Function));
+            expect(route.activeSocks.has("u1")).toBe(false);
+            expect(route.activeSubs.has("u1")).toBe(false);
+        });
+
         it("leaves existing subscriptions untouched when UNSUBSCRIBE names a channel the client isn't subscribed to", async () => {
             // Regression test: `origSubs.splice(origSubs.indexOf(channel), 1)` used to delete the *last*
             // tracked subscription whenever `channel` wasn't found (indexOf returns -1, splice(-1, 1)

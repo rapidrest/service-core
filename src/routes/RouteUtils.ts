@@ -347,10 +347,17 @@ export class RouteUtils {
                                             return result;
                                         }
                                     } catch (err: any) {
-                                        return { reject: true };
+                                        // An invalid/expired token must only reject the connection when this
+                                        // route actually requires auth - otherwise it has to fall through
+                                        // anonymous, the same as no token being sent at all, matching the
+                                        // post-upgrade LOGIN-message path's (authWebSocket) equivalent handling.
+                                        if (authRequired) {
+                                            return { reject: true };
+                                        }
                                     }
                                 }
-                                // No token — fall through to post-upgrade message-based auth
+                                // No token, or an optional auth failure — fall through to post-upgrade
+                                // message-based auth
                                 return {};
                             };
 

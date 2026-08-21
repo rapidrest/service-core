@@ -680,9 +680,11 @@ describe("RepoUtils ACL compensating actions on transaction rollback", () => {
         const snapshot: any = { uid: "u1", records: [{ userOrRoleId: "owner", actions: ["read"] }] };
         const aclUtils = {
             enabled: true,
-            findACL: vi.fn().mockResolvedValue(snapshot),
+            findACL: vi.fn().mockResolvedValue(snapshot), // used by delete()'s permission check
             hasPermission: vi.fn().mockResolvedValue(true),
-            removeACL: vi.fn().mockResolvedValue(undefined),
+            // removeACL() is now the sole (atomic) source of the restore snapshot - it returns exactly what
+            // it deleted, rather than a separate, earlier findACL() read.
+            removeACL: vi.fn().mockResolvedValue(snapshot),
             saveACL: vi.fn().mockResolvedValue(undefined),
         };
         repoUtils.aclUtils = aclUtils;
@@ -733,8 +735,9 @@ describe("RepoUtils ACL compensating actions on transaction rollback", () => {
         const aclUtils = {
             enabled: true,
             hasPermission: vi.fn().mockResolvedValue(true),
-            findACL: vi.fn().mockImplementation(async (uid: string) => snapshots[uid]),
-            removeACLs: vi.fn().mockResolvedValue(undefined),
+            // removeACLs() is now the sole (atomic) source of the restore snapshots - it returns exactly what
+            // it deleted, rather than a separate, earlier batch of findACL() reads.
+            removeACLs: vi.fn().mockResolvedValue([snapshots.u1, snapshots.u2]),
             saveACLs: vi.fn().mockResolvedValue(undefined),
         };
         repoUtils.aclUtils = aclUtils;

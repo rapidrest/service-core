@@ -652,15 +652,17 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
 
             if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-                // Snapshot before removing: `removeACL()` commits independently, on the `acl` connection's own
-                // transaction (see its doc comment) — if this (the entity-side) transaction later fails, its
-                // own abort can't undo that removal. The rollback hook restores this exact snapshot in that case.
-                const aclSnapshot: AccessControlList | undefined = await this.aclUtils.findACL(uid);
-                await this.aclUtils.removeACL(uid);
-                if (aclSnapshot) {
+                // `removeACL()` returns the exact document it deleted (captured atomically, not via a separate
+                // earlier read - see its doc comment) - used as the restore snapshot below. `removeACL()`
+                // commits independently, on the `acl` connection's own transaction; if this (the entity-side)
+                // transaction later fails, its own abort can't undo that removal, so the rollback hook restores
+                // the snapshot in that case. `saveACL()`'s own optimistic-lock version check means the restore
+                // can't clobber a newer row that appeared at this uid after the delete.
+                const removedAcl: AccessControlList | undefined = await this.aclUtils.removeACL(uid);
+                if (removedAcl) {
                     registerRollbackHook(async () => {
                         try {
-                            await this.aclUtils!.saveACL(aclSnapshot);
+                            await this.aclUtils!.saveACL(removedAcl);
                         } catch (err) {
                             this.logger?.warn(`RepoUtils: Failed to restore ACL ${uid} after a failed delete().`);
                             this.logger?.debug(err);
@@ -1098,21 +1100,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     }
                 }
 
-                // Snapshot each record's ACL before removing it below, so a rollback hook can restore them if
-                // this (entity-side) transaction subsequently fails - `removeACLs()` commits independently, on
-                // the `acl` connection's own transaction, and can't be rolled back by this transaction's abort.
                 const cleansUpRecordACLs: boolean = !!(this.aclUtils?.enabled && this.modelClass.recordACL);
-                const aclSnapshots: AccessControlList[] = [];
-                if (cleansUpRecordACLs) {
-                    const batchSize = 100;
-                    for (let i = 0; i < finalUids.length; i += batchSize) {
-                        const batch: string[] = finalUids.slice(i, i + batchSize);
-                        const found: (AccessControlList | undefined)[] = await Promise.all(
-                            batch.map((uid) => this.aclUtils!.findACL(uid)),
-                        );
-                        aclSnapshots.push(...found.filter((acl): acl is AccessControlList => !!acl));
-                    }
-                }
 
                 // Now delete all records that were found
                 if (this.repo instanceof MongoRepository) {
@@ -1131,14 +1119,20 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 }
 
                 if (cleansUpRecordACLs && finalUids.length > 0) {
-                    await this.aclUtils!.removeACLs(finalUids);
-                    if (aclSnapshots.length > 0) {
+                    // `removeACLs()` returns exactly what it deleted (captured atomically, not via a separate
+                    // earlier read - see `removeACL()`'s doc comment) - used directly as the restore snapshot.
+                    // It commits independently, on the `acl` connection's own transaction; if this (entity-side)
+                    // transaction later fails, its own abort can't undo that removal, so the rollback hook
+                    // restores the snapshot in that case. `saveACL()`'s own optimistic-lock version check means
+                    // the restore can't clobber a newer row that appeared at any of these uids after the delete.
+                    const removedAcls: AccessControlList[] = await this.aclUtils!.removeACLs(finalUids);
+                    if (removedAcls.length > 0) {
                         registerRollbackHook(async () => {
                             try {
-                                await this.aclUtils!.saveACLs(aclSnapshots);
+                                await this.aclUtils!.saveACLs(removedAcls);
                             } catch (err) {
                                 this.logger?.warn(
-                                    `RepoUtils: Failed to restore ${aclSnapshots.length} ACL(s) after a failed truncate().`,
+                                    `RepoUtils: Failed to restore ${removedAcls.length} ACL(s) after a failed truncate().`,
                                 );
                                 this.logger?.debug(err);
                             }
