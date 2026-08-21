@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.1.0
+
+- Upgrading project dependencies
+
 ## v1.0.0
 
 ### Features
