@@ -4,7 +4,7 @@
     "description": "Provides all core functionality for RapidREST based backend services.",
     "repository": "https://github.com/rapidrest/service-core.git",
     "author": "RapidREST <rapidrests@gmail.com>",
-    "license": "MIT",
+    "license": "MPL-2.0",
     "contributors": [
         "Jean-Philippe Steinmetz",
         "Arthur Thompson",
