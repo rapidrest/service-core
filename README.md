@@ -87,4 +87,4 @@ dependencies are optional and only need to be installed if you use the correspon
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MPL v2.0 — see [LICENSE](./LICENSE).
