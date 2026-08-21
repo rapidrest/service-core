@@ -102,7 +102,7 @@ export interface RepoUpdateOptions<T extends BaseEntity | SimpleEntity> extends 
  */
 export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     // Automatically injected by ObjectFactory on instantiation
-    private _objectFactory?: ObjectFactory;
+    protected _objectFactory?: ObjectFactory;
 
     @Inject("ACLUtils")
     protected aclUtils?: ACLUtils;

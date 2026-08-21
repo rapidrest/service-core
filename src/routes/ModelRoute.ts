@@ -14,7 +14,6 @@ import { ACLUtils } from "../security/ACLUtils.js";
 import { NotificationUtils } from "../NotificationUtils.js";
 import { NetUtils } from "../NetUtils.js";
 import { ObjectFactory } from "../ObjectFactory.js";
-import { ModelUtils } from "../models/ModelUtils.js";
 import { Transactional } from "../decorators/DatabaseDecorators.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
@@ -118,7 +117,7 @@ export interface UpdateRequestOptions<T extends BaseEntity | SimpleEntity> exten
  */
 export abstract class ModelRoute<T extends BaseEntity | SimpleEntity> {
     // Automatically injected by ObjectFactory on instantiation
-    private _objectFactory?: ObjectFactory;
+    protected _objectFactory?: ObjectFactory;
 
     @Inject(ACLUtils)
     protected aclUtils?: ACLUtils;

@@ -18,7 +18,7 @@ const { Config, Init } = ObjectDecorators;
  */
 export class AuthMiddleware {
     // Automatically injected by ObjectFactory on instantiation
-    private _objectFactory?: ObjectFactory;
+    protected _objectFactory?: ObjectFactory;
 
     @Config("auth")
     private authConfig: any;

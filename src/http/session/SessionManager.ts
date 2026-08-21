@@ -21,7 +21,7 @@ const { Redis } = DatabaseDecorators;
  */
 export class SessionManager {
     // Automatically injected by ObjectFactory on instantiation
-    private _objectFactory?: ObjectFactory;
+    protected _objectFactory?: ObjectFactory;
 
     @Config("session", {})
     private options: any;

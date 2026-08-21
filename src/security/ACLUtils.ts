@@ -24,7 +24,7 @@ const { Config, Init, Inject, Logger } = ObjectDecorators;
  */
 export class ACLUtils {
     // Automatically injected by ObjectFactory on instantiation
-    private _objectFactory?: ObjectFactory;
+    protected _objectFactory?: ObjectFactory;
 
     @Config("rbac:enabled", true)
     public enabled: boolean = true;
