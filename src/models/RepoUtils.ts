@@ -285,7 +285,25 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        const searchQuery: any = ModelUtils.buildSearchQuery(this.modelClass, this.repo, query, true, options?.user);
+        // A client-supplied `?deleted=true` filter overrides `buildSearchQuery()`'s default exclusion of
+        // soft-deleted rows. Counting a matched soft-deleted row requires the DELETE+UPDATE permissions.
+        const clientRequestsDeleted: boolean = query?.deleted === true || query?.deleted === "true";
+        const recordACL: boolean = !!this.modelClass.recordACL;
+        let effectiveQuery: any = query;
+        if (clientRequestsDeleted && this.aclUtils?.enabled && !options?.ignoreACL && !recordACL) {
+            if (!(await this.canViewDeleted(options?.user, this.defaultACLUid, txInfo))) {
+                effectiveQuery = { ...query };
+                delete effectiveQuery.deleted;
+            }
+        }
+
+        const searchQuery: any = ModelUtils.buildSearchQuery(
+            this.modelClass,
+            this.repo,
+            effectiveQuery,
+            true,
+            options?.user,
+        );
 
         // `buildSearchQuery()` auto-excludes soft-deleted rows for a RecoverableBaseEntity by default. We strip
         // that out of the query rather than trying to influence the exclusion via the input `query` object.
@@ -303,9 +321,18 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
-        if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
+        if (this.aclUtils?.enabled && !options?.ignoreACL && recordACL) {
             const uids: string[] = await this.findAllUids(searchQuery, options);
-            const permitted: string[] = await this.filterPermittedUids(uids, action, options);
+            let permitted: string[];
+            if (clientRequestsDeleted) {
+                // Every uid this query matched is, by construction, a soft-deleted record - check the restore
+                // bar per-record rather than the ordinary `action`.
+                const deleteOk: Set<string> = new Set(await this.filterPermittedUids(uids, ACLAction.DELETE, options));
+                const updateOk: string[] = await this.filterPermittedUids(uids, ACLAction.UPDATE, options);
+                permitted = updateOk.filter((uid) => deleteOk.has(uid));
+            } else {
+                permitted = await this.filterPermittedUids(uids, action, options);
+            }
             return permitted.length;
         }
 
@@ -340,7 +367,6 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
         }
 
-        let count: number = 0;
         const action: string = options?.action ?? ACLAction.EXISTS;
         const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
@@ -357,25 +383,64 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        // Excludes soft-deleted records by default, unless `includeDeleted` is set to `true`.
-        const query: any = this.searchIdQuery(id, options?.version, options?.includeDeleted ?? false);
+        // Ordinary (live-record) existence check, respecting `action`/record-level ACLs exactly as before.
+        let count: number = await this.existsQuery(id, options, false, action);
+
+        // A soft-deleted record only counts as "existing" for a caller with both DELETE and UPDATE permission.
+        if (count === 0 && options?.includeDeleted) {
+            let canRestore: boolean = true;
+            if (this.aclUtils?.enabled && !options?.ignoreACL) {
+                const restoreAclUid: string = this.modelClass.recordACL ? id : this.defaultACLUid;
+                canRestore = await this.canViewDeleted(options?.user, restoreAclUid, txInfo);
+            }
+            if (canRestore) {
+                // Permission for the deleted record was already established above, so this pass runs as a raw
+                // existence check rather than re-deriving/re-checking `action` (which the record's ACL may not
+                // grant even to someone who can restore it).
+                count = await this.existsQuery(id, options, true, null);
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * Runs the actual existence check/count for `exists()`, deduped by uid and clamped to at most 1. Split out
+     * so `exists()` can run it twice — once for a live record, once (gated on DELETE+UPDATE permission) for a
+     * soft-deleted one — without duplicating the Mongo/SQL/record-ACL branching.
+     *
+     * @param id The unique identifier of the object to check for.
+     * @param options The additional options to consider, such as `version`.
+     * @param includeDeleted Whether to match a soft-deleted record.
+     * @param enforceAction The ACL action to check per matched record on a `recordACL` model, or `null` to skip
+     * that check (used for the second, already-authorized `includeDeleted` pass).
+     */
+    private async existsQuery(
+        id: string,
+        options: RepoFindOptions | undefined,
+        includeDeleted: boolean,
+        enforceAction: string | null,
+    ): Promise<number> {
+        if (!this.repo) {
+            throw new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR);
+        }
+
+        const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         // Without an explicit version, `query` matches every historical row sharing this uid on a trackChanges
         // entity - existence is still a yes/no question about the uid itself, so results are deduped by uid and
         // the final count clamped to at most 1, rather than reporting the number of matching version rows.
+        const query: any = this.searchIdQuery(id, options?.version, includeDeleted);
 
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
         // individually and counted rather than delegating the count to the database.
-        if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
+        if (enforceAction && this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
             const uids: string[] = await this.findAllUids(query);
-            const permitted: string[] = await this.filterPermittedUids(uids, action, options);
-            if (permitted.length > 0) {
-                count++;
-            }
-
-            return count;
+            const permitted: string[] = await this.filterPermittedUids(uids, enforceAction, options);
+            return permitted.length > 0 ? 1 : 0;
         }
 
+        let count: number;
         if (this.repo instanceof MongoRepository) {
             count = await this.repo.count(query, { session: txInfo?.session });
         } else {
@@ -515,11 +580,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.cache) {
-            // Cache the object for faster retrieval
+            // Cache the object for faster retrieval.
             const query: any = this.searchIdQuery(newObj.uid);
             const cacheKey: string = this.hashQuery(query);
-            void this.cache.save(cacheKey, result);
-            void this.cache.save(result.uid, result);
+            this.cache.save(cacheKey, result).catch((err) => this.logCacheError("save", err));
+            this.cache.save(result.uid, result).catch((err) => this.logCacheError("save", err));
         }
 
         // Process the result to remove any properties that have been scoped with @RequiresScope that the user
@@ -600,10 +665,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.cache) {
-            // Delete the object from cache
-            void this.cache.delete(uid);
-            void this.cache.delete(this.hashQuery(query));
-            void this.cache.delete(this.hashQuery(this.searchIdQuery(uid)));
+            // Delete the object from cache.
+            this.cache.delete(uid).catch((err) => this.logCacheError("delete", err));
+            this.cache.delete(this.hashQuery(query)).catch((err) => this.logCacheError("delete", err));
+            this.cache
+                .delete(this.hashQuery(this.searchIdQuery(uid)))
+                .catch((err) => this.logCacheError("delete", err));
         }
 
         if (!options?.skipPush) {
@@ -701,10 +768,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
             // Cache the results for future requests. Don't bother if there were no results.
             if (results.length > 0 && this.cache) {
-                void this.cache.saveSet(searchQueryHash, results);
+                this.cache.saveSet(searchQueryHash, results).catch((err) => this.logCacheError("saveSet", err));
                 // Also seed each individual object's own cache entry.
                 const ids: string[] = results.map((obj) => this.hashQuery(this.searchIdQuery(obj.uid)));
-                void this.cache.saveMany(ids, results);
+                this.cache.saveMany(ids, results).catch((err) => this.logCacheError("saveMany", err));
             }
         }
 
@@ -713,11 +780,21 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // checks are run concurrently, and share a request-scoped ACL cache, so that a page of N results costs
         // at most one round trip per *distinct* ACL uid (typically just the shared parent, since per-record
         // ACLs are rarely warm in Redis) instead of N sequential round trips.
-        if (this.aclUtils?.enabled && !options?.ignoreACL && this.modelClass.recordACL) {
+        //
+        // A soft-deleted row can appear in `results` despite `buildSearchQuery()`'s default exclusion via a client
+        // supplying its own `deleted` query param, which the query builder honors as-is. Such a row needs the
+        // same DELETE+UPDATE permission.
+        if (this.aclUtils?.enabled && !options?.ignoreACL) {
+            const recordACL: boolean = !!this.modelClass.recordACL;
             const permitted: boolean[] = await Promise.all(
-                results.map((obj) =>
-                    this.aclUtils!.hasPermission(options?.user, obj.uid, action, { transaction: txInfo }),
-                ),
+                results.map((obj) => {
+                    if ((obj as any).deleted === true) {
+                        return this.canViewDeleted(options?.user, recordACL ? obj.uid : this.defaultACLUid, txInfo);
+                    }
+                    return recordACL
+                        ? this.aclUtils!.hasPermission(options?.user, obj.uid, action, { transaction: txInfo })
+                        : Promise.resolve(true);
+                }),
             );
             results = results.filter((_obj, i) => permitted[i]);
         }
@@ -787,7 +864,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         if (existing) {
             if (this.cache) {
                 // Cache the object for faster retrieval
-                void this.cache.save(this.hashQuery(query), existing);
+                this.cache.save(this.hashQuery(query), existing).catch((err) => this.logCacheError("save", err));
             }
 
             // Check user permissions
@@ -795,17 +872,26 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 const acl: AccessControlList | undefined = await this.aclUtils.findACL(existing.uid, undefined, {
                     transaction: txInfo,
                 });
-                const action: string = options?.action ?? ACLAction.READ;
-                if (
-                    !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, action, {
-                        transaction: txInfo,
-                    }))
-                ) {
-                    throw new ApiError(
-                        ApiErrors.AUTH_PERMISSION_FAILURE,
-                        403,
-                        ApiErrorMessages.AUTH_PERMISSION_FAILURE,
-                    );
+
+                if ((existing as any).deleted === true) {
+                    // Viewing a soft-deleted record (opted into via `includeDeleted`) requires both DELETE and UPDATE
+                    // permission, the two actions actually needed to restore the record.
+                    if (!(await this.canViewDeleted(options?.user, acl ? acl : this.defaultACLUid, txInfo))) {
+                        existing = null;
+                    }
+                } else {
+                    const action: string = options?.action ?? ACLAction.READ;
+                    if (
+                        !(await this.aclUtils.hasPermission(options?.user, acl ? acl : this.defaultACLUid, action, {
+                            transaction: txInfo,
+                        }))
+                    ) {
+                        throw new ApiError(
+                            ApiErrors.AUTH_PERMISSION_FAILURE,
+                            403,
+                            ApiErrorMessages.AUTH_PERMISSION_FAILURE,
+                        );
+                    }
                 }
             }
         }
@@ -839,6 +925,38 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         return result;
+    }
+
+    /**
+     * Checks whether the caller has both `DELETE` and `UPDATE` permission against the given ACL (or ACL uid).
+     * Ordinary READ/LIST/EXISTS permission on a record says nothing about whether its owner
+     * consented to its "deleted" state being visible, so those two actions (the ones actually needed to
+     * restore the record) are required instead.
+     *
+     * @param user The user to check.
+     * @param acl The ACL (or ACL uid) governing the record.
+     * @param txInfo The active transaction, if any.
+     */
+    private async canViewDeleted(
+        user: JWTUser | undefined,
+        acl: AccessControlList | string,
+        txInfo: TransactionInfo | undefined,
+    ): Promise<boolean> {
+        return (
+            (await this.aclUtils!.hasPermission(user, acl, ACLAction.DELETE, { transaction: txInfo })) &&
+            (await this.aclUtils!.hasPermission(user, acl, ACLAction.UPDATE, { transaction: txInfo }))
+        );
+    }
+
+    /**
+     * Logs a swallowed error from a fire-and-forget cache operation. Cache reads/writes are best-effort and
+     * must never propagate into (and thus fail/retry) the write they're attached to.
+     * @param op The cache operation that failed (e.g. "save", "delete").
+     * @param err The error thrown by the cache operation.
+     */
+    private logCacheError(op: string, err: any): void {
+        this.logger?.warn(`RepoUtils: Cache ${op} failed for ${this.modelClass?.name}.`);
+        this.logger?.debug(err);
     }
 
     /**
@@ -1197,9 +1315,11 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         result = this.instantiateObject(result);
 
         if (result && this.cache) {
-            // Cache the object for faster retrieval
-            void this.cache.save(this.hashQuery(query), result);
-            void this.cache.save(this.hashQuery(this.searchIdQuery(result.uid)), result);
+            // Cache the object for faster retrieval.
+            this.cache.save(this.hashQuery(query), result).catch((err) => this.logCacheError("save", err));
+            this.cache
+                .save(this.hashQuery(this.searchIdQuery(result.uid)), result)
+                .catch((err) => this.logCacheError("save", err));
         }
 
         // Process the result to remove any properties that have been scoped with @RequiresScope that the user

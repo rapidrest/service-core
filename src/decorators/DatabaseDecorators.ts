@@ -11,6 +11,8 @@ import { MongoConnection } from "../database/MongoConnection.js";
 export interface TransactionContext {
     session?: any;
     entityManager?: any;
+    /** The datasource name this context's session/entityManager belongs to, used to guard merging (see `Transactional`). */
+    datasource?: string;
 }
 
 /**
@@ -204,10 +206,7 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
             }
 
             // Injects the active session/entityManager into any @MongoSession/@EntityManager-decorated argument
-            // whose named datasource (if any) matches the one this call resolved above. Note that `ctx` is not
-            // re-verified against `datasource` when it was inherited from an outer call (the merge case below).
-            // An outer @Transactional for a *different* datasource being merged into is a caller error, and the
-            // resulting session/entityManager mismatch will surface loudly via the driver rather than silently.
+            // whose named datasource (if any) matches the one this call resolved above.
             const injectContextArgs = (ctx: TransactionContext) => {
                 for (const key in argMetadata) {
                     const i: number = Number(key);
@@ -227,8 +226,18 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
             // `options.mode` is omitted, or explicitly TransactionalMode.MERGE) that existing context is reused
             // instead of opening a second, nested transaction of its own. Pass `{ mode: TransactionalMode.CREATE }`
             // to always start a fresh transaction regardless of any outer one.
+            //
+            // Only merge when the existing context actually belongs to *this* call's resolved datasource — an
+            // outer @Transactional("datasourceA") whose context is still active when an inner call resolves
+            // "datasourceB" must not merge into it (that would silently run the inner call's writes against the
+            // wrong connection, or leave it non-transactional if the shapes don't line up). In that case fall
+            // through below and open a genuinely independent transaction for this call's own datasource instead.
             const existingContext: TransactionContext | undefined = transactionContext.getStore();
-            if (existingContext !== undefined && options?.mode !== TransactionalMode.CREATE) {
+            if (
+                existingContext !== undefined &&
+                existingContext.datasource === datasource &&
+                options?.mode !== TransactionalMode.CREATE
+            ) {
                 injectContextArgs(existingContext);
                 return await original.apply(this, args);
             }
@@ -248,7 +257,9 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
 
                         // Scope the session to this call's async context (see `transactionContext`) rather than
                         // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
-                        result = await transactionContext.run({ session }, () => original.apply(this, args));
+                        result = await transactionContext.run({ session, datasource }, () =>
+                            original.apply(this, args),
+                        );
                     });
                 } finally {
                     await session.endSession();
@@ -262,7 +273,9 @@ export function Transactional(source?: string | any, options?: TransactionalOpti
 
                     // Scope the entityManager to this call's async context (see `transactionContext`) rather than
                     // stashing it on `this`, which may be a singleton shared with concurrent, unrelated calls.
-                    result = await transactionContext.run({ entityManager }, () => original.apply(this, args));
+                    result = await transactionContext.run({ entityManager, datasource }, () =>
+                        original.apply(this, args),
+                    );
                 });
             }
 

@@ -208,6 +208,48 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
             const result = await repoUtils.findOne("missing", { includeDeleted: true });
             expect(result).toBeUndefined();
         });
+
+        it("hides a soft-deleted record from a caller lacking DELETE+UPDATE permission, even with includeDeleted", async () => {
+            const deletedRecord = { uid: "u1", deleted: true, version: 0 };
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.find = vi.fn().mockReturnValue({ next: vi.fn().mockResolvedValue(deletedRecord) });
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = {
+                enabled: true,
+                findACL: vi.fn().mockResolvedValue(undefined),
+                hasPermission: vi.fn().mockResolvedValue(false),
+            };
+
+            const result = await repoUtils.findOne("u1", { includeDeleted: true });
+            expect(result).toBeUndefined();
+        });
+
+        it("returns a soft-deleted record to a caller with DELETE+UPDATE permission", async () => {
+            const deletedRecord = { uid: "u1", deleted: true, version: 0 };
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.find = vi.fn().mockReturnValue({ next: vi.fn().mockResolvedValue(deletedRecord) });
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = {
+                enabled: true,
+                findACL: vi.fn().mockResolvedValue(undefined),
+                hasPermission: vi.fn().mockResolvedValue(true),
+            };
+
+            const result = await repoUtils.findOne("u1", { includeDeleted: true });
+            expect(result?.uid).toBe("u1");
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
+                undefined,
+                repoUtils.defaultACLUid,
+                "delete",
+                expect.anything(),
+            );
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
+                undefined,
+                repoUtils.defaultACLUid,
+                "update",
+                expect.anything(),
+            );
+        });
     });
 
     describe("exists()", () => {
@@ -224,6 +266,24 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
         });
 
         it("matches a soft-deleted record's query when includeDeleted is set", async () => {
+            // The live (non-deleted) pass finds nothing; only the second, includeDeleted pass matches. No
+            // aclUtils is configured on this bare RepoUtils, so the DELETE+UPDATE restore-permission gate is
+            // skipped (treated as satisfied) and the second pass always runs.
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.count = vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+
+            const result = await repoUtils.exists("u1", { includeDeleted: true });
+
+            expect(result).toBe(1);
+            expect(fakeRepo.count).toHaveBeenCalledTimes(2);
+            const [liveQuery] = fakeRepo.count.mock.calls[0];
+            expect(liveQuery.$or[0].deleted).toBe(false);
+            const [deletedQuery] = fakeRepo.count.mock.calls[1];
+            expect(deletedQuery.$or[0]).not.toHaveProperty("deleted");
+        });
+
+        it("does not run the includeDeleted pass at all when the live record is already found", async () => {
             const fakeRepo: any = Object.create(MongoRepository.prototype);
             fakeRepo.count = vi.fn().mockResolvedValue(1);
             const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
@@ -231,8 +291,312 @@ describe("RepoUtils soft-delete visibility (includeDeleted)", () => {
             const result = await repoUtils.exists("u1", { includeDeleted: true });
 
             expect(result).toBe(1);
-            const [query] = fakeRepo.count.mock.calls[0];
-            expect(query.$or[0]).not.toHaveProperty("deleted");
+            expect(fakeRepo.count).toHaveBeenCalledTimes(1);
         });
+
+        it("does not surface a soft-deleted record to a caller lacking DELETE+UPDATE permission", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.count = vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = {
+                enabled: true,
+                // Grants the ordinary EXISTS action (so the class-level gate at the top of exists() passes),
+                // but not DELETE/UPDATE (the restore-permission gate for the includeDeleted pass).
+                hasPermission: vi.fn().mockImplementation(async (_user: any, _acl: any, action: string) => action === "exists"),
+            };
+            repoUtils.defaultACLUid = "default-acl";
+
+            const result = await repoUtils.exists("u1", { includeDeleted: true });
+
+            expect(result).toBe(0);
+            // Only the live-record pass ran; the second pass was blocked by the failed permission check.
+            expect(fakeRepo.count).toHaveBeenCalledTimes(1);
+        });
+
+        it("surfaces a soft-deleted record to a caller with DELETE+UPDATE permission", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.count = vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = {
+                enabled: true,
+                hasPermission: vi.fn().mockResolvedValue(true),
+            };
+            repoUtils.defaultACLUid = "default-acl";
+
+            const result = await repoUtils.exists("u1", { includeDeleted: true });
+
+            expect(result).toBe(1);
+            expect(fakeRepo.count).toHaveBeenCalledTimes(2);
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
+                undefined,
+                "default-acl",
+                "delete",
+                expect.anything(),
+            );
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
+                undefined,
+                "default-acl",
+                "update",
+                expect.anything(),
+            );
+        });
+    });
+
+    describe("find()", () => {
+        it("does not filter out live results when aclUtils is disabled/absent", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.find = vi.fn().mockReturnValue({
+                toArray: vi.fn().mockResolvedValue([{ uid: "u1", deleted: false }]),
+            });
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+
+            const result = await repoUtils.find({});
+            expect(result.length).toBe(1);
+        });
+
+        it("hides a soft-deleted result from a caller lacking DELETE+UPDATE permission (non-recordACL model)", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.find = vi.fn().mockReturnValue({
+                toArray: vi.fn().mockResolvedValue([
+                    { uid: "live", deleted: false },
+                    { uid: "gone", deleted: true },
+                ]),
+            });
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = {
+                enabled: true,
+                // Grants the ordinary LIST action (class-level gate) but not DELETE/UPDATE.
+                hasPermission: vi
+                    .fn()
+                    .mockImplementation(async (_user: any, _acl: any, action: string) => action === "list"),
+            };
+            repoUtils.defaultACLUid = "default-acl";
+
+            const result = await repoUtils.find({});
+
+            expect(result.map((r: any) => r.uid)).toEqual(["live"]);
+        });
+
+        it("includes a soft-deleted result for a caller with DELETE+UPDATE permission (non-recordACL model)", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.find = vi.fn().mockReturnValue({
+                toArray: vi.fn().mockResolvedValue([
+                    { uid: "live", deleted: false },
+                    { uid: "gone", deleted: true },
+                ]),
+            });
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = { enabled: true, hasPermission: vi.fn().mockResolvedValue(true) };
+            repoUtils.defaultACLUid = "default-acl";
+
+            const result = await repoUtils.find({});
+
+            expect(result.map((r: any) => r.uid).sort()).toEqual(["gone", "live"]);
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
+                undefined,
+                "default-acl",
+                "delete",
+                expect.anything(),
+            );
+            expect(repoUtils.aclUtils.hasPermission).toHaveBeenCalledWith(
+                undefined,
+                "default-acl",
+                "update",
+                expect.anything(),
+            );
+        });
+
+        it("checks a soft-deleted result's own record ACL (not the class ACL) for a recordACL model", async () => {
+            class RecoverableRecordACLItem extends RecoverableBaseMongoEntity {}
+            (RecoverableRecordACLItem as any).recordACL = true;
+
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.find = vi.fn().mockReturnValue({
+                toArray: vi.fn().mockResolvedValue([{ uid: "gone", deleted: true }]),
+            });
+            const repoUtils: any = new RepoUtils(RecoverableRecordACLItem, fakeRepo);
+            const hasPermission = vi.fn().mockResolvedValue(true);
+            repoUtils.aclUtils = { enabled: true, hasPermission };
+
+            const result = await repoUtils.find({});
+
+            expect(result.map((r: any) => r.uid)).toEqual(["gone"]);
+            // Checked against the record's own uid, not the (unset) class-level defaultACLUid.
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "gone", "delete", expect.anything());
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "gone", "update", expect.anything());
+        });
+    });
+
+    describe("count()", () => {
+        it("does not touch the query for an ordinary (non-?deleted=true) count", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.count = vi.fn().mockResolvedValue(3);
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = { enabled: true, hasPermission: vi.fn().mockResolvedValue(true) };
+
+            const result = await repoUtils.count({ uid: "u1" });
+
+            expect(result).toBe(3);
+            const [matchArg] = fakeRepo.count.mock.calls[0];
+            expect(matchArg.deleted).toBe(false);
+        });
+
+        it("strips a client's ?deleted=true override and falls back to the live count for a caller lacking DELETE+UPDATE (non-recordACL)", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.count = vi.fn().mockResolvedValue(9);
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = {
+                enabled: true,
+                // Grants the ordinary COUNT action (class-level gate) but not DELETE/UPDATE.
+                hasPermission: vi
+                    .fn()
+                    .mockImplementation(async (_user: any, _acl: any, action: string) => action === "count"),
+            };
+            repoUtils.defaultACLUid = "default-acl";
+
+            const result = await repoUtils.count({ uid: "u1", deleted: true });
+
+            expect(result).toBe(9);
+            const [matchArg] = fakeRepo.count.mock.calls[0];
+            // The override was stripped back out, so the default exclusion applies again.
+            expect(matchArg.deleted).toBe(false);
+        });
+
+        it("honors a client's ?deleted=true override for a caller with DELETE+UPDATE (non-recordACL)", async () => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.count = vi.fn().mockResolvedValue(9);
+            const repoUtils: any = new RepoUtils(RecoverableMongoItem, fakeRepo);
+            repoUtils.aclUtils = { enabled: true, hasPermission: vi.fn().mockResolvedValue(true) };
+            repoUtils.defaultACLUid = "default-acl";
+
+            const result = await repoUtils.count({ uid: "u1", deleted: true });
+
+            expect(result).toBe(9);
+            const [matchArg] = fakeRepo.count.mock.calls[0];
+            expect(matchArg.deleted).toBe(true);
+        });
+
+        it("gates a recordACL model's ?deleted=true count by DELETE+UPDATE per uid instead of the ordinary action", async () => {
+            class RecoverableRecordACLItem extends RecoverableBaseMongoEntity {}
+            (RecoverableRecordACLItem as any).recordACL = true;
+
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.distinct = vi.fn().mockResolvedValue(["allowed", "denied"]);
+            const repoUtils: any = new RepoUtils(RecoverableRecordACLItem, fakeRepo);
+            const hasPermission = vi.fn().mockImplementation(async (_user: any, uid: string, action: string) => {
+                if (action === "count") return true; // class-level gate at the top of count()
+                if (uid === "allowed") return true;
+                // "denied" has UPDATE but not DELETE - must not count as restorable.
+                return action === "update";
+            });
+            repoUtils.aclUtils = { enabled: true, hasPermission };
+
+            const result = await repoUtils.count({ uid: "u1", deleted: true });
+
+            expect(result).toBe(1);
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "allowed", "delete", expect.anything());
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "allowed", "update", expect.anything());
+            expect(hasPermission).toHaveBeenCalledWith(undefined, "denied", "delete", expect.anything());
+        });
+    });
+});
+
+// A cache failure is a best-effort side effect and must never fail (or, under MongoDB's
+// withTransaction() retry semantics, cause a retry of) the write it's attached to. These
+// exercise every RepoUtils call site that fires a cache write without awaiting it.
+describe("RepoUtils cache writes are fire-and-forget", () => {
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    beforeAll(() => {
+        ModelUtils.setTypeOrm(typeorm);
+    });
+
+    it("create() still returns successfully when cache.save rejects", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.count = vi.fn().mockResolvedValue(0);
+        fakeRepo.save = vi.fn().mockImplementation(async (obj: any) => obj);
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+        repoUtils.cache = { save: vi.fn().mockRejectedValue(new Error("cache down")) };
+
+        const result = await repoUtils.create({ name: "u-create" }, { ignoreACL: true });
+        expect(result).toBeDefined();
+
+        await flush();
+        expect(repoUtils.cache.save).toHaveBeenCalledTimes(2);
+        expect(repoUtils.logger.warn).toHaveBeenCalled();
+    });
+
+    it("delete() still returns successfully when cache.delete rejects", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.deleteMany = vi.fn().mockResolvedValue(undefined);
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+        repoUtils.cache = { delete: vi.fn().mockRejectedValue(new Error("cache down")) };
+
+        await expect(repoUtils.delete("u1", { ignoreACL: true })).resolves.toBeUndefined();
+
+        await flush();
+        expect(repoUtils.cache.delete).toHaveBeenCalledTimes(3);
+        expect(repoUtils.logger.warn).toHaveBeenCalled();
+    });
+
+    it("update() still returns successfully when cache.save rejects", async () => {
+        const existing = new User({ uid: "u1", version: 0, name: "before" });
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.updateOne = vi.fn().mockResolvedValue(undefined);
+        fakeRepo.findOne = vi.fn().mockResolvedValue({ uid: "u1", version: 1, name: "after" });
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+        repoUtils.cache = { save: vi.fn().mockRejectedValue(new Error("cache down")) };
+
+        const result = await repoUtils.update(
+            { uid: "u1", version: 0, name: "after" },
+            existing,
+            { ignoreACL: true },
+        );
+        expect(result).toBeDefined();
+
+        await flush();
+        expect(repoUtils.cache.save).toHaveBeenCalledTimes(2);
+        expect(repoUtils.logger.warn).toHaveBeenCalled();
+    });
+
+    it("find() still returns results when cache.saveSet/saveMany reject", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.find = vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ uid: "u1" }]) });
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+        repoUtils.cache = {
+            loadSet: vi.fn().mockResolvedValue(undefined),
+            saveSet: vi.fn().mockRejectedValue(new Error("cache down")),
+            saveMany: vi.fn().mockRejectedValue(new Error("cache down")),
+        };
+
+        const result = await repoUtils.find({}, { ignoreACL: true });
+        expect(result.length).toBe(1);
+
+        await flush();
+        expect(repoUtils.cache.saveSet).toHaveBeenCalled();
+        expect(repoUtils.cache.saveMany).toHaveBeenCalled();
+        expect(repoUtils.logger.warn).toHaveBeenCalled();
+    });
+
+    it("findOne() still returns a result when cache.save rejects", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.find = vi.fn().mockReturnValue({ next: vi.fn().mockResolvedValue({ uid: "u1", version: 0 }) });
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+        repoUtils.logger = { warn: vi.fn(), debug: vi.fn() };
+        repoUtils.cache = {
+            load: vi.fn().mockResolvedValue(undefined),
+            save: vi.fn().mockRejectedValue(new Error("cache down")),
+        };
+
+        const result = await repoUtils.findOne("u1", { ignoreACL: true });
+        expect(result?.uid).toBe("u1");
+
+        await flush();
+        expect(repoUtils.cache.save).toHaveBeenCalled();
+        expect(repoUtils.logger.warn).toHaveBeenCalled();
     });
 });

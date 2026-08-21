@@ -212,5 +212,93 @@ describe("ACLUtils Tests (unit)", () => {
             const aclUtils = makeAclUtils();
             expect(aclUtils.getRecord(undefined as any, undefined)).toBeNull();
         });
+
+        it("prefers a specific-uid deny record over an earlier wildcard grant, regardless of array order", () => {
+            // Regression test: an ACL author listing a broad wildcard grant before a specific per-user
+            // record (a natural authoring order — "everyone except banned_user") must not have the specific
+            // record silently shadowed by the earlier wildcard match.
+            const aclUtils = makeAclUtils();
+            const acl: any = {
+                records: [
+                    { userOrRoleId: ".*", actions: ["read", "update", "delete"] },
+                    { userOrRoleId: "banned_user", actions: [] },
+                ],
+            };
+
+            const record = aclUtils.getRecord(acl, { uid: "banned_user", roles: [] });
+            expect(record?.userOrRoleId).toBe("banned_user");
+            expect(record?.actions).toEqual([]);
+        });
+
+        it("prefers a role match over an earlier wildcard match", () => {
+            const aclUtils = makeAclUtils();
+            const acl: any = {
+                records: [
+                    { userOrRoleId: ".*", actions: ["read"] },
+                    { userOrRoleId: "admin", actions: ["full"] },
+                ],
+            };
+
+            const record = aclUtils.getRecord(acl, { uid: "u1", roles: ["admin"] });
+            expect(record?.userOrRoleId).toBe("admin");
+        });
+
+        it("still falls back to a wildcard match when no more specific record matches", () => {
+            const aclUtils = makeAclUtils();
+            const acl: any = {
+                records: [
+                    { userOrRoleId: ".*", actions: ["read"] },
+                    { userOrRoleId: "someone-else", actions: ["full"] },
+                ],
+            };
+
+            const record = aclUtils.getRecord(acl, { uid: "u1", roles: [] });
+            expect(record?.userOrRoleId).toBe(".*");
+        });
+    });
+
+    // A cache failure is a best-effort side effect and must never fail the read/write it's attached to.
+    describe("cache writes are fire-and-forget", () => {
+        const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+        it("findACL() still returns the ACL when cache.save rejects", async () => {
+            const fakeRepo = { findOne: vi.fn().mockResolvedValue({ uid: "x", records: [] }) };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+            aclUtils.cache = {
+                load: vi.fn().mockResolvedValue(undefined),
+                save: vi.fn().mockRejectedValue(new Error("cache down")),
+            };
+
+            const result = await aclUtils.findACL("x");
+            expect(result?.uid).toBe("x");
+
+            await flush();
+            expect(aclUtils.cache.save).toHaveBeenCalled();
+            expect(aclUtils.logger.warn).toHaveBeenCalled();
+        });
+
+        it("saveACL() still returns the saved ACL when cache.save rejects", async () => {
+            const fakeRepo = {
+                findOne: vi.fn().mockResolvedValue(null),
+                save: vi.fn().mockImplementation(async (x: any) => x),
+            };
+            const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+            const aclUtils = makeAclUtils({
+                enabled: true,
+                connMgr: { connections: new Map([["acl", fakeConnection]]) },
+            });
+            aclUtils.cache = { save: vi.fn().mockRejectedValue(new Error("cache down")) };
+
+            const result = await aclUtils.saveACL({ uid: "x", records: [] } as any);
+            expect(result?.uid).toBe("x");
+
+            await flush();
+            expect(aclUtils.cache.save).toHaveBeenCalled();
+            expect(aclUtils.logger.warn).toHaveBeenCalled();
+        });
     });
 });

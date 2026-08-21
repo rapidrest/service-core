@@ -30,4 +30,15 @@ describe("NotificationUtils Tests", () => {
             JSON.stringify({ type: "type", action: "action", data: { a: 1 } })
         );
     });
+
+    it("does not throw and logs a warning when a publish rejects", async () => {
+        const redis = { publish: vi.fn().mockRejectedValue(new Error("redis down")) };
+        const utils: any = new NotificationUtils(redis as any);
+        utils.logger = { warn: vi.fn(), debug: vi.fn() };
+
+        expect(() => utils.sendMessage("uid1", "type", "action", { a: 1 })).not.toThrow();
+
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(utils.logger.warn).toHaveBeenCalled();
+    });
 });

@@ -77,24 +77,27 @@ export class ACLUtils {
     }
 
     /**
-     * Checks to see if the provided user matches the providedUserOrRoleId.
+     * Classifies how specifically the given user matches the provided ACL record id. Used by `getRecord()` to
+     * prefer the most specific match among a record's siblings, rather than the first one in array order.
      * @param user The user to check.
      * @param userOrRoleId The ACL record id to check against.
-     * @returns `true` if the user contains a `uid` or `role` that matches the `userOrRoleId`, otherwise `false`.
+     * @returns `"exact"` for a direct uid/anonymous match, `"role"` for a role match, `"wildcard"` for a `.*`/`*`
+     * match, or `"none"` if the user doesn't match this id at all.
      */
-    private userMatchesId(user: JWTUser | undefined, userOrRoleId: string): boolean {
+    private matchSpecificity(
+        user: JWTUser | undefined,
+        userOrRoleId: string,
+    ): "exact" | "role" | "wildcard" | "none" {
         if (!user?.uid) {
-            return userOrRoleId === "anonymous";
+            // Wildcards only ever match an *authenticated* user (see the check below) — an anonymous caller
+            // can only match a record explicitly keyed "anonymous".
+            return userOrRoleId === "anonymous" ? "exact" : "none";
         }
+        if (user.uid === userOrRoleId) return "exact";
+        if (user.roles?.includes(userOrRoleId)) return "role";
         // Explicit wildcards — match any authenticated user; no regex engine involved
-        if (userOrRoleId === ".*" || userOrRoleId === "*") return true;
-        if (user.uid === userOrRoleId) return true;
-        if (user.roles) {
-            for (const role of user.roles) {
-                if (role === userOrRoleId) return true;
-            }
-        }
-        return false;
+        if (userOrRoleId === ".*" || userOrRoleId === "*") return "wildcard";
+        return "none";
     }
 
     /**
@@ -230,9 +233,12 @@ export class ACLUtils {
             }
         }
 
-        // Store a copy in the cache for faster retrieval next time
+        // Store a copy in the cache for faster retrieval next time.
         if (acl && this.cache) {
-            void this.cache.save(entityId, acl);
+            this.cache.save(entityId, acl).catch((err) => {
+                this.logger?.warn(`ACLUtils: Cache save failed for ACL ${entityId}.`);
+                this.logger?.debug(err);
+            });
         }
 
         // Retrieve the parent ACL and assign it if available. Don't populate parents we've
@@ -409,9 +415,12 @@ export class ACLUtils {
             result = await repo.save(aclSQL);
         }
 
-        // Store a copy in the cache for faster retrieval next time
+        // Store a copy in the cache for faster retrieval next time.
         if (this.cache && result) {
-            void this.cache.save(result.uid, result);
+            this.cache.save(result.uid, result).catch((err) => {
+                this.logger?.warn(`ACLUtils: Cache save failed for ACL ${result?.uid}.`);
+                this.logger?.debug(err);
+            });
         }
 
         return result;
@@ -490,7 +499,11 @@ export class ACLUtils {
     }
 
     /**
-     * Retrieves the first available record in the provided ACL associated with the provided user.
+     * Retrieves the most specific record in the provided ACL associated with the provided user: an exact
+     * uid/anonymous match beats a role match, which beats a wildcard (`.*`/`*`) match — regardless of where
+     * each record sits in `acl.records`. Without this, a wildcard grant authored before a specific record
+     * (a natural authoring order) would silently shadow that more specific record. Only falls back to the
+     * parent ACL when nothing in this ACL's own records matches at all.
      *
      * @param acl The access control list that will be searched.
      * @param user The user to find a record for.
@@ -501,10 +514,23 @@ export class ACLUtils {
             return null;
         }
 
+        let roleMatch: ACLRecord | null = null;
+        let wildcardMatch: ACLRecord | null = null;
         for (const record of acl.records) {
-            if (this.userMatchesId(user, record.userOrRoleId)) {
+            const specificity = this.matchSpecificity(user, record.userOrRoleId);
+            if (specificity === "exact") {
                 return record;
+            } else if (specificity === "role") {
+                roleMatch = roleMatch ?? record;
+            } else if (specificity === "wildcard") {
+                wildcardMatch = wildcardMatch ?? record;
             }
+        }
+        if (roleMatch) {
+            return roleMatch;
+        }
+        if (wildcardMatch) {
+            return wildcardMatch;
         }
 
         return acl.parent ? this.getRecord(acl.parent, user) : null;

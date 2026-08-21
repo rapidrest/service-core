@@ -479,6 +479,41 @@ describe("DatabaseDecorators Tests", () => {
                 expect(result?.session).toBe(session);
             });
 
+            it("does not merge into an outer context for a different datasource — opens its own independent transaction instead", async () => {
+                // Two distinct, both-resolvable Mongo connections. If the inner call's own datasource differs
+                // from the outer's active context, merging into it would run the inner call's writes through the
+                // wrong connection's session (or silently drop them if the shapes don't line up). The inner call
+                // must instead open its own real transaction against its own datasource.
+                const sessionA = makeMongoSession();
+                const sessionB = makeMongoSession();
+                const connA = makeMongoConnection(sessionA);
+                const connB = makeMongoConnection(sessionB);
+
+                class Foo {
+                    public modelClass = { datasource: "mongodb-a" };
+                    public _objectFactory = makeObjectFactory({ "mongodb-a": connA, "mongodb-b": connB });
+
+                    @Transactional()
+                    public async outer(): Promise<any> {
+                        const outerSession = transactionContext.getStore()?.session;
+                        const innerContext = await this.inner();
+                        return { outerSession, innerSession: innerContext?.session };
+                    }
+
+                    @Transactional("mongodb-b")
+                    public async inner(): Promise<any> {
+                        return transactionContext.getStore();
+                    }
+                }
+
+                const result = await new Foo().outer();
+
+                expect((connA as any).startSession).toHaveBeenCalledTimes(1);
+                expect((connB as any).startSession).toHaveBeenCalledTimes(1);
+                expect(result.outerSession).toBe(sessionA);
+                expect(result.innerSession).toBe(sessionB);
+            });
+
             it("rolls back both the outer and inner writes when the merged transaction fails", async () => {
                 const session = makeMongoSession();
                 const conn = makeMongoConnection(session);
