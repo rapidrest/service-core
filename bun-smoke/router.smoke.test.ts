@@ -62,13 +62,8 @@ test("POST with a JSON body is read correctly from a real Bun Request stream", a
 });
 
 test("an unregistered path (after listen()) reaches the app-level NOT_FOUND fallback", async () => {
-    // listen() registers a catch-all route that calls next(new ApiError(NOT_FOUND)) for any verb
-    // without an app-defined root wildcard. With no error-handling middleware registered here,
-    // runChain's own unhandled-error fallback converts that into a raw 500 rather than a clean 404
-    // — pre-existing framework behavior (shared with the uWS router), confirmed against real Bun to
-    // match what the Node-side mocked unit tests (test/http/bun/BunRouter.test.ts) already assert.
     const res = await fetch(`${baseUrl}/nope`);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(404);
 });
 
 test("a real WebSocket connection upgrades, exchanges a message, and closes cleanly", async () => {

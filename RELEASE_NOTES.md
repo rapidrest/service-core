@@ -1,5 +1,10 @@
 # Release Notes
 
+## v1.2.0
+
+- Changed scope of `_objectFactory` declaration from private to protected for `AuthMiddleware`, `SessionManager`,
+  `RepoUtils`, `ModelRoute`, and `ACLUtils`
+
 ## v1.1.0
 
 - Upgrading project dependencies
