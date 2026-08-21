@@ -87,6 +87,18 @@ Keep entries terse — this is a reference, not a transcript.
   delete misreport as `purged: true`. Had to add a real `includeDeleted` option to `count()`
   first so it could reproduce the bespoke function's exact behavior.
 
+- **A write path on a different connection than its caller's transaction needs its own
+  `@Transactional(<connection-name>)` scope, plus a `registerRollbackHook()` compensating action
+  if something elsewhere depends on it rolling back together.** `ACLUtils` is the reference
+  implementation (see Session Log, 2026-08-21) — `acl` is commonly a genuinely separate physical
+  connection from an entity's own datastore, so passing the caller's `session`/`entityManager`
+  into it doesn't work (Mongo rejects a session from a different `MongoClient`; SQL just
+  misbehaves). `saveACL()`/`removeACL()` instead open/join their own `acl`-scoped transaction and
+  commit independently; `RepoUtils.create()/delete()/truncate()` register a `registerRollbackHook()`
+  compensating action (delete a freshly-created ACL, or restore a removed one from its snapshot)
+  so the entity-side transaction aborting still cleans up the ACL side, best-effort. Don't reuse
+  the caller's own session/entityManager across a connection boundary — open a new scope instead.
+
 ## Open / in-progress design threads
 
 - **Transaction support is implemented, ongoing refinement.** `@Transactional`
@@ -211,3 +223,101 @@ respect the new `includeDeleted` option; `ModelRoute.doFindById()`/`doExists()` 
 
 **Outcome:** 1093 tests passing, `yarn lint` and `tsc --noEmit` clean. See the global Claude
 memory project/feedback notes on this same effort for more detail than fits here.
+
+### 2026-08-21 — ACLUtils gets its own transaction scope + rollback compensation; rounds 3-5 of adversarial review
+
+Continuation of the `@Transactional` effort above. Root problem: `ACLUtils` is commonly
+configured on a genuinely separate physical connection (`acl`) from an entity's own datastore,
+but `RepoUtils` was passing its own `session`/`entityManager` straight into `ACLUtils` calls —
+throws on Mongo (`ClientSession must be from the same MongoClient`), misbehaves on SQL, whenever
+`acl` really is a different connection.
+
+**Fix — ACLUtils owns its own transaction scope.** `ACLUtils.saveACL()`/`removeACL()` are now
+themselves `@Transactional("acl")` — each opens/joins a transaction scoped to `acl`, fully
+decoupled from the caller's. Consequence: an ACL write now commits independently and *can't* be
+rolled back by the entity-side transaction aborting. Compensated via a new mechanism in
+`DatabaseDecorators.ts`:
+- `registerRollbackHook(fn)` — call from inside a `@Transactional`-wrapped method to register a
+  best-effort compensating action.
+- `TransactionContext.onRollback` — a fresh hook array per *real* transaction boundary (shared
+  across merged/nested `@Transactional` calls via `TransactionalMode.MERGE`), run via
+  `Promise.allSettled` in that boundary's `catch` before rethrowing.
+- `RepoUtils.create()/delete()/truncate()` register compensating actions (delete a freshly-created
+  ACL on rollback, or restore a removed one) using the ACL snapshot returned by `saveACL()`/
+  `removeACL()`.
+
+Other ACLUtils changes from the same effort:
+- `removeACL()` does an atomic find-and-delete (new `MongoRepository.findOneAndDelete()`) instead
+  of separate find+delete, so the returned document is a race-free snapshot to restore from.
+- `saveACL()` gained `preserveVersion?: boolean` — a restore-from-snapshot write needs to write the
+  snapshot's *own* version back, not recompute one (right after a delete there's nothing to diff
+  against, so recomputing always forced version 0, silently discarding the real prior version).
+  Also refuses rather than clobbers if something already exists at that uid by restore time.
+- `saveACL()`/`findACL()` gained `skipCache?: boolean`, mirroring `RepoUtils`'s existing flag.
+- `removeACL()`'s error handling narrowed to only swallow `"ns not found"`, not all errors.
+- `removeACLs()`/`saveACLs()` batch methods run sequentially, not via concurrent `Promise.all` —
+  each inner call merges onto the *same* transactional session/entityManager the batch method
+  opened, and concurrent writes against one session are unsupported by the Mongo/SQL drivers.
+  `filterPermittedUids()`'s existing concurrent-batch pattern is safe only because it does
+  non-transactional *reads* — don't assume that pattern generalizes to writes on a shared session.
+- `ACLUtilsOptions` interface removed entirely (was superseded by the above).
+
+**`MongoRepository.save()` gained an opt-in `mergeByUid?: boolean`** (default `false`, behavior
+otherwise unchanged) so `saveACL()` can match/replace by `uid` — the framework's true logical
+primary key — instead of requiring `_id`, which may not have been preserved on a freshly
+spread-constructed object. Implemented via `findOneAndReplace()` (not `replaceOne()`) so the
+real `_id` is captured on both the insert and the update path in one round trip. **Do not** change
+`save()`'s *default* matching behavior — a first attempt at this did, and broke real MongoDB
+integration tests: a test fixture and `RepoUtils`'s own trackChanges/versioned-save paths rely on
+the "no `_id` → always insert" default to keep multiple documents per `uid` (one per version).
+Changing a shared method's default for one caller's benefit is high blast-radius; verify with the
+full test suite (including real DB integration tests, not unit mocks) before assuming a "smarter
+default" is safe, and prefer an opt-in flag when only one caller needs the new behavior.
+
+**Two-agent adversarial review, rounds 3-5** (see pattern in standing decisions above), run after
+the redesign above landed. Each round's agents were briefed on everything already fixed so they
+hunted fresh ground. Findings, most significant first:
+1. **[CRITICAL] `@Transactional`'s non-transactional fallback leaked a foreign connection's
+   session.** When a call's own connection didn't support transactions but was nested inside an
+   outer transaction on a *different* connection (exactly the `acl`-is-a-separate-connection
+   shape this whole redesign was for), the fallback silently ran the method body inside the
+   *outer* connection's ambient session. Fixed: the fallback now checks whether the ambient
+   context's datasource differs from the current call's own and, if so, re-scopes to a
+   session-less context instead of leaking the foreign one through.
+2. **[Correctness]** ACL rollback-restore silently reset the ACL's version to 0 — see
+   `preserveVersion` above.
+3. **[Medium]** Soft-deleted-record visibility (`?deleted=true`) required only ordinary
+   READ/LIST/EXISTS/COUNT permission, not the DELETE+UPDATE actually needed to restore a record.
+   Fixed across `findOne`/`exists`/`find`/`count` in `RepoUtils` via a new `canViewDeleted()`
+   helper.
+4. **[Real, cheaply client-triggerable]** Unbounded ACL-check amplification via WS `SUBSCRIBE` —
+   `BasePushRoute`'s per-channel loop only stopped early once the subscription *budget* was
+   exhausted by grants; a denial never consumed budget, so an authenticated client naming
+   thousands of denied channel names in one frame forced that many sequential ACL/DB lookups.
+   Fixed by bounding the channels *checked* (not just granted) to the remaining budget upfront
+   (`requested.slice(0, remaining)` before the permission-check loop).
+5. `BasePushRoute`'s socket `close` handler now runs through the same per-user `runExclusive()`
+   lock as `connect()`/`SUBSCRIBE`/`UNSUBSCRIBE` — it used to mutate `activeSocks`/`activeSubs`
+   directly, unguarded, and could race a concurrent connect/subscribe for the same user.
+6. **[Fixed separately, same session]** `RouteUtils`' WS pre-upgrade auth (`upgradeAuth` in
+   `registerRoute()`) now respects the optional-auth contract: an invalid/expired token caught
+   during `authenticateSync()` only rejects the upgrade when the route actually requires auth
+   (`authRequired`); otherwise it falls through anonymous, matching the post-upgrade
+   `authWebSocket()` message-based path's equivalent handling. Previously any thrown auth error
+   rejected the connection regardless of whether auth was optional.
+7. **[Accepted, not a bug — do not re-flag]** MongoDB's driver-level `session.withTransaction()`
+   can retry its *entire* callback on a transient conflict, so `RepoUtils.create()/delete()/
+   truncate()`'s calls into `ACLUtils` and the outbound push notification can double-fire on
+   retry. User explicitly accepted this: a real fix needs either restructuring where
+   `@Transactional` boundaries sit relative to `RepoUtils`'s method bodies, or idempotency keys on
+   notifications/ACL calls — both bigger than the actual risk, since every side effect examined so
+   far is idempotent in effect under retry (`saveACL()`'s no-op-on-no-diff check, `removeACL()`'s
+   not-found handling).
+8. `MongoRepository.save()`'s `mergeByUid` mode originally dropped `_id` when replacing (not
+   inserting) — see `findOneAndReplace()` fix above.
+
+**Outcome:** 1143 tests passing (up from 1093), `yarn build` and `yarn lint` clean, coverage gate
+satisfied. Several of these bugs (the `withTransaction` fallback leak, the `save()`
+default-behavior break) were only caught by running the *full* suite including real Mongo/SQL
+integration tests — a change that looks contained to one file (`ACLUtils.ts`, `RepoUtils.ts`) can
+still need a full-suite run when it touches a shared decorator or a shared repository method.
