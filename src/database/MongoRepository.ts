@@ -15,6 +15,7 @@ import type {
     Filter,
     FindCursor,
     FindOneAndDeleteOptions,
+    FindOneAndReplaceOptions,
     FindOptions,
     InsertOneOptions,
     ReplaceOptions,
@@ -175,12 +176,18 @@ export class MongoRepository<T extends Document = any> {
             // `_id` — when matching by `uid` instead, drop whatever `_id` `doc` happened to carry and let the
             // matched document keep its own (or let Mongo assign a fresh one on insert, captured below).
             delete copy._id;
-            const result = await this.collection.replaceOne({ uid: doc.uid }, copy, {
-                ...driverOptions,
+            // `findOneAndReplace` (rather than `replaceOne`) so the resulting document's real `_id` is always
+            // captured in one round trip, whether this matched an existing document or inserted a new one —
+            // `replaceOne`'s result only ever reports an id for the insert case (`upsertedId`), silently
+            // leaving `doc._id` unset after merging into an existing row.
+            const saved = await this.collection.findOneAndReplace({ uid: doc.uid }, copy, {
+                ...(driverOptions as FindOneAndReplaceOptions),
                 upsert: true,
+                returnDocument: "after",
+                includeResultMetadata: false,
             });
-            if (result.upsertedId) {
-                doc._id = result.upsertedId;
+            if (saved?._id !== undefined) {
+                doc._id = saved._id;
             }
         } else if (doc._id !== undefined && doc._id !== null) {
             await this.collection.replaceOne({ _id: doc._id }, copy, { ...driverOptions, upsert: true });

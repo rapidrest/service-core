@@ -5,6 +5,8 @@
 // ACLUtils.test.ts always has a healthy, fully-configured repo, so these guard branches never
 // trigger there.
 import { ACLUtils } from "../../src/security/ACLUtils";
+import { MongoConnection } from "../../src/database/MongoConnection";
+import { MongoRepository } from "../../src/database/MongoRepository";
 
 function makeAclUtils(overrides: Partial<{ enabled: boolean; connMgr: any }> = {}): any {
     const aclUtils: any = new ACLUtils();
@@ -216,6 +218,63 @@ describe("ACLUtils Tests (unit)", () => {
             const acl = { uid: "x", records: [{ userOrRoleId: "b", actions: ["write"] }] };
             await expect(aclUtils.saveACL(acl as any)).rejects.toThrow("The acl to save must be of the same version.");
             expect(fakeRepo.save).not.toHaveBeenCalled();
+        });
+
+        describe("preserveVersion (restoring a rollback snapshot)", () => {
+            it("writes the ACL back at its own version instead of bumping it (SQL)", async () => {
+                // Regression test: a plain (non-preserveVersion) save always computes
+                // `version: existing ? existing.version + 1 : 0` from a *fresh* lookup - since a restore always
+                // targets a uid nothing currently exists at (that's the point of restoring), that fresh lookup
+                // is null, silently resetting the restored ACL's version to 0 instead of its real prior value.
+                const fakeRepo = { findOne: vi.fn().mockResolvedValue(null), save: vi.fn().mockImplementation(async (x: any) => x) };
+                const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+                const aclUtils = makeAclUtils({
+                    enabled: true,
+                    connMgr: { connections: new Map([["acl", fakeConnection]]) },
+                });
+
+                const snapshot = { uid: "x", version: 5, records: [{ userOrRoleId: "u1", actions: ["read"] }] };
+                const result = await aclUtils.saveACL(snapshot as any, { preserveVersion: true });
+
+                expect(result?.version).toBe(5);
+                const [savedDoc] = fakeRepo.save.mock.calls[0];
+                expect(savedDoc.version).toBe(5);
+            });
+
+            it("writes the ACL back at its own version instead of bumping it (Mongo)", async () => {
+                const fakeRepo: any = Object.create(MongoRepository.prototype);
+                fakeRepo.findOne = vi.fn().mockResolvedValue(null);
+                fakeRepo.save = vi.fn().mockImplementation(async (x: any) => x);
+                const fakeConnection: any = Object.create(MongoConnection.prototype);
+                fakeConnection.getRepository = vi.fn().mockReturnValue(fakeRepo);
+                const aclUtils = makeAclUtils({
+                    enabled: true,
+                    connMgr: { connections: new Map([["acl", fakeConnection]]) },
+                });
+
+                const snapshot = { uid: "x", version: 5, records: [{ userOrRoleId: "u1", actions: ["read"] }] };
+                const result = await aclUtils.saveACL(snapshot as any, { preserveVersion: true });
+
+                expect(result?.version).toBe(5);
+                const [savedDoc] = fakeRepo.save.mock.calls[0];
+                expect(savedDoc.version).toBe(5);
+            });
+
+            it("refuses to restore over a document that already exists at that uid", async () => {
+                const existing = { uid: "x", version: 0, records: [] };
+                const fakeRepo = { findOne: vi.fn().mockResolvedValue(existing), save: vi.fn() };
+                const fakeConnection = { getRepository: vi.fn().mockReturnValue(fakeRepo) };
+                const aclUtils = makeAclUtils({
+                    enabled: true,
+                    connMgr: { connections: new Map([["acl", fakeConnection]]) },
+                });
+
+                const snapshot = { uid: "x", version: 5, records: [] };
+                await expect(aclUtils.saveACL(snapshot as any, { preserveVersion: true })).rejects.toThrow(
+                    "a document already exists at this uid",
+                );
+                expect(fakeRepo.save).not.toHaveBeenCalled();
+            });
         });
     });
 

@@ -656,13 +656,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 // earlier read - see its doc comment) - used as the restore snapshot below. `removeACL()`
                 // commits independently, on the `acl` connection's own transaction; if this (the entity-side)
                 // transaction later fails, its own abort can't undo that removal, so the rollback hook restores
-                // the snapshot in that case. `saveACL()`'s own optimistic-lock version check means the restore
-                // can't clobber a newer row that appeared at this uid after the delete.
+                // the snapshot in that case. `preserveVersion` restores its exact prior version instead of
+                // bumping it, and refuses (rather than clobbers) if something already exists at this uid.
                 const removedAcl: AccessControlList | undefined = await this.aclUtils.removeACL(uid);
                 if (removedAcl) {
                     registerRollbackHook(async () => {
                         try {
-                            await this.aclUtils!.saveACL(removedAcl);
+                            await this.aclUtils!.saveACL(removedAcl, { preserveVersion: true });
                         } catch (err) {
                             this.logger?.warn(`RepoUtils: Failed to restore ACL ${uid} after a failed delete().`);
                             this.logger?.debug(err);
@@ -1123,8 +1123,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                     // earlier read - see `removeACL()`'s doc comment) - used directly as the restore snapshot.
                     // It commits independently, on the `acl` connection's own transaction; if this (entity-side)
                     // transaction later fails, its own abort can't undo that removal, so the rollback hook
-                    // restores the snapshot in that case. `saveACL()`'s own optimistic-lock version check means
-                    // the restore can't clobber a newer row that appeared at any of these uids after the delete.
+                    // restores the snapshot in that case. `saveACLs()` restores each ACL's exact prior version
+                    // (see `saveACL()`'s `preserveVersion` option) and refuses — rather than clobbers — any of
+                    // these uids that already has something at it again by the time the restore runs.
                     const removedAcls: AccessControlList[] = await this.aclUtils!.removeACLs(finalUids);
                     if (removedAcls.length > 0) {
                         registerRollbackHook(async () => {

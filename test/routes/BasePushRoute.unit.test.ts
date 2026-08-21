@@ -177,6 +177,28 @@ describe("BasePushRoute Tests (unit)", () => {
             expect(finalSubs.length).toBe(3);
         });
 
+        it("bounds the number of ACL checks per SUBSCRIBE to the remaining budget, even when every channel is denied", async () => {
+            // Regression test: the per-channel loop used to only stop early once enough channels had been
+            // *granted* to exhaust the budget - a request naming far more channels than could ever be granted
+            // (e.g. all denied) ran the full length of the attacker-controlled list, one sequential ACL lookup
+            // per entry, with no upper bound.
+            const hasPermission = vi.fn().mockResolvedValue(false);
+            const route = makeRoute({ aclUtils: { hasPermission } });
+            route.maxSubscriptionsPerUser = 5;
+            const user = { uid: "u1" };
+            const sock = makeSock();
+
+            await route.connect(sock, user);
+            hasPermission.mockClear();
+
+            const onMessage = sock.on.mock.calls.find(([event]: [string]) => event === "message")![1];
+            const manyChannels: string[] = Array.from({ length: 10_000 }, (_, i) => `channel-${i}`);
+            await onMessage(JSON.stringify({ id: 1, type: "SUBSCRIBE", data: manyChannels }), false);
+
+            // Budget is maxSubscriptionsPerUser(5) minus the 1 already-tracked identity channel = 4.
+            expect(hasPermission).toHaveBeenCalledTimes(4);
+        });
+
         it("serializes the close handler through the same per-user lock as connect()/SUBSCRIBE/UNSUBSCRIBE", async () => {
             // Regression test: the close handler used to mutate activeSocks/activeSubs directly, unguarded,
             // unlike every other read-modify-write site on these maps - a close racing a concurrent

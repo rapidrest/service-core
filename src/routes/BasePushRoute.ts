@@ -184,17 +184,18 @@ export class BasePushRoute {
                         // would silently clobber the first's.
                         await this.runExclusive(user.uid, async () => {
                             const origSubs: string[] = this.activeSubs.get(user.uid) ?? [user.uid];
-                            const subs: string[] = Array.isArray(message.data) ? message.data : [message.data];
+                            const requested: string[] = Array.isArray(message.data) ? message.data : [message.data];
+                            // Bound the number of channels actually *checked* to the caller's remaining
+                            // subscription budget, not just the number of successful grants — otherwise a client
+                            // naming far more channels than it could ever be granted (each denial doesn't consume
+                            // budget) forces one sequential ACL lookup (a cache-miss-prone Redis/DB round trip)
+                            // per attacker-controlled entry, with no upper bound on how many it sends in one frame.
+                            const remaining: number = Math.max(0, this.maxSubscriptionsPerUser - origSubs.length);
+                            const subs: string[] = requested.slice(0, remaining);
                             const subd: string[] = [];
-                            // Check that the user has permission for each requested channel, up to the per-user
-                            // subscription cap — once the budget is exhausted further requested channels are
-                            // silently dropped from the approved set, same as a channel lacking ACL permission.
-                            let remaining: number = this.maxSubscriptionsPerUser - origSubs.length;
                             for (const channel of subs) {
-                                if (remaining <= 0) break;
                                 if (await this.aclUtils?.hasPermission(user, channel, ACLAction.READ)) {
                                     subd.push(channel);
-                                    remaining--;
                                 }
                             }
 

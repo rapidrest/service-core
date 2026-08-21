@@ -373,7 +373,13 @@ export class ACLUtils {
     }
 
     /**
-     * Stores the given access control list into the ACL database.
+     * Stores the given access control list into the ACL database. By default, bumps the version for optimistic
+     * locking (see below) — pass `preserveVersion: true` to instead write `acl` back with its own version
+     * exactly as given, for restoring a known-good snapshot (see `RepoUtils.delete()`/`truncate()`'s
+     * `registerRollbackHook()` usage) rather than applying a new change on top of whatever's currently stored.
+     * A restore only ever targets a uid with nothing currently at it (that's the point — the entity-side
+     * transaction it was tied to is being rolled back, so the row it deleted should no longer exist); if
+     * something *does* exist there already, the restore is refused rather than silently clobbering it.
      *
      * Runs in its own transaction scoped to the `acl` connection (see `Transactional`) rather than trying to
      * join whatever transaction the caller is itself in — see `removeACL`'s doc comment for why. Callers that
@@ -381,10 +387,15 @@ export class ACLUtils {
      * via `registerRollbackHook()`.
      *
      * @param acl The ACL to store.
+     * @param options Set `preserveVersion: true` to restore `acl` exactly as given (see above) instead of the
+     * normal optimistic-locking update semantics.
      * @return Returns the ACL that was stored in the database.
      */
     @Transactional("acl")
-    public async saveACL(acl: AccessControlList): Promise<AccessControlList | null> {
+    public async saveACL(
+        acl: AccessControlList,
+        options?: { preserveVersion?: boolean },
+    ): Promise<AccessControlList | null> {
         let result: AccessControlList | null = null;
         if (!this.enabled || !acl) {
             return result;
@@ -395,26 +406,33 @@ export class ACLUtils {
         }
 
         const ctx = transactionContext.getStore();
+        const preserveVersion: boolean = !!options?.preserveVersion;
 
         if (this.repo instanceof MongoRepository) {
             const mACL: AccessControlListMongo = new AccessControlListMongo(acl);
             const existing: AccessControlListMongo | null = await this.repo.findOne({ uid: acl.uid } as any, {
                 session: ctx?.session,
             });
-            // If no changes have been made between versions ignore this request
-            if (existing && this.diffACL(existing, acl) === 0) {
-                return existing;
-            }
-            // Make sure that the versions match before we proceed
-            if (existing && existing.version !== mACL.version) {
-                throw new Error(
-                    `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${mACL.version}`,
-                );
+            if (preserveVersion) {
+                if (existing) {
+                    throw new Error(`Cannot restore ACL ${acl.uid}: a document already exists at this uid.`);
+                }
+            } else {
+                // If no changes have been made between versions ignore this request
+                if (existing && this.diffACL(existing, acl) === 0) {
+                    return existing;
+                }
+                // Make sure that the versions match before we proceed
+                if (existing && existing.version !== mACL.version) {
+                    throw new Error(
+                        `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${mACL.version}`,
+                    );
+                }
             }
             const aclMongo: AccessControlListMongo = new AccessControlListMongo({
                 ...acl,
                 dateModifed: new Date(),
-                version: existing ? mACL.version + 1 : 0,
+                version: preserveVersion ? mACL.version : existing ? mACL.version + 1 : 0,
             });
             // ACLs are single-row-per-uid (never trackChanges) - merge by `uid` rather than requiring `_id` to
             // have survived the `{...acl, ...}` spread above, or a stale/missing `_id` would insert a
@@ -424,20 +442,26 @@ export class ACLUtils {
             const repo = ctx?.entityManager ? ctx.entityManager.getRepository(AccessControlListSQL) : this.repo;
             const sACL: AccessControlListSQL = new AccessControlListSQL(acl);
             const existing: AccessControlListSQL | null = await repo.findOne({ where: { uid: acl.uid } });
-            // If no changes have been made between versions ignore this request
-            if (existing && this.diffACL(existing, acl) === 0) {
-                return existing;
-            }
-            // Make sure that the versions match before we proceed
-            if (existing && existing.version !== sACL.version) {
-                throw new Error(
-                    `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${sACL.version}`,
-                );
+            if (preserveVersion) {
+                if (existing) {
+                    throw new Error(`Cannot restore ACL ${acl.uid}: a document already exists at this uid.`);
+                }
+            } else {
+                // If no changes have been made between versions ignore this request
+                if (existing && this.diffACL(existing, acl) === 0) {
+                    return existing;
+                }
+                // Make sure that the versions match before we proceed
+                if (existing && existing.version !== sACL.version) {
+                    throw new Error(
+                        `The acl to save must be of the same version. ACL=${acl.uid}, Expected=${existing.version}, Actual=${sACL.version}`,
+                    );
+                }
             }
             const aclSQL: AccessControlListSQL = new AccessControlListSQL({
                 ...acl,
                 dateModifed: new Date(),
-                version: existing ? sACL.version + 1 : 0,
+                version: preserveVersion ? sACL.version : existing ? sACL.version + 1 : 0,
             });
             result = await repo.save(aclSQL);
         }
@@ -549,7 +573,9 @@ export class ACLUtils {
     /**
      * Atomic save of multiple ACLs in a single `acl`-scoped transaction (see `Transactional`). Used to restore
      * a batch of ACL snapshots — e.g. by a `registerRollbackHook()` compensating action — if the entity-side
-     * transaction they were removed alongside subsequently fails.
+     * transaction they were removed alongside subsequently fails. Always restores each ACL's own version as
+     * given (see `saveACL()`'s `preserveVersion` option) rather than bumping it, since this is a restore, not
+     * a new change.
      *
      * Deliberately sequential. See `removeACLs()`'s doc comment for why.
      *
@@ -558,7 +584,7 @@ export class ACLUtils {
     @Transactional("acl")
     public async saveACLs(acls: AccessControlList[]): Promise<void> {
         for (const acl of acls) {
-            await this.saveACL(acl);
+            await this.saveACL(acl, { preserveVersion: true });
         }
     }
 

@@ -699,7 +699,7 @@ describe("RepoUtils ACL compensating actions on transaction rollback", () => {
         expect(onRollback.length).toBe(1);
 
         await onRollback[0]();
-        expect(aclUtils.saveACL).toHaveBeenCalledWith(snapshot);
+        expect(aclUtils.saveACL).toHaveBeenCalledWith(snapshot, { preserveVersion: true });
     });
 
     it("delete() purge: registers no rollback hook when the record had no ACL to begin with", async () => {
