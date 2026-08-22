@@ -1,5 +1,10 @@
 # Release Notes
 
+## v1.3.0
+
+- Upgraded all project dependencies
+- Fixed GitHub Actions workflow issues
+
 ## v1.2.0
 
 - Changed scope of `_objectFactory` declaration from private to protected for `AuthMiddleware`, `SessionManager`,
@@ -8,7 +13,7 @@
 
 ## v1.1.0
 
-- Upgrading project dependencies
+- Upgraded project dependencies
 
 ## v1.0.0
 
