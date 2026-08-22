@@ -19,7 +19,7 @@
         "bench": "tsx bench/index.ts",
         "bench:baseline": "yarn bench 2>&1 | tee bench/baseline.txt",
         "test": "vitest run",
-        "test:prod": "npm run lint && vitest run --coverage",
+        "test:prod": "yarn lint && vitest run --coverage",
         "test:watch": "vitest",
         "postversion": "git push && git push --tags"
     },

@@ -60,7 +60,7 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Run tests
-        run: yarn vitest run --coverage
+        run: yarn test
 
       - name: Upload JUnit report
         if: always()
