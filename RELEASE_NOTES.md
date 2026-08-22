@@ -3,7 +3,7 @@
 ## v1.3.0
 
 - Upgraded all project dependencies
-- Fixed GitHub Actions workflow issues
+- Fixed multiple CI workflow issues
 
 ## v1.2.0
 

@@ -58,7 +58,7 @@
         }
     },
     "devDependencies": {
-        "@rapidrest/core": "^5.0.1",
+        "@rapidrest/core": "^5.1.0",
         "@simplewebauthn/server": "^13.3.2",
         "@swc/core": "^1.16.1",
         "@types/better-sqlite3": "^9.6.0",
