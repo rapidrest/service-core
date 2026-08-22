@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: publish
     container:
-      image: node:lts-bookworm-slim
+      image: node:lts-trixie-slim
     steps:
       - uses: actions/checkout@v6
         with:
