@@ -10,6 +10,7 @@ import { ConnectionManager } from "../src/database/ConnectionManager";
 import { MongoConnection } from "../src/database/MongoConnection";
 import { DataStore } from "../src/decorators/ModelDecorators";
 import { Redis, Repository } from "../src/decorators/DatabaseDecorators";
+import { createStandaloneFakeRedisClient } from "./helpers/FakeRedis";
 
 describe("ObjectFactory Tests", () => {
     function makeFactoryWithConnections(connections: Record<string, any>): ObjectFactory {
@@ -162,15 +163,58 @@ describe("ObjectFactory Tests", () => {
 
     describe("@Redis injection", () => {
         it("assigns a duplicate of the connection when duplicate() is available", async () => {
-            const duplicated = { kind: "duplicate" };
-            const fakeRedis = { duplicate: () => duplicated };
+            // A real FakeRedisClient (see test/helpers/FakeRedis.ts) rather than a bare `{ duplicate: () => ... }`
+            // stub, so that duplicate() returns an object with the same isOpen/connect() shape the real `redis`
+            // client's duplicate() does -- see the next two tests, which exercise exactly that.
+            const realConn = createStandaloneFakeRedisClient();
             class Target {
                 @Redis("events")
                 public redis: any;
             }
-            const objectFactory = makeFactoryWithConnections({ events: fakeRedis });
+            const objectFactory = makeFactoryWithConnections({ events: realConn });
             const target = await objectFactory.initialize<Target>(new Target());
-            expect(target.redis).toBe(duplicated);
+            expect(target.redis).not.toBe(realConn);
+            expect(target.redis.constructor).toBe(realConn.constructor);
+        });
+
+        it("connects the duplicated client before injecting it, when it isn't already open", async () => {
+            // Regression test: `duplicate()` (on the real `redis` client, and on FakeRedisClient) returns a
+            // fresh, unconnected client. Injecting it as-is without connecting first left every @Redis-injected
+            // property on a closed connection until something else happened to open it -- this went unnoticed
+            // because every prior test here used a bare fake that had no isOpen/connect() to get wrong.
+            const realConn = createStandaloneFakeRedisClient();
+            class Target {
+                @Redis("events")
+                public redis: any;
+            }
+            const objectFactory = makeFactoryWithConnections({ events: realConn });
+            const target = await objectFactory.initialize<Target>(new Target());
+            expect(target.redis.isOpen).toBe(true);
+        });
+
+        it("does not call connect() again on a duplicated client that is already open", async () => {
+            const realConn = createStandaloneFakeRedisClient();
+            const originalDuplicate = realConn.duplicate.bind(realConn);
+            let connectCalls = 0;
+            vi.spyOn(realConn, "duplicate").mockImplementation(() => {
+                const dup = originalDuplicate();
+                dup.isOpen = true;
+                dup.isReady = true;
+                const originalConnect = dup.connect.bind(dup);
+                dup.connect = async () => {
+                    connectCalls++;
+                    return originalConnect();
+                };
+                return dup;
+            });
+            class Target {
+                @Redis("events")
+                public redis: any;
+            }
+            const objectFactory = makeFactoryWithConnections({ events: realConn });
+            const target = await objectFactory.initialize<Target>(new Target());
+            expect(target.redis.isOpen).toBe(true);
+            expect(connectCalls).toBe(0);
         });
 
         it("assigns the connection directly when duplicate() is not available", async () => {

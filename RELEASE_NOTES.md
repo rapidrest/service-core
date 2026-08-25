@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.3.1
+
+- Fixed issue with redis not being connected automatically before injection
+
 ## v1.3.0
 
 - Upgraded all project dependencies

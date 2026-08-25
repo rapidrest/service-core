@@ -43,7 +43,15 @@ export class ObjectFactory extends CoreObjectFactory {
                     if (conn) {
                         // Always create a copy of the connection so that the user can perform context aware operations without
                         // error. We must also check that it is possible to duplicate the connection.
-                        obj[member] = typeof conn.duplicate === "function" ? conn.duplicate() : conn;
+                        let value: any = typeof conn.duplicate === "function" ? conn.duplicate() : conn;
+                        if (
+                            typeof value?.connect === "function" &&
+                            typeof value?.isOpen === "boolean" &&
+                            !value.isOpen
+                        ) {
+                            await value.connect();
+                        }
+                        obj[member] = value;
                         // The `cache` datasource is a special case that we don't want to fail on if it's missing
                     } else if (required) {
                         throw new Error("Unable to find database connection with name: " + name);

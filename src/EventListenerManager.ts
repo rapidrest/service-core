@@ -35,6 +35,11 @@ export class EventListenerManager {
 
     @Init
     public async init(): Promise<void> {
+        // `redis.duplicate()` (see the constructor) returns a fresh, unconnected client
+        if (!this.redis.isOpen) {
+            await this.redis.connect();
+        }
+
         for (const channel of this.channels) {
             try {
                 await this.redis.subscribe(channel, (message) => {

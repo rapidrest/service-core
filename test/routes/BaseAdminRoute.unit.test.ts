@@ -17,9 +17,16 @@ vi.mock("redis", () => {
     // test-only convenience for simulating an incoming pub/sub message on a given channel.
     class FakeRedisClient {
         public url?: string;
+        // Tracked like the real `redis` client: false until connect() actually resolves, so a test can tell
+        // apart "never connected" from "connected" the same way ObjectFactory's inject-time connect-if-not-open
+        // check (see ObjectFactory.initialize()) does -- a fake that always reports connected regardless of
+        // whether connect() was called would silently hide a regression there.
+        public isOpen: boolean = false;
         private listenersByChannel: Record<string, Function> = {};
         public unsubscribe = vi.fn().mockResolvedValue(undefined);
-        public disconnect = vi.fn().mockResolvedValue(undefined);
+        public disconnect = vi.fn().mockImplementation(async () => {
+            this.isOpen = false;
+        });
         public publish = vi.fn();
 
         constructor(opts?: any) {
@@ -28,6 +35,7 @@ vi.mock("redis", () => {
         }
 
         async connect() {
+            this.isOpen = true;
             return this;
         }
 
@@ -37,6 +45,7 @@ vi.mock("redis", () => {
             return Promise.resolve();
         }
 
+        // Mirrors the real client: a fresh, unconnected duplicate that the caller must connect() itself.
         duplicate() {
             return new FakeRedisClient({ url: this.url });
         }
@@ -94,8 +103,12 @@ describe("BaseAdminRoute.init cache channel naming", () => {
         route.serviceName = undefined;
         await route.init();
 
-        const redisInstance = hoisted.instances[hoisted.instances.length - 1];
-        expect(redisInstance).toBeDefined();
+        // Both the subscribing client and its duplicated publisher must actually be connect()-ed, not just
+        // constructed -- init() awaits connect() on each before using it (see BaseAdminRoute.ts).
+        const redisPublisher = hoisted.instances[hoisted.instances.length - 1];
+        const redisClient = hoisted.instances[hoisted.instances.length - 2];
+        expect(redisClient.isOpen).toBe(true);
+        expect(redisPublisher.isOpen).toBe(true);
     });
 });
 
