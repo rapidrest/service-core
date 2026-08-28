@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.4.0
+
+- Reverted previous change that restricted dot-notation when searching for sub-documents in MongoDB queries
+
 ## v1.3.1
 
 - Fixed issue with redis not being connected automatically before injection
