@@ -790,10 +790,15 @@ export class ModelUtils {
                 continue;
             }
 
-            // Reject any other Mongo operator key or dot-notation field path outright — client input may only
-            // supply plain field names, never raw query operators (`$or` is the one deliberate exception, handled
-            // just below; its sub-queries are validated recursively when they're built).
-            if (key !== "$or" && (key.startsWith("$") || key.includes("."))) {
+            // Dot-notation field paths (e.g. `category.name`) are allowed so clients can query into sub-document
+            // fields — MongoDB treats a dotted string key purely as a nested field path, never as an operator, so
+            // this doesn't reopen operator injection. What must still be rejected is any *segment* of the path
+            // starting with `$`, since that's how a client would smuggle a raw Mongo operator key (e.g. `$where`,
+            // or `category.$where`) in as a top-level filter (`$or` is the one deliberate legitimate exception,
+            // handled just below; its sub-queries are validated recursively when they're built). Operator
+            // injection hidden inside a *value* (e.g. `eq({"$ne":null})`) is separately guarded by
+            // `assertNoOperatorInjection` wherever values are parsed.
+            if (key !== "$or" && key.split(".").some((segment) => segment.startsWith("$"))) {
                 throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
             }
 

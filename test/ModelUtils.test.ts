@@ -368,10 +368,24 @@ describe("ModelUtils Tests", () => {
             expect(() => ModelUtils.buildSearchQueryMongo(undefined, request.query, true, request.user)).toThrow();
         });
 
-        it("Rejects a dot-notation query parameter key.", () => {
+        it("Can build search query with a dot-notation sub-document field.", () => {
             const request: any = {};
             request.query = {
-                "profile.password": "eq(x)",
+                "category.name": "eq(bunny)",
+            };
+
+            const query = ModelUtils.buildSearchQueryMongo(undefined, request.query, true, request.user);
+            expect(query).toEqual({
+                $match: {
+                    "category.name": "bunny",
+                },
+            });
+        });
+
+        it("Rejects a $-prefixed segment within a dot-notation query parameter key.", () => {
+            const request: any = {};
+            request.query = {
+                "category.$where": "eq(x)",
             };
 
             expect(() => ModelUtils.buildSearchQueryMongo(undefined, request.query, true, request.user)).toThrow();
