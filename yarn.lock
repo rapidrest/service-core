@@ -816,6 +816,7 @@ __metadata:
     "@types/node": "npm:^26.2.0"
     "@types/node-schedule": "npm:^2.1.8"
     "@types/rimraf": "npm:^4.0.5"
+    "@types/semver": "npm:^7"
     "@types/speakeasy": "npm:^2.0.10"
     "@types/uuid": "npm:^11.0.0"
     "@types/ws": "npm:^8.18.1"
@@ -844,6 +845,7 @@ __metadata:
     redis: "npm:^6.2.1"
     reflect-metadata: "npm:^0.2.2"
     rimraf: "npm:^6.1.3"
+    semver: "npm:^7.8.5"
     ts-node: "npm:^10.9.2"
     tsx: "npm:^4.23.12"
     typedoc: "npm:^0.28.20"
@@ -1466,6 +1468,13 @@ __metadata:
   dependencies:
     rimraf: "npm:*"
   checksum: 10c0/b4c17f5931ab7f7610c68aba58024717eecd11d16057b51d3f21a4180d36d1f5fea207503cba8a13749d61a1ac43d1bb795662f8b3638ad2501216017d232bf6
+  languageName: node
+  linkType: hard
+
+"@types/semver@npm:^7":
+  version: 7.8.0
+  resolution: "@types/semver@npm:7.8.0"
+  checksum: 10c0/46a1f38e36013448b279798e8b134e7e8de3b3630b1f40683903b9d57d36dd1d70838515570ed9a149fa09e9c381b9e39319b58d7b9f3b929b42ae2becff7aa3
   languageName: node
   linkType: hard
 
