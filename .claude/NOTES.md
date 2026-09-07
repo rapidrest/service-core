@@ -11,6 +11,19 @@ Keep entries terse — this is a reference, not a transcript.
 
 ## Standing design decisions & constraints
 
+- **Commit discipline.** Don't `git commit` unless explicitly asked for *that specific piece of
+  work*. An autonomous-execution/"commit as you go" approval given for one approved plan (e.g. via
+  plan mode) is scoped to that plan only — it does not carry forward to later, separate requests in
+  the same session, even ones that look similar in kind (a follow-up review-and-fix pass, a
+  refactor, a new feature), and even after a full review-and-fix cycle with passing tests. Default
+  to leaving changes staged/unstaged and saying so; only commit automatically within the exact
+  scope of a plan that was explicitly approved as autonomous. If unsure whether new work falls
+  inside that scope, treat it as outside and ask.
+  
+- **Commit message style: concise, one line per task/bug/feature — no verbose prose.** A commit
+  message is a short list of one-line bullets, one per item. This mirrors JP's standing convention
+  across his other repos.
+
 - **No MongoDB aggregation pipelines.** The project owner has already tuned performance
   throughout this framework away from `.aggregate()` — it's a measured bottleneck here, not a
   style preference. Use plain `find()` / `distinct()` / `count()`, and if a result needs
@@ -50,9 +63,6 @@ Keep entries terse — this is a reference, not a transcript.
   just on assertions. Prefer fast unit tests with mocked repos over slow integration tests when
   the goal is just hitting a specific branch (see `test/RepoUtils.unit.test.ts` for the pattern:
   construct `new RepoUtils(SomeModel)` as `any`, stub `.repo` directly).
-
-- **Commit discipline.** Don't `git commit` unless explicitly asked, even after a full
-  review-and-fix cycle with passing tests. Leave changes staged/unstaged and say so.
 
 - **Aspect/method decorators resolve DI dependencies via `this._objectFactory`, never a bespoke
   side-effect map.** Core `ObjectFactory` sets `_objectFactory` (non-enumerable) on every
