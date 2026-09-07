@@ -321,3 +321,35 @@ satisfied. Several of these bugs (the `withTransaction` fallback leak, the `save
 default-behavior break) were only caught by running the *full* suite including real Mongo/SQL
 integration tests — a change that looks contained to one file (`ACLUtils.ts`, `RepoUtils.ts`) can
 still need a full-suite run when it touches a shared decorator or a shared repository method.
+
+### 2026-09-06 — App-registered `OPTIONS` routes now run instead of the blanket CORS preflight 204
+
+Found while auditing `@rapidmx/activesync` for `[MS-ASCMD]` spec compliance: `Server.ts`'s global
+CORS middleware unconditionally answered every `OPTIONS` request with a bare `204` *before* any
+app route ever ran, so an app-defined `@Options()` handler (e.g. EAS's own
+`MS-ASProtocolVersions`/`MS-ASProtocolCommands` capability-discovery response) could never fire.
+
+Fixed via `c8cde0b`: `IHttpRouter` gained `hasExplicitOptionsRoute(path): boolean`
+(`src/http/types.ts`), implemented in both `HttpRouter`/uWS (`src/http/uWS/Router.ts`) and
+`BunRouter` (`src/http/bun/BunRouter.ts`) by tracking literal (non-`/*`) paths registered via
+`.options()` in a `Set`, normalized for a trailing-slash mismatch either side (`normalizePath()`
+helper, duplicated identically in both router files since they don't share a base class).  The
+framework's own internal `/*` CORS-preflight fallback (registered in `listen()`) is deliberately
+never tracked as "explicit" — it must keep deferring to the blanket 204, not to itself.
+`Server.ts`'s CORS middleware condition changed to
+`if (req.method === "OPTIONS" && !this.app.hasExplicitOptionsRoute(req.path))`. This has to be a
+request-time check (not resolved at build/registration time) since route registration order
+relative to the CORS middleware's own setup isn't guaranteed — see `hasExplicitOptionsRoute`'s own
+doc comment.
+
+Verified via the full existing suite (1153/1153 passing) plus new unit tests on both routers
+(`test/http/uWS/Router.test.ts`, `test/http/bun/BunRouter.test.ts`) and a new `Server.test.ts`
+end-to-end case (`test/server/routes/DefaultRoute.ts` gained a fixture `@Options("capabilities")`
+route that now actually answers with its own JSON body, while an unregistered path still gets the
+old blanket `204`). `test/routes/OpenAPIRoute.test.ts` needed a path-count fix (37→38) since the
+new fixture route adds one more registered path.
+
+Downstream consumers (e.g. `@rapidmx/activesync`'s `BaseEasRoute.ts`) only get real `OPTIONS`
+capability discovery once their own `@rapidrest/service-core` dependency is bumped to a version
+that includes this commit — on an older `service-core`, `OPTIONS` still always gets the bare `204`
+and a client falls back to just trying its first `POST` directly.

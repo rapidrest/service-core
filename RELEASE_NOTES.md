@@ -1,5 +1,9 @@
 # Release Notes
 
+## Unreleased
+
+- Added support for custom @Options endpoints
+
 ## v1.4.0
 
 - Reverted previous change that restricted dot-notation when searching for sub-documents in MongoDB queries
