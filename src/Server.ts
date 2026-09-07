@@ -370,7 +370,12 @@ export class Server {
                         res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS,PUT,POST,DELETE");
                         res.setHeader("access-control-allow-headers", corsAllowedHeaders);
                     }
-                    if (req.method === "OPTIONS") {
+                    // A real, app-registered `OPTIONS` route (e.g. an EAS route's `MS-ASProtocolVersions`
+                    // capability-discovery response) gets a chance to run instead of the blanket preflight
+                    // 204 below - checked at request time, by which point every app route has already been
+                    // registered during startup. See `IHttpRouter.hasExplicitOptionsRoute()`'s own doc
+                    // comment for why this can't be a build-time decision.
+                    if (req.method === "OPTIONS" && !this.app.hasExplicitOptionsRoute(req.path)) {
                         res.status(204).send();
                         return;
                     }

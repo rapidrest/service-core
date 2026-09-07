@@ -54,6 +54,17 @@ describe("Server Tests", () => {
         expect(result.headers["access-control-allow-origin"]).not.toBeDefined();
     });
 
+    it("Lets an app-registered OPTIONS route run instead of the blanket CORS preflight 204, while an unregistered path keeps the default 204.", async () => {
+        const custom = await request(server).options("/capabilities").set("Origin", corsOrigins[0]);
+        expect(custom.status).toBe(200);
+        expect(custom.body).toEqual({ capabilities: ["foo", "bar"] });
+        // Still reflects the CORS headers the global middleware sets before an app route ever runs.
+        expect(custom.headers["access-control-allow-origin"]).toEqual(corsOrigins[0]);
+
+        const unregistered = await request(server).options("/").set("Origin", corsOrigins[0]);
+        expect(unregistered.status).toBe(204);
+    });
+
     it("Can stop server.", async () => {
         expect(server.isRunning()).toBe(true);
         await server.stop();

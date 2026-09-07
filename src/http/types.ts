@@ -92,6 +92,12 @@ export interface IHttpRouter {
     patch(path: string, ...handlers: RequestHandler[]): this;
     head(path: string, ...handlers: RequestHandler[]): this;
     options(path: string, ...handlers: RequestHandler[]): this;
+    /** `true` if the application has registered its own literal `OPTIONS` route at `path` (as
+     * opposed to the framework's own internal `/*` CORS-preflight fallback registered in `listen()`).
+     * Consulted by `Server.ts`'s global CORS middleware so a real app-defined `OPTIONS` handler gets a
+     * chance to run instead of the blanket preflight 204 - see `HttpRouter`/`BunRouter`'s identical
+     * implementations for the full rationale. */
+    hasExplicitOptionsRoute(path: string): boolean;
     ws(path: string, handlers: RequestHandler[], wsOptions?: any, upgradeAuth?: any): this;
     listen(host: string, port: number): Promise<void>;
     close(): void;

@@ -123,6 +123,10 @@ export class BunRouter implements IHttpRouter {
     private readonly globalMiddleware: RequestHandler[] = [];
     private preRouteCount: number = -1;
     private readonly rootWildcardVerbs: Set<string> = new Set();
+    /** Literal (non-`/*`) paths for which the application has registered its own `.options()` route -
+     * see `HttpRouter`'s identical field/doc comment for the full rationale (consulted by `Server.ts`'s
+     * global CORS middleware so a real app-defined `OPTIONS` handler gets a chance to run). */
+    private readonly explicitOptionsPaths: Set<string> = new Set();
     private readonly maxBodySize: number;
     private readonly sslConfig: any;
     private _bunServer: Bun.Server<any> | undefined;
@@ -204,7 +208,20 @@ export class BunRouter implements IHttpRouter {
     }
 
     public options(routePath: string, ...handlers: RequestHandler[]): this {
+        const normalized = normalizePath(routePath);
+        // The framework's own `listen()` fallback pushes its "/*" OPTIONS route directly via
+        // `pushRoute()`, bypassing this method entirely - so it's never tracked as "explicit" here,
+        // and always keeps deferring to the CORS middleware's blanket 204.
+        if (normalized !== "/*") this.explicitOptionsPaths.add(normalized);
         return this.register("OPTIONS", routePath, handlers);
+    }
+
+    /** Returns `true` if the application has registered its own literal `OPTIONS` route at `path`
+     * (not the framework's own `/*` CORS-preflight fallback) - see `HttpRouter`'s identical method
+     * doc comment for the full rationale. `path` is normalized the same way registered routes are, so
+     * a trailing-slash mismatch between the two doesn't cause a false miss. */
+    public hasExplicitOptionsRoute(path: string): boolean {
+        return this.explicitOptionsPaths.has(normalizePath(path));
     }
 
     /**

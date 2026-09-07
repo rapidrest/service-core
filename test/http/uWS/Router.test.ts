@@ -92,6 +92,32 @@ describe("HttpRouter", () => {
         expect(uwsRes._calls.statuses).toEqual(["204 No Content"]);
     });
 
+    describe("hasExplicitOptionsRoute", () => {
+        it("returns true for a literal path registered via options(), false otherwise.", () => {
+            const router = new HttpRouter(makeFakeUwsApp() as any);
+            router.options("/capabilities", (_req, _res, next) => next());
+
+            expect(router.hasExplicitOptionsRoute("/capabilities")).toBe(true);
+            expect(router.hasExplicitOptionsRoute("/other")).toBe(false);
+        });
+
+        it("does not treat the framework's own '/*' fallback registration as explicit.", () => {
+            const router = new HttpRouter(makeFakeUwsApp() as any);
+            router.options("/*", (_req, _res, next) => next());
+
+            expect(router.hasExplicitOptionsRoute("/*")).toBe(false);
+            expect(router.hasExplicitOptionsRoute("/anything")).toBe(false);
+        });
+
+        it("matches regardless of a trailing slash on either side.", () => {
+            const router = new HttpRouter(makeFakeUwsApp() as any);
+            router.options("/capabilities/", (_req, _res, next) => next());
+
+            expect(router.hasExplicitOptionsRoute("/capabilities")).toBe(true);
+            expect(router.hasExplicitOptionsRoute("/capabilities/")).toBe(true);
+        });
+    });
+
     it("defaults an unhandled GET request to 204 when no handler ends the response", async () => {
         const fakeApp: any = makeFakeUwsApp();
         const router = new HttpRouter(fakeApp);

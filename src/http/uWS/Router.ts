@@ -13,6 +13,16 @@ import { ApiErrorMessages, ApiErrors } from "../../ApiErrors.js";
 export { runChain, extractParamNames } from "../MiddlewareChain.js";
 export type { WsUpgradeAuth, WsUpgradeAuthResult } from "../MiddlewareChain.js";
 
+/** Strips a single trailing slash from a pathname, except for the root `"/"` itself - mirrors
+ * `BunRouter.ts`'s identical helper, kept so `explicitOptionsPaths` matching is consistent across
+ * both runtimes despite a request's raw path never having its own trailing slash stripped upstream. */
+function normalizePath(pathname: string): string {
+    if (pathname.length > 1 && pathname.endsWith("/")) {
+        return pathname.slice(0, -1);
+    }
+    return pathname;
+}
+
 /**
  * Wraps a uWS route handler to convert uWS request/response objects into `HttpRequest`/`HttpResponse`
  * adapters, reads the body, and runs the full middleware chain (pre-route global + route-specific + post-route global).
@@ -105,6 +115,13 @@ export class HttpRouter implements IHttpRouter {
      * avoid clobbering an app-defined root catch-all with the default JSON 404 fallback.
      */
     private readonly rootWildcardVerbs: Set<string> = new Set();
+    /**
+     * Literal (non-`/*`) paths for which the application has registered its own `.options()` route
+     * (e.g. via `@Options()`). Consulted by `Server.ts`'s global CORS middleware so a real,
+     * app-defined `OPTIONS` handler (e.g. an EAS route's `MS-ASProtocolVersions` discovery response)
+     * gets a chance to run instead of the blanket CORS preflight 204.
+     */
+    private readonly explicitOptionsPaths: Set<string> = new Set();
     /** Maximum accepted request body size, in bytes. */
     private readonly maxBodySize: number;
 
@@ -203,11 +220,25 @@ export class HttpRouter implements IHttpRouter {
 
     public options(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
+        const normalized = normalizePath(routePath);
+        // The framework's own `listen()` fallback registers exactly "/*" for CORS preflight support -
+        // never treated as "explicit" here, so it keeps deferring to the CORS middleware's blanket 204.
+        if (normalized !== "/*") this.explicitOptionsPaths.add(normalized);
         this.uwsApp.options(
             routePath,
             makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
         );
         return this;
+    }
+
+    /** Returns `true` if the application has registered its own literal `OPTIONS` route at `path`
+     * (not the framework's own `/*` CORS-preflight fallback). See `explicitOptionsPaths`'s own doc
+     * comment. `path` is normalized the same way registered routes are, so a trailing-slash mismatch
+     * between the two doesn't cause a false miss. Only exact literal paths are tracked - a
+     * `:param`-containing `OPTIONS` route is not matched here, since that would require
+     * reimplementing uWS's own path-pattern matching. */
+    public hasExplicitOptionsRoute(path: string): boolean {
+        return this.explicitOptionsPaths.has(normalizePath(path));
     }
 
     /**

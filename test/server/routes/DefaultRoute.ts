@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-import { Route, Get, User, Auth, WebSocket, Socket, Query } from "../../../src/decorators/RouteDecorators";
+import { Route, Get, Options, User, Auth, WebSocket, Socket, Query } from "../../../src/decorators/RouteDecorators";
 import { ApiError, Logger, ObjectDecorators } from "@rapidrest/core";
 import * as ws from "ws";
 import { Description, Returns, Summary } from "../../../src/decorators/DocDecorators";
@@ -72,6 +72,17 @@ class DefaultRoute {
     protected async throwErrorString(): Promise<any> {
         // eslint-disable-next-line no-throw-literal -- deliberately testing a non-Error throw
         throw "This is a raw string error test.";
+    }
+
+    @Summary("Request")
+    @Options("capabilities")
+    @Description(
+        "Returns a custom JSON body instead of the framework's default CORS-preflight 204 - proves an " +
+            "app-registered OPTIONS route takes precedence over the blanket preflight response.",
+    )
+    @Returns([Object])
+    protected async optionsCapabilities(): Promise<any> {
+        return { capabilities: ["foo", "bar"] };
     }
 
     @Summary("Request")

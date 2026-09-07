@@ -253,6 +253,32 @@ describe("BunRouter HTTP dispatch", () => {
         expect(await res!.json()).toEqual({ ok: true });
     });
 
+    describe("hasExplicitOptionsRoute", () => {
+        it("returns true for a literal path registered via options(), false otherwise.", () => {
+            const router = new BunRouter();
+            router.options("/capabilities", jsonHandler({}));
+
+            expect(router.hasExplicitOptionsRoute("/capabilities")).toBe(true);
+            expect(router.hasExplicitOptionsRoute("/other")).toBe(false);
+        });
+
+        it("does not treat the framework's own '/*' fallback registration as explicit.", () => {
+            const router = new BunRouter();
+            router.options("/*", jsonHandler({}));
+
+            expect(router.hasExplicitOptionsRoute("/*")).toBe(false);
+            expect(router.hasExplicitOptionsRoute("/anything")).toBe(false);
+        });
+
+        it("matches regardless of a trailing slash on either side.", () => {
+            const router = new BunRouter();
+            router.options("/capabilities/", jsonHandler({}));
+
+            expect(router.hasExplicitOptionsRoute("/capabilities")).toBe(true);
+            expect(router.hasExplicitOptionsRoute("/capabilities/")).toBe(true);
+        });
+    });
+
     it("skips a non-wildcard candidate whose segment count differs from the request", async () => {
         // matchSegments' length guard (routeSegments.length !== reqSegments.length) must reject the
         // longer /a/b/c route as a candidate for a request to /a, leaving the shorter route to match.
