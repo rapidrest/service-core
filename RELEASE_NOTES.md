@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v1.5.0
 
 - Added support for custom @Options endpoints
 
