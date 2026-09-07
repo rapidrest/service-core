@@ -12,6 +12,7 @@ import { ModelUtils } from "../src/models/ModelUtils";
 import { RecoverableBaseEntity } from "../src/models/RecoverableBaseEntity";
 import { RecoverableBaseMongoEntity } from "../src/models/RecoverableBaseMongoEntity";
 import { transactionContext } from "../src/decorators/DatabaseDecorators";
+import { ApiErrors } from "../src";
 import User from "./server/models/User";
 
 describe("RepoUtils.init guard clauses", () => {
@@ -567,6 +568,81 @@ describe("RepoUtils cache writes are fire-and-forget", () => {
         await flush();
         expect(repoUtils.cache.save).toHaveBeenCalled();
         expect(repoUtils.logger.warn).toHaveBeenCalled();
+    });
+});
+
+// A non-`trackChanges` `update()` guards against a lost optimistic-lock race with a conditional DB write
+// (`updateOne({uid, version: V}, ...)` on Mongo / `repo.update({uid, version: V}, ...)` on SQL) - neither
+// driver throws when that filter matches nothing (a concurrent writer already bumped the row past `V`), it
+// just reports zero rows touched. Without checking that result, `update()` used to fall through to its own
+// `findOne(uid, version: V + 1)` fallback lookup and silently return whatever it found there - the *other*
+// writer's row - as if it were this call's own successful write, discarding the caller's edit with no error
+// surfaced to anyone. Found via an adversarial concurrency review of activesync, a downstream consumer of
+// this package, and fixed here since every entity's optimistic-concurrency guarantee depends on it.
+describe("RepoUtils.update() detects a lost optimistic-lock race", () => {
+    beforeAll(() => {
+        ModelUtils.setTypeOrm(typeorm);
+    });
+
+    it("throws INVALID_OBJECT_VERSION when a Mongo updateOne() matches zero documents (a concurrent writer won)", async () => {
+        const existing = new User({ uid: "u1", version: 0, name: "before" });
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.updateOne = vi.fn().mockResolvedValue({ acknowledged: true, matchedCount: 0, modifiedCount: 0 });
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+
+        await expect(
+            repoUtils.update({ uid: "u1", version: 0, name: "after" }, existing, { ignoreACL: true }),
+        ).rejects.toMatchObject({ code: ApiErrors.INVALID_OBJECT_VERSION });
+    });
+
+    it("still succeeds when a Mongo updateOne() matches exactly one document", async () => {
+        const existing = new User({ uid: "u1", version: 0, name: "before" });
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.updateOne = vi.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1 });
+        fakeRepo.findOne = vi.fn().mockResolvedValue({ uid: "u1", version: 1, name: "after" });
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+
+        const result = await repoUtils.update({ uid: "u1", version: 0, name: "after" }, existing, { ignoreACL: true });
+
+        expect(result.version).toBe(1);
+    });
+
+    it("throws INVALID_OBJECT_VERSION when a SQL-backed repo.update() reports 0 affected rows (a concurrent writer won)", async () => {
+        const existing = new User({ uid: "u1", version: 0, name: "before" });
+        const fakeRepo: any = { update: vi.fn().mockResolvedValue({ affected: 0 }) };
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+
+        await expect(
+            repoUtils.update({ uid: "u1", version: 0, name: "after" }, existing, { ignoreACL: true }),
+        ).rejects.toMatchObject({ code: ApiErrors.INVALID_OBJECT_VERSION });
+    });
+
+    it("still succeeds when a SQL-backed repo.update() reports 1 affected row", async () => {
+        const existing = new User({ uid: "u1", version: 0, name: "before" });
+        const fakeRepo: any = {
+            update: vi.fn().mockResolvedValue({ affected: 1 }),
+            findOne: vi.fn().mockResolvedValue({ uid: "u1", version: 1, name: "after" }),
+        };
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+
+        const result = await repoUtils.update({ uid: "u1", version: 0, name: "after" }, existing, { ignoreACL: true });
+
+        expect(result.version).toBe(1);
+    });
+
+    it("does not throw when a SQL driver reports an ambiguous (undefined) affected count", async () => {
+        // Not every TypeORM driver populates `affected` - treat "we don't know" as distinct from "definitely
+        // zero" rather than rejecting a write the driver never actually told us failed.
+        const existing = new User({ uid: "u1", version: 0, name: "before" });
+        const fakeRepo: any = {
+            update: vi.fn().mockResolvedValue({ affected: undefined }),
+            findOne: vi.fn().mockResolvedValue({ uid: "u1", version: 1, name: "after" }),
+        };
+        const repoUtils: any = new RepoUtils(User, fakeRepo);
+
+        const result = await repoUtils.update({ uid: "u1", version: 0, name: "after" }, existing, { ignoreACL: true });
+
+        expect(result.version).toBe(1);
     });
 });
 

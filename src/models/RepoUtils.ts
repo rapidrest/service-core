@@ -1237,7 +1237,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         throw err;
                     }
                 } else {
-                    await this.repo.updateOne(
+                    const updateResult: any = await this.repo.updateOne(
                         { uid: obj.uid, version: (obj as any).version },
                         {
                             $set: {
@@ -1250,6 +1250,18 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                             session: txInfo?.session,
                         },
                     );
+                    // `updateOne()` doesn't throw when its filter (including `version`) matches nothing - a
+                    // concurrent writer that already advanced this row past `obj.version` leaves this call
+                    // matching zero documents. Without this check, the fallback `findOne(version + 1)` below
+                    // would silently find THAT concurrent writer's row and return it as if it were this call's
+                    // own successful update - a genuine version conflict lost instead of reported.
+                    if (updateResult?.matchedCount === 0) {
+                        throw new ApiError(
+                            ApiErrors.INVALID_OBJECT_VERSION,
+                            409,
+                            ApiErrorMessages.INVALID_OBJECT_VERSION,
+                        );
+                    }
                 }
             } else if (obj.uid) {
                 if (keepPrevious) {
@@ -1302,11 +1314,22 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         version: (obj as any).version + 1,
                     });
                 } else {
-                    await repo.update(query.where, {
+                    const updateResult = await repo.update(query.where, {
                         ...obj,
                         dateModified: new Date(),
                         version: (obj as any).version + 1,
                     } as any);
+                    // Same silent-conflict hazard as the Mongo branch above: `repo.update()` doesn't throw when
+                    // its WHERE clause (including `version`) matches nothing, it just reports 0 affected rows.
+                    // Only checked when the driver actually reports a number (some don't, e.g. `affected` stays
+                    // `undefined`) - never throw on ambiguous ignorance of the true row count.
+                    if (updateResult.affected === 0) {
+                        throw new ApiError(
+                            ApiErrors.INVALID_OBJECT_VERSION,
+                            409,
+                            ApiErrorMessages.INVALID_OBJECT_VERSION,
+                        );
+                    }
                 }
             } else {
                 const toSave: any = obj as any;
