@@ -19,6 +19,7 @@ import {
     LessThan,
     LessThanOrEqual,
     In,
+    IsNull,
     Entity,
     PrimaryColumn,
     Column,
@@ -1145,6 +1146,44 @@ describe("ModelUtils Tests", () => {
                 where: [
                     {
                         myParam: Not("myValue"),
+                    },
+                ],
+                page: 0,
+                take: 100,
+            });
+        });
+
+        it("Builds not(null)/ne(null) as Not(IsNull()), not Not(null) - the latter compiles to `!= NULL`, which SQL NULL semantics always evaluate to unknown/false, silently matching zero rows regardless of the column's actual value.", () => {
+            const request: any = {};
+            request.query = {
+                notParam: "not(null)",
+                neParam: "ne(null)",
+            };
+
+            const query = ModelUtils.buildSearchQuerySQL(undefined, request.query, true, request.user);
+            expect(query).toEqual({
+                where: [
+                    {
+                        notParam: Not(IsNull()),
+                        neParam: Not(IsNull()),
+                    },
+                ],
+                page: 0,
+                take: 100,
+            });
+        });
+
+        it("Builds eq(null) as IsNull(), not Equal(null) - same NULL-semantics gap as not(null)/ne(null).", () => {
+            const request: any = {};
+            request.query = {
+                myParam: "eq(null)",
+            };
+
+            const query = ModelUtils.buildSearchQuerySQL(undefined, request.query, true, request.user);
+            expect(query).toEqual({
+                where: [
+                    {
+                        myParam: IsNull(),
                     },
                 ],
                 page: 0,

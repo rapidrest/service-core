@@ -252,7 +252,7 @@ export class ModelUtils {
      */
     private static getQueryParamValue(param: any): any {
         if (typeof param === "string") {
-            const { Equal, MoreThan, MoreThanOrEqual, In, ILike, LessThan, LessThanOrEqual, Not, Between } =
+            const { Equal, MoreThan, MoreThanOrEqual, In, ILike, LessThan, LessThanOrEqual, Not, Between, IsNull } =
                 ModelUtils.orm;
             // The value of each param can optionally have the operation included. If no operator is included Eq is
             // always assumed.
@@ -274,7 +274,10 @@ export class ModelUtils {
 
                 switch (opName) {
                     case "eq":
-                        return Equal(value);
+                        // `Equal(null)` compiles to `column = NULL`, which standard SQL NULL semantics always
+                        // evaluate to unknown/false (never true), regardless of the column's actual value -
+                        // TypeORM requires the dedicated `IsNull()` operator to produce `column IS NULL`.
+                        return value === null ? IsNull() : Equal(value);
                     case "gt":
                         return MoreThan(value);
                     case "gte":
@@ -293,7 +296,13 @@ export class ModelUtils {
                         return LessThanOrEqual(value);
                     case "ne":
                     case "not":
-                        return Not(value);
+                        // Same NULL-semantics gap as "eq" above, mirrored: `Not(null)` compiles to
+                        // `column != NULL`, which SQL also always evaluates to unknown/false - the correct
+                        // "has a value" query is `Not(IsNull())`, producing `column IS NOT NULL`. Confirmed via
+                        // a real-database (SQLite) test in @rapidmx/restapi that `ne(null)`/`not(null)`
+                        // silently matched zero rows before this fix, even though the identical query already
+                        // worked correctly against MongoDB (`$ne: null` has no equivalent gap there).
+                        return value === null ? Not(IsNull()) : Not(value);
                     case "nin": {
                         // See "in" above for why this splits `matches[2]` instead of `value`.
                         const args: string[] = matches[2].split(",");
