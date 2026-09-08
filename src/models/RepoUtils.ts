@@ -543,8 +543,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 records: options?.acl?.records || [],
             };
 
-            // Look for an existing record for the creator
-            let found: boolean = !!this.aclUtils.getRecord(acl, options?.user);
+            // Look for an existing record for the creator. We only search the immediate ACL
+            // and not the parent chain and we perform an exact match.
+            let found: boolean = !!this.aclUtils.getRecord(acl, options?.user, { maxDepth: 0, specificity: "exact" });
             let modifiedExistingAcl: boolean = false;
 
             // Always grant the creator CRUD access, unless the user is a superuser.

@@ -697,7 +697,7 @@ describe("ACLUtils Tests", () => {
 
                 try {
                     acl.records = acl.records.splice(0, 1);
-                    expect(aclUtils?.saveACL(acl)).rejects.toThrow();
+                    await expect(aclUtils?.saveACL(acl)).rejects.toThrow();
                 } catch (err) {
                     // NO-OP
                 }

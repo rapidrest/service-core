@@ -590,31 +590,64 @@ export class ACLUtils {
     }
 
     /**
-     * Retrieves the most specific record in the provided ACL associated with the provided user: an exact
-     * uid/anonymous match beats a role match, which beats a wildcard (`.*`/`*`) match — regardless of where
+     * Retrieves the most specific record in the provided ACL associated with the provided user. An exact
+     * uid/anonymous match beats a role match, which beats a wildcard (`.*`/`*`) match, regardless of where
      * each record sits in `acl.records`. Without this, a wildcard grant authored before a specific record
-     * (a natural authoring order) would silently shadow that more specific record. Only falls back to the
-     * parent ACL when nothing in this ACL's own records matches at all.
+     * (a natural authoring order) would silently shadow that more specific record. If no record can be found
+     * in the ACL provided, searches each parent for a matching record.
+     *
+     * The depth of the search can be limited by setting the `options.maxDepth` option to a non-negative value. A value
+     * of `0` only searches the provided ACL, a value of `1` searches the provided ACL and its direct parent, a value of
+     * `2` searches the ACL, it's parent and grand-parent, and so on. A value of `-1` (the default) means no limit;
+     * the entire parent chain is searched.
+     *
+     * Since records support regex patterns, it is also possible to cap the match quality (**specificity**) via the
+     * `options.specificity` option. This is a ceiling, not an exact requirement: setting `options.specificity` to
+     * `exact` only matches the user's UID exactly. A value of `role` matches the UID or a user's role (preferring
+     * the UID match). A value of `wildcard` matches the UID, role, or any regex pattern (e.g. `.*` or `user*`),
+     * preferring the most specific of those that match.
+     *
+     * The default options are:
+     * ```ts
+     * {
+     *   maxDepth: -1 // no limit,
+     *   specificity: "wildcard"
+     * }
+     * ```
      *
      * @param acl The access control list that will be searched.
      * @param user The user to find a record for.
+     * @param options The set of options to consider
      * @returns The ACL record associated with the given user if found, otherwise `undefined`.
      */
-    public getRecord(acl: AccessControlList, user: JWTUser | undefined): ACLRecord | null {
+    public getRecord(
+        acl: AccessControlList,
+        user: JWTUser | undefined,
+        options?: { specificity?: "exact" | "role" | "wildcard"; maxDepth?: number; curDepth?: number },
+    ): ACLRecord | null {
         if (!acl) {
             return null;
         }
 
+        let maxDepth = options?.maxDepth ?? -1;
+        let curDepth = options?.curDepth ?? 0;
+        let specificity = options?.specificity ?? "wildcard";
+
+        // Records at least as specific as the requested ceiling are candidates; among those, prefer the
+        // most specific one regardless of array order (see doc comment above).
+        const allowRole: boolean = specificity === "role" || specificity === "wildcard";
+        const allowWildcard: boolean = specificity === "wildcard";
+
         let roleMatch: ACLRecord | null = null;
         let wildcardMatch: ACLRecord | null = null;
         for (const record of acl.records) {
-            const specificity = this.matchSpecificity(user, record.userOrRoleId);
-            if (specificity === "exact") {
+            const mSpecificity = this.matchSpecificity(user, record.userOrRoleId);
+            if (mSpecificity === "exact") {
                 return record;
-            } else if (specificity === "role") {
-                roleMatch = roleMatch ?? record;
-            } else if (specificity === "wildcard") {
-                wildcardMatch = wildcardMatch ?? record;
+            } else if (mSpecificity === "role" && allowRole) {
+                roleMatch = record;
+            } else if (mSpecificity === "wildcard" && allowWildcard) {
+                wildcardMatch = record;
             }
         }
         if (roleMatch) {
@@ -624,7 +657,18 @@ export class ACLUtils {
             return wildcardMatch;
         }
 
-        return acl.parent ? this.getRecord(acl.parent, user) : null;
+        // Only search the parent's ACL if not already at the desired max search depth
+        if (maxDepth < 0 || curDepth < maxDepth) {
+            return acl.parent
+                ? this.getRecord(acl.parent, user, {
+                      curDepth: curDepth + 1,
+                      maxDepth,
+                      specificity,
+                  })
+                : null;
+        } else {
+            return null;
+        }
     }
 
     /**
