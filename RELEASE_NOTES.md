@@ -1,5 +1,9 @@
 # Release Notes
 
+## Unreleased
+
+- Upgraded @rapidrest/core dependency
+
 ## v1.7.1
 
 - Fixed issue with new @RateLimit middleware that causes any decorated endpoint to hang indefinitely

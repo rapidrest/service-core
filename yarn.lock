@@ -1458,9 +1458,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rapidrest/core@npm:^5.2.0":
-  version: 5.2.0
-  resolution: "@rapidrest/core@npm:5.2.0"
+"@rapidrest/core@npm:^5.2.2":
+  version: 5.2.2
+  resolution: "@rapidrest/core@npm:5.2.2"
   dependencies:
     form-data: "npm:^4.0.6"
     handlebars: "npm:^4.7.9"
@@ -1477,7 +1477,7 @@ __metadata:
     reflect-metadata: 0.2.x
     winston: 3.x
     winston-transport: 4.x
-  checksum: 10c0/c6c14f8412fb4dd3d65c6ef2afcb31ce225e2435fb1f1a25882c54c18c6a03825ce64312ca7b845ae020f83ead2ae9aee85263d0206a1ea3a6444582a5b41c8c
+  checksum: 10c0/474853632650bfa9cd74d35f48f68306570cfcb4e07ad79e4cd7b9948135046d3fc1160843a80560e60b449225cf0f0196ab2f36af578435aefe305b78a07756
   languageName: node
   linkType: hard
 
@@ -1486,7 +1486,7 @@ __metadata:
   resolution: "@rapidrest/service-core@workspace:."
   dependencies:
     "@rapidrest/cli": "npm:^1.0.1"
-    "@rapidrest/core": "npm:^5.2.0"
+    "@rapidrest/core": "npm:^5.2.2"
     "@simplewebauthn/server": "npm:^14.0.1"
     "@swc/core": "npm:^1.16.2"
     "@types/better-sqlite3": "npm:^9.6.0"
