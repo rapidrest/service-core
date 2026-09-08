@@ -7,6 +7,7 @@
   with an in-memory fallback.
 - Added `@RateLimit()` route decorator (method or class level) that throttles a decorated endpoint
   via `RateLimiter`, keyed on `<method> <path>` of the incoming request.
+- Fixed issue with path parameters not being decoded properly
 
 ## v1.6.0
 
