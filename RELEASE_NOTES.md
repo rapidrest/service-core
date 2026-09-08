@@ -4,6 +4,7 @@
 
 - Fixed issue with ModelUtils.getQueryParamValue() that produced incorrect SQL when passing in `eq(null)` or `ne(null)`.
 - Fixed issue with RepoUtils.update() that ignored the result, not surfacing errors (such as index collisions).
+- Upgraded all package dependencies
 
 ## v1.5.0
 
