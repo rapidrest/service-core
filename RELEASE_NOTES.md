@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v1.7.2
 
 - Upgraded @rapidrest/core dependency
 
