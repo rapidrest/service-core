@@ -1,6 +1,6 @@
 # Release Notes
 
-## v1.7.1
+## Unreleased
 
 - Fixed issue with new @RateLimit middleware that causes any decorated endpoint to hang indefinitely
 
