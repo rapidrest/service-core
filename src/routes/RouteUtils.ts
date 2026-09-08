@@ -76,7 +76,12 @@ export class RouteUtils {
      */
     public checkRateLimiter(): RequestHandler {
         return async (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
-            await this.rateLimiter?.checkAndIncrement(`${req.method} ${req.path}`, req);
+            try {
+                await this.rateLimiter?.checkAndIncrement(`${req.method} ${req.path}`, req);
+            } catch (err: any) {
+                return next(err);
+            }
+            return next();
         };
     }
 

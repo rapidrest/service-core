@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.7.1
+
+- Fixed issue with new @RateLimit middleware that causes any decorated endpoint to hang indefinitely
+
 ## v1.7.0
 
 - Added `RateLimiter`, ported from `@rapidrest/auth`: attempt-count rate limiting, layered
