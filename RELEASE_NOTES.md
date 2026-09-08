@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v1.7.0
 
 - Added `RateLimiter`, ported from `@rapidrest/auth`: attempt-count rate limiting, layered
   per-identifier and per-source-IP (reverse-proxy aware), Redis-backed and atomic across instances
