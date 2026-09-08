@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-09-08
+
+### Fixed
+- Fixed issue with new @RateLimit middleware that causes any decorated endpoint to hang indefinitely
+- Fixed release notes file
+
 ## [1.7.0] - 2026-09-08
 
 ### Added
@@ -105,7 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/rapidrest/service-core/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/rapidrest/service-core/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/rapidrest/service-core/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/rapidrest/service-core/compare/v1.4.0...v1.5.0
