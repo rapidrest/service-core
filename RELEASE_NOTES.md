@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v1.6.0
 
 - Changed `ACLUtils.getRecord()` to allow controllable search depth and specificity.
 - Fixed issue with `ModelUtils.getQueryParamValue()` that produced incorrect SQL when passing in `eq(null)` or `ne(null)`.

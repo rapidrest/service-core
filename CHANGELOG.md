@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-08
+
+### Added
+- Added installation of build-essential to CI build job
+- Added install of python3 to build CI
+
+### Changed
+- - Check updateOne()/repo.update()'s result before falling through to the findOne(version+1) fallback
+- - Throw INVALID_OBJECT_VERSION when zero rows matched/affected instead of returning a concurrent writer's row
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+- Changing how SQL eq(null) queries are built from `Equal(null)` to `IsNull())` which produces desired results
+- Upgraded all package deps
+- Switched from custom release script to rapidrest CLI
+- Changed ACLUtils.getRecord to  allow controllable search depth and specificity
+
+### Fixed
+- Fixed RepoUtils.update() silently losing an optimistic-lock conflict
+- Fixed issue with `yarn install` on CI
+- Fixed more issues with CI jobs
+
+### Removed
+- Removed disable of redis build for CI build job
+
+
 ## [1.5.0] - 2026-09-07
 
 ### Added
@@ -69,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/rapidrest/service-core/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/rapidrest/service-core/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/rapidrest/service-core/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/rapidrest/service-core/compare/v1.3.0...v1.3.1
