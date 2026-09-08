@@ -25,6 +25,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
 
+      - name: Install apt packages
+        run: apt update && apt install build-essential -y
+
       - name: Install dependencies
         run: export REDISMS_DISABLE_POSTINSTALL=true && yarn install
 
