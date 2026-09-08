@@ -8,14 +8,17 @@
 // stub and invoked directly with fake uWS request/response objects, without a real server.
 import { HttpRouter } from "../../../src/http/uWS/Router";
 
-function makeUwsReq(overrides: Partial<{ method: string; url: string; headers: Record<string, string> }> = {}) {
+function makeUwsReq(
+    overrides: Partial<{ method: string; url: string; headers: Record<string, string>; params: string[] }> = {},
+) {
     const headers = overrides.headers ?? {};
+    const params = overrides.params ?? [];
     return {
         getMethod: () => overrides.method ?? "get",
         getUrl: () => overrides.url ?? "/foo",
         getQuery: () => "",
         getHeader: (name: string) => headers[name] ?? "",
-        getParameter: () => "",
+        getParameter: (i: number) => params[i] ?? "",
         forEach: (cb: (key: string, value: string) => void) => {
             for (const [k, v] of Object.entries(headers)) cb(k, v);
         },
@@ -140,6 +143,40 @@ describe("HttpRouter", () => {
         await handler(uwsRes, makeUwsReq());
 
         expect(uwsRes._calls.statuses).toEqual(["200 OK"]);
+    });
+
+    describe(":param decoding", () => {
+        it("percent-decodes a path param — uWS's own getParameter() never does this itself, unlike query-string parsing", async () => {
+            const fakeApp: any = makeFakeUwsApp();
+            const router = new HttpRouter(fakeApp);
+            let captured: string | undefined;
+            router.get("/mailboxes/:id", (req: any, res: any) => {
+                captured = req.params.id;
+                res.status(200).send({});
+            });
+
+            const handler = fakeApp._routes.get[0].handler;
+            // A real caller building this URL via `encodeURIComponent("jdoe@example.com")` produces
+            // exactly this percent-encoded segment on the wire.
+            await handler(makeUwsRes(), makeUwsReq({ params: ["jdoe%40example.com"] }));
+
+            expect(captured).toBe("jdoe@example.com");
+        });
+
+        it("falls back to the raw segment on malformed percent-encoding rather than throwing", async () => {
+            const fakeApp: any = makeFakeUwsApp();
+            const router = new HttpRouter(fakeApp);
+            let captured: string | undefined;
+            router.get("/mailboxes/:id", (req: any, res: any) => {
+                captured = req.params.id;
+                res.status(200).send({});
+            });
+
+            const handler = fakeApp._routes.get[0].handler;
+            await handler(makeUwsRes(), makeUwsReq({ params: ["bad%"] }));
+
+            expect(captured).toBe("bad%");
+        });
     });
 
     it("listen() resolves and stores the listen socket/port on a successful bind", async () => {

@@ -333,6 +333,27 @@ export function Query(name: string | undefined = undefined) {
 }
 
 /**
+ * Indicates that the endpoint should have rate limiting applied for all incoming requests. This can be applied
+ * at the endpoint function level or the route class level. When applying at the class level, all defined
+ * endpoints in the class will have rate limiting applied.
+ *
+ * When performing rate limiting, the method and path of the request (without the query portion) is used as the identifier
+ * when calling `RateLimiter.checkAndIncrement()` such that a `GET /path/to/my/route` request has the effect of calling
+ * `RateLimiter.checkAndIncrement('GET /path/to/my/route', req)` directly.
+ */
+export function RateLimit() {
+    return function (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
+        if (propertyKey) {
+            let route: any = getRouteMetadata(target, propertyKey);
+            route.rateLimit = true;
+            Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+        } else {
+            Reflect.defineMetadata("rrst:rateLimit", true, target.prototype);
+        }
+    };
+}
+
+/**
  * Injects the HTTP request object as the value of the decorated argument.
  */
 export function Request(target: any, propertyKey: string, index: number) {

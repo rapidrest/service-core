@@ -33,7 +33,7 @@ describe("BunRouter HTTP dispatch", () => {
         expect(await res!.json()).toEqual({ from: "static" });
     });
 
-    it("extracts :param values without percent-decoding", async () => {
+    it("percent-decodes :param values — a caller-encoded uid (e.g. an email address via encodeURIComponent()) must round-trip", async () => {
         const router = new BunRouter();
         let captured: string | undefined;
         router.get("/users/:id", (req, res) => {
@@ -41,7 +41,19 @@ describe("BunRouter HTTP dispatch", () => {
             res.json({});
         });
         await dispatch(router, new Request("http://localhost/users/a%20b"));
-        expect(captured).toBe("a%20b");
+        expect(captured).toBe("a b");
+    });
+
+    it("falls back to the raw segment on malformed percent-encoding rather than throwing", async () => {
+        const router = new BunRouter();
+        let captured: string | undefined;
+        router.get("/users/:id", (req, res) => {
+            captured = req.params.id;
+            res.json({});
+        });
+        // `URL`'s own parsing leaves an unpaired "%" as-is in `.pathname` rather than rejecting it.
+        await dispatch(router, new Request("http://localhost/users/bad%"));
+        expect(captured).toBe("bad%");
     });
 
     it("prefers a static route over a :param route for the same request", async () => {

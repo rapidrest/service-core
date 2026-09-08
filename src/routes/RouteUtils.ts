@@ -13,6 +13,7 @@ import { ACLAction, ACLUtils, type AccessControlList } from "../security/index.j
 import _ from "lodash-es";
 import { AuthMiddleware } from "../auth/AuthMiddleware.js";
 import type { AuthResult } from "../auth/AuthStrategy.js";
+import { RateLimiter } from "../RateLimiter.js";
 const { Config, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -32,6 +33,9 @@ export class RouteUtils {
 
     @Logger
     private logger?: any;
+
+    @Inject(RateLimiter)
+    protected rateLimiter?: RateLimiter;
 
     @Config("trusted_roles", ["admin"])
     protected trustedRoles: string[] = ["admin"];
@@ -63,6 +67,16 @@ export class RouteUtils {
             }
 
             return next(err);
+        };
+    }
+
+    /**
+     * Creates a middleware function that performs rate limiting on the request where the identifier
+     * used to identify the resource is the request `<method> <path>`.
+     */
+    public checkRateLimiter(): RequestHandler {
+        return async (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+            await this.rateLimiter?.checkAndIncrement(`${req.method} ${req.path}`, req);
         };
     }
 
@@ -260,6 +274,7 @@ export class RouteUtils {
                 let { authRequired } = metadata;
                 const { after, before, methods, requiredRoles, requiredScopes, requiresTrustedRole, validator } =
                     metadata;
+                const rateLimit = metadata.rateLimit ?? Reflect.getMetadata("rrst:rateLimit", route);
                 const requiresElevation =
                     metadata.requiresElevation ?? Reflect.getMetadata("rrst:requiresElevation", route);
                 let { authStrategies } = metadata;
@@ -281,16 +296,20 @@ export class RouteUtils {
 
                 // Prepare the list of middleware to apply for the given endpoint.
                 // The order of operations for middleware is:
-                // 1. Requires Elevation
-                // 2. Auth Strategies
-                // 3. Required Roles
-                // 4. Required Scopes
-                // 5. Required Permissions (Path Matching)
-                // 6. Validator Function
-                // 7. Before Functions
-                // 8. Decorated Function
-                // 9. After Functions
+                // 1. Rate Limiter
+                // 2. Requires Elevation
+                // 3. Auth Strategies
+                // 4. Required Roles
+                // 5. Required Scopes
+                // 6. Required Permissions (Path Matching)
+                // 7. Validator Function
+                // 8. Before Functions
+                // 9. Decorated Function
+                // 10. After Functions
                 let middleware: Array<RequestHandler> = new Array();
+                if (rateLimit) {
+                    middleware.push(this.checkRateLimiter());
+                }
                 if (requiresElevation !== undefined) {
                     middleware.push(this.checkElevation(requiresElevation));
                 }

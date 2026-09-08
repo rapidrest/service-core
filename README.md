@@ -38,6 +38,8 @@ For complete documentation please visit [RapidREST.dev](https://rapidrest.dev).
 - Roles Based Access Control layered with per-record Access Control Lists for fine-grained,
   row-level authorization
 - Server-side session management (in-memory or Redis-backed)
+- Attempt-count rate limiting (`RateLimiter`) for brute-force/abuse defense, layered per-identifier
+  and per-source-IP (reverse-proxy aware), Redis-backed and atomic across instances
 
 **Real-time & Background Work**
 

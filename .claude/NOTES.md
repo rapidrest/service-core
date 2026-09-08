@@ -392,3 +392,99 @@ Downstream consumers (e.g. `@rapidmx/activesync`'s `BaseEasRoute.ts`) only get r
 capability discovery once their own `@rapidrest/service-core` dependency is bumped to a version
 that includes this commit — on an older `service-core`, `OPTIONS` still always gets the bare `204`
 and a client falls back to just trying its first `POST` directly.
+
+### 2026-09-08 — Neither router ever percent-decoded a `:param` path segment
+
+Found by a Claude session working in `rapidmx/server` (its `.claude/NOTES.md`, Phase 3 entry of the
+`@rapidmx/restapi` feature-wiring plan, has the fuller downstream story) via a live `yarn dev` smoke
+test — not the test suite, which mocks `fetch` everywhere and never exercises a real request against
+a real server. `GET /api/mail/mailboxes/jdoe%40example.com` 404'd even though the mailbox existed;
+`GET /api/mail/mailboxes/jdoe@example.com` (unencoded) worked. Root cause: `http/uWS/Router.ts`
+(`uwsReq.getParameter(i)`) and `http/bun/BunRouter.ts` (`reqSegments` from `URL.pathname`) both hand a
+`:param` value straight to `req.params` with no `decodeURIComponent()` — unlike query-string parsing
+in `http/uWS/Adapters.ts`, which already decodes. `BunRouter.test.ts` even had a test asserting the
+buggy behavior as intentional ("extracts :param values without percent-decoding") — this was a
+deliberate design choice, just an incorrect one: any consumer that `encodeURIComponent()`s a uid
+before building a URL (a normal, common thing to do — the affected downstream code did this for every
+email-address-derived uid) gets the literal encoded string back in `req.params`, which then fails
+every lookup keyed on the real (decoded) value.
+
+Fixed: both param-extraction sites now `decodeURIComponent()` each raw segment, falling back to the
+raw value on malformed percent-encoding (a bare `%`) — same defensive pattern `Adapters.ts`'s
+query-string parsing already used. Updated `BunRouter.test.ts`'s stale test to assert the fixed
+behavior, added a matching malformed-encoding fallback test to both `Router.test.ts` and
+`BunRouter.test.ts`. `Server.test.ts`'s own integration suite was independently flaky in that
+session's environment (real `mongodb-memory-server`, real port bind) at the time — confirmed via
+`git stash` that the flakiness reproduced identically with the fix removed, i.e. unrelated to this
+change; the new unit tests (which fake the uWS/Bun request objects, no real port) passed cleanly
+throughout, and the downstream `rapidmx/server` repo's own equivalent real-server/real-DB integration
+tests came back fully green once patched in.
+
+Downstream consumers only get correctly-decoded path params once their own `@rapidrest/service-core`
+dependency is bumped to a version including this fix — any route whose `:param` values are ever
+built via `encodeURIComponent()` upstream (which, for a uid containing `@`, `/`, `%`, or any other
+character that function escapes, is the *only* correct way to build that URL) is affected until then.
+
+### 2026-09-08 — `RateLimiter` adopted from `@rapidrest/auth`
+
+JP's call: the rate limiter that had been living in `@rapidrest/auth` is a general framework utility,
+so it now lives here as `src/RateLimiter.ts` (+ `test/RateLimiter.test.ts`, 33 tests, all green).
+`@rapidrest/auth` deleted its copy and imports this one; that repo's NOTES.md carries the consumer-side
+half of this entry.
+
+- **Deliberately un-namespaced** (JP chose a clean break over a compat shim): config path `rateLimit`,
+  cache-key prefix `ratelimit:`, and event type `ratelimit.exceeded`, exported as the
+  `RATELIMIT_EXCEEDED_EVENT` const. The auth-side names it replaced were `auth:rateLimit`,
+  `auth:ratelimit:` and `auth.ratelimit.exceeded` — a breaking change for `@rapidrest/auth` consumers,
+  documented in that repo's `RELEASE_NOTES.md`.
+- **Dependencies were already all local** — `ApiErrors`, `ConnectionManager`, `HttpRequest` and
+  `NetUtils` are ours; `ApiError`/`EventUtils`/`MemoryStore`/`ObjectDecorators` come from
+  `@rapidrest/core` (note `EventUtils` is exported from core's `TelemetryUtils.ts`, not a file of its
+  own). No new package deps; `redis` was already a required peer, and the index barrel now pulls in a
+  *value* import of its `ErrorReply`.
+- **The class is not safely subclassable for re-namespacing** — worth knowing before anyone tries:
+  re-declaring `@Config(...)` on the same property in a subclass does not override the base, because
+  `ObjectFactory._getOrBuildMetadata()` collects a match from *every* proto in the chain and
+  `initialize()` applies them subclass-first/base-last, so the base path wins. And two classes sharing
+  the name `RateLimiter` collide on the `` `${className}:${name}` `` registry key. Per-consumer
+  namespacing should go through `@Inject(RateLimiter, { name, args })` instead.
+- **`INCREX` requires Redis 8.8+**, which Redis Software/Redis Cloud/Memurai do not have yet — hence
+  the `redisIncrexUnsupported` latch and in-memory fallback. That fallback is a real, deliberate
+  degradation (counters stop being atomic across instances for the life of the process) and its
+  regression tests came over with the class; don't "simplify" it away.
+- **Pre-existing, unrelated: ~16 HTTP integration test files were already red on this working tree**
+  (`Server*`, most of `routes/`, `security/ACLRoute*`) — plausibly the in-flight uncommitted
+  `BunRouter`/`uWS/Router` percent-decode work above, since those two routers serve every one of them.
+  Confirmed not caused by the `RateLimiter` addition: with it removed and the index export reverted, the
+  full suite failed *more* (17 files/261 tests vs 16/234), and the with-RateLimiter failing set is a
+  strict subset of the control's — the one difference (`routes/ModelRoute.SQL.test.ts`) failed only in
+  the control, i.e. flake. `test/RateLimiter.test.ts` itself is green in both the isolated and full runs.
+
+### 2026-09-08 — `@RateLimit()` route decorator added (JP), consuming routes picked in `@rapidrest/auth`
+
+JP added `@RateLimit()` (`RouteDecorators.ts`) + `RouteUtils.checkRateLimiter()` directly, on top of the
+`RateLimiter` port above — applicable at the method or class level, runs as the *first* middleware in the
+chain (ahead of elevation/auth/roles/scopes/permissions/validator), and keys `RateLimiter.checkAndIncrement()`
+on the literal `` `${req.method} ${req.path}` `` of the incoming request.
+
+- **`req.path` is the real request path, params included** — `this.path = rawUrl` in both adapters (see
+  `Adapters.ts`) — not the route pattern. So the identifier this decorator produces is per-*resource* for a
+  parameterized route (`POST /clients/abc123/regenerate-secret` and `.../xyz789/...` throttle independently)
+  but a single identifier **shared globally by every caller** for a fixed-path route (`GET /jwks.json` has
+  exactly one bucket for the whole deployment, not one per caller).
+- **That global-sharing is a real trap for high-traffic identity endpoints specifically**, worth flagging to
+  anyone reaching for this decorator: `RateLimiter`'s default config (`maxAttempts: 5`, `windowSeconds: 300`)
+  is calibrated for "attempts against one claimed identity," not "requests to one endpoint from the whole
+  caller population." Slapping `@RateLimit()` on e.g. a login/refresh/authorize route at that default would
+  throttle the 6th *unrelated* legitimate caller in 5 minutes, not just an attacker — a straightforward
+  regression, not a stricter version of the existing per-identifier protection. It's also not straightforward
+  to fix by config alone: `RateLimiter` is a single shared singleton/config, so raising `maxAttempts` to suit
+  a volumetric use case also weakens every identifier-keyed `checkAndIncrement()` call site sharing that same
+  config. There's no per-route override today - only a flat global `rateLimit`/`ip` config section.
+- **Consuming-side picks landed in `@rapidrest/auth`** (that repo's NOTES.md carries the reasoning in full):
+  `BaseOAuthDiscoveryRoute.discovery()`, `BaseOAuthJwksRoute.jwks()` (both public/unauthenticated with no
+  identifier available at all), `BaseOAuthClientRoute.regenerateSecret()` (parameterized path, so effectively
+  per-client), and `BaseImpersonationRoute.impersonate()` (fixed path, but deliberately global — catches an
+  attacker rotating the *target* on every request, which a per-target counter structurally can't). Every
+  existing manual `checkAndIncrement(identifier, req)` call site elsewhere in that repo was deliberately left
+  alone for the reason above.

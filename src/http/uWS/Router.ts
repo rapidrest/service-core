@@ -52,9 +52,19 @@ function makeUWSHandler(
         const res = new UWSResponse(uwsRes);
         res.isHead = isHead;
 
-        // Capture path params synchronously (uwsReq is stack-allocated, only valid before first await)
+        // Capture path params synchronously (uwsReq is stack-allocated, only valid before first await).
+        // uWS never decodes route segments itself (unlike the query-string parsing in Adapters.ts), so a
+        // caller-encoded value (e.g. `encodeURIComponent()`-ing an email-address-derived uid before
+        // building the URL, this library's own established convention) would otherwise arrive here still
+        // percent-encoded and fail every downstream uid lookup. Falls back to the raw value on malformed
+        // percent-encoding (e.g. a bare "%"), matching Adapters.ts's identical query-string fallback.
         for (let i = 0; i < paramNames.length; i++) {
-            req.params[paramNames[i]] = uwsReq.getParameter(i) || "";
+            const raw = uwsReq.getParameter(i) || "";
+            try {
+                req.params[paramNames[i]] = decodeURIComponent(raw);
+            } catch {
+                req.params[paramNames[i]] = raw;
+            }
         }
 
         // Body must be read before any middleware runs. If it exceeds maxBodySize, readBody() has

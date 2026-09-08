@@ -7,6 +7,7 @@ export * from "./NetUtils.js";
 export * from "./NotificationUtils.js";
 export * from "./ObjectFactory.js";
 export * from "./OpenApiSpec.js";
+export * from "./RateLimiter.js";
 export * from "./Server.js";
 export * from "./Types.js";
 

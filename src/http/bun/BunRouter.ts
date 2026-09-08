@@ -48,15 +48,25 @@ function matchSegments(routeSegments: string[], reqSegments: string[]): number |
 
 /**
  * Extracts `:param` values from a matched request path given the route's segment pattern.
- * Deliberately does NOT percent-decode — matches uWS's `getParameter()`, which returns the raw
- * segment as-is, so `:param` values are identical across both adapters for the same request.
+ * `reqSegments` comes from `URL.pathname`, which (like uWS's `getParameter()`) does not decode an
+ * already-percent-encoded segment — a caller-encoded value (e.g. `encodeURIComponent()`-ing an
+ * email-address-derived uid before building the URL, this library's own established convention)
+ * would otherwise arrive here still percent-encoded and fail every downstream uid lookup. Decodes
+ * each param value, falling back to the raw segment on malformed percent-encoding (e.g. a bare
+ * "%"), matching `Adapters.ts`'s identical query-string fallback and the uWS router's own param
+ * decoding — `:param` values stay identical across both adapters for the same request.
  */
 function extractParams(routeSegments: string[], reqSegments: string[]): Record<string, string> {
     const params: Record<string, string> = {};
     for (let i = 0; i < routeSegments.length; i++) {
         const seg = routeSegments[i];
         if (seg.startsWith(":")) {
-            params[seg.slice(1)] = reqSegments[i] ?? "";
+            const raw = reqSegments[i] ?? "";
+            try {
+                params[seg.slice(1)] = decodeURIComponent(raw);
+            } catch {
+                params[seg.slice(1)] = raw;
+            }
         }
     }
     return params;

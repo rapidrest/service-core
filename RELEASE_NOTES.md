@@ -1,5 +1,13 @@
 # Release Notes
 
+## Unreleased
+
+- Added `RateLimiter`, ported from `@rapidrest/auth`: attempt-count rate limiting, layered
+  per-identifier and per-source-IP (reverse-proxy aware), Redis-backed and atomic across instances
+  with an in-memory fallback.
+- Added `@RateLimit()` route decorator (method or class level) that throttles a decorated endpoint
+  via `RateLimiter`, keyed on `<method> <path>` of the incoming request.
+
 ## v1.6.0
 
 - Changed `ACLUtils.getRecord()` to allow controllable search depth and specificity.
