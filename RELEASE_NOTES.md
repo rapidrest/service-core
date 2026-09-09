@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v1.8.0
 
 - Raised `RateLimiter`'s default identifier-layer limit from 5 attempts/300s to 100 attempts/60s. That
   counter is keyed on `<method>|<path>` when driven by `@RateLimit` (i.e. shared across every caller of

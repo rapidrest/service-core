@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-09
+
+### Added
+- Added options to @RateLimit decorator for explicitly setting an id, toggling per-user rate limiting and overriding service-level defaults
+
 ## [1.7.2] - 2026-09-08
 
 ### Changed
@@ -116,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v1.7.2...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/rapidrest/service-core/compare/v1.7.2...v1.8.0
 [1.7.2]: https://github.com/rapidrest/service-core/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/rapidrest/service-core/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/rapidrest/service-core/compare/v1.6.0...v1.7.0
