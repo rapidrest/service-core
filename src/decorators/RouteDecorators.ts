@@ -4,6 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 import { ACLAction, type AccessControlList } from "../security/AccessControlList.js";
+import { RateLimitConfig } from "../RateLimiter.js";
 
 /**
  * Retrieves a copy of the `rrst:route` metadata for the given target/propertyKey. `Reflect.getMetadata` walks the
@@ -332,23 +333,28 @@ export function Query(name: string | undefined = undefined) {
     };
 }
 
+export interface RateLimitOptions extends RateLimitConfig {
+    id?: string;
+    perUser?: boolean;
+}
+
 /**
  * Indicates that the endpoint should have rate limiting applied for all incoming requests. This can be applied
  * at the endpoint function level or the route class level. When applying at the class level, all defined
  * endpoints in the class will have rate limiting applied.
  *
- * When performing rate limiting, the method and path of the request (without the query portion) is used as the identifier
- * when calling `RateLimiter.checkAndIncrement()` such that a `GET /path/to/my/route` request has the effect of calling
- * `RateLimiter.checkAndIncrement('GET /path/to/my/route', req)` directly.
+ * Optionally pass in options to control the identifier of the rate limit. Set `options.id` to set an explicit identifier.
+ * By default, the method and path of the request (without the query portion) is used as the identifier. Set
+ * the `options.perUser` option to `true` to have the limit scoped to each user individually.
  */
-export function RateLimit() {
+export function RateLimit(options: RateLimitOptions = { perUser: true }) {
     return function (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
         if (propertyKey) {
             let route: any = getRouteMetadata(target, propertyKey);
-            route.rateLimit = true;
+            route.rateLimit = options;
             Reflect.defineMetadata("rrst:route", route, target, propertyKey);
         } else {
-            Reflect.defineMetadata("rrst:rateLimit", true, target.prototype);
+            Reflect.defineMetadata("rrst:rateLimit", options, target.prototype);
         }
     };
 }

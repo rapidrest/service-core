@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-import { ApiError, ObjectDecorators, UserUtils } from "@rapidrest/core";
+import { ApiError, JWTUser, ObjectDecorators, UserUtils } from "@rapidrest/core";
 import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "../http/types.js";
 import type { WsUpgradeAuth } from "../http/MiddlewareChain.js";
 import type { RequestWS } from "../http/uWS/WebSocket.js";
@@ -14,6 +14,7 @@ import _ from "lodash-es";
 import { AuthMiddleware } from "../auth/AuthMiddleware.js";
 import type { AuthResult } from "../auth/AuthStrategy.js";
 import { RateLimiter } from "../RateLimiter.js";
+import { RateLimitOptions } from "../decorators/RouteDecorators.js";
 const { Config, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -71,13 +72,17 @@ export class RouteUtils {
     }
 
     /**
-     * Creates a middleware function that performs rate limiting on the request where the identifier
-     * used to identify the resource is the request `<method> <path>`.
+     * Creates a middleware function that performs rate limiting on the request.
      */
-    public checkRateLimiter(): RequestHandler {
+    public checkRateLimiter(options: RateLimitOptions): RequestHandler {
         return async (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
             try {
-                await this.rateLimiter?.checkAndIncrement(`${req.method} ${req.path}`, req);
+                const id =
+                    options.id ??
+                    (options.perUser && req.user && req.user.uid
+                        ? `${req.user.uid}|${req.method}|${req.path}`
+                        : `${req.method}|${req.path}`);
+                await this.rateLimiter?.checkAndIncrement(id, options, req);
             } catch (err: any) {
                 return next(err);
             }
@@ -279,7 +284,8 @@ export class RouteUtils {
                 let { authRequired } = metadata;
                 const { after, before, methods, requiredRoles, requiredScopes, requiresTrustedRole, validator } =
                     metadata;
-                const rateLimit = metadata.rateLimit ?? Reflect.getMetadata("rrst:rateLimit", route);
+                const rateLimit: RateLimitOptions | undefined =
+                    metadata.rateLimit ?? Reflect.getMetadata("rrst:rateLimit", route);
                 const requiresElevation =
                     metadata.requiresElevation ?? Reflect.getMetadata("rrst:requiresElevation", route);
                 let { authStrategies } = metadata;
@@ -313,7 +319,7 @@ export class RouteUtils {
                 // 10. After Functions
                 let middleware: Array<RequestHandler> = new Array();
                 if (rateLimit) {
-                    middleware.push(this.checkRateLimiter());
+                    middleware.push(this.checkRateLimiter(rateLimit));
                 }
                 if (requiresElevation !== undefined) {
                     middleware.push(this.checkElevation(requiresElevation));

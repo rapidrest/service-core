@@ -1,0 +1,2277 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="14" failures="9" errors="0" time="16.0060031">
+    <testsuite name="test/Server.test.ts" timestamp="2026-09-09T18:21:02.280Z" hostname="Jane" tests="14" failures="9" errors="0" skipped="0" time="16.0060031">
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Can start server." time="1.5664154">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:46.633Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:46.638Z [32minfo[39m: Registering class OpenApiSpec
+[DerivedLogger.emit] 2026-09-09T18:20:46.639Z [34mdebug[39m: Creating new instance of class [OpenApiSpec] with name [OpenApiSpec:default]
+
+[DerivedLogger.emit] 2026-09-09T18:20:46.640Z [32minfo[39m: Registering class ConnectionManager
+[DerivedLogger.emit] 2026-09-09T18:20:46.640Z [34mdebug[39m: Creating new instance of class [ConnectionManager] with name [ConnectionManager:default]
+
+[DerivedLogger.emit] 2026-09-09T18:20:46.641Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:46.730Z [32minfo[39m: Registering class jobs.MyFirstService
+[DerivedLogger.emit] 2026-09-09T18:20:46.731Z [32minfo[39m: Registering class jobs.MySecondService
+[DerivedLogger.emit] 2026-09-09T18:20:46.731Z [32minfo[39m: Registering class jobs.MyThirdService
+[DerivedLogger.emit] 2026-09-09T18:20:46.731Z [32minfo[39m: Registering class models.CacheUser
+[DerivedLogger.emit] 2026-09-09T18:20:46.732Z [32minfo[39m: Registering class models.Item
+[DerivedLogger.emit] 2026-09-09T18:20:46.732Z [32minfo[39m: Registering class models.Player
+[DerivedLogger.emit] 2026-09-09T18:20:46.732Z [32minfo[39m: Registering class models.ProtectedUser
+[DerivedLogger.emit] 2026-09-09T18:20:46.733Z [32minfo[39m: Registering class models.SecureDoc
+[DerivedLogger.emit] 2026-09-09T18:20:46.733Z [32minfo[39m: Registering class models.User
+[DerivedLogger.emit] 2026-09-09T18:20:46.734Z [32minfo[39m: Registering class models.VersionedItem
+[DerivedLogger.emit] 2026-09-09T18:20:46.734Z [32minfo[39m: Registering class models.VersionedUser
+[DerivedLogger.emit] 2026-09-09T18:20:46.734Z [32minfo[39m: Registering class routes.CacheUserRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.734Z [32minfo[39m: Registering class routes.DefaultRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.735Z [32minfo[39m: Registering class routes.ItemRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.735Z [32minfo[39m: Registering class routes.ProtectedRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.735Z [32minfo[39m: Registering class routes.SecureDocRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.736Z [32minfo[39m: Registering class routes.UserRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.736Z [32minfo[39m: Registering class routes.UserWithACLRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.736Z [32minfo[39m: Registering class routes.VersionedItemRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.736Z [32minfo[39m: Registering class routes.VersionedUserRoute
+[DerivedLogger.emit] 2026-09-09T18:20:46.737Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:46.738Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:46.739Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:46.739Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:46.740Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:46.977Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:46.979Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.003Z [34mdebug[39m: Created collection: access_control_list_mongo
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.005Z [34mdebug[39m: Creating index parentUid on collection access_control_list_mongo.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.007Z [34mdebug[39m: Created collection: cache_user
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.008Z [34mdebug[39m: Creating index uid on collection cache_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.011Z [34mdebug[39m: Creating index uid on collection access_control_list_mongo.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.015Z [34mdebug[39m: Creating index uid_version on collection cache_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.019Z [34mdebug[39m: Creating index uid_version on collection access_control_list_mongo.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.034Z [34mdebug[39m: Created collection: user
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.035Z [34mdebug[39m: Creating index name_1 on collection user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.038Z [34mdebug[39m: Creating index uid on collection user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.041Z [34mdebug[39m: Creating index uid_version on collection user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.048Z [34mdebug[39m: Created collection: protected_user
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.048Z [34mdebug[39m: Creating index name_1 on collection protected_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.051Z [34mdebug[39m: Creating index uid on collection protected_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.054Z [34mdebug[39m: Creating index uid_version on collection protected_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.061Z [34mdebug[39m: Created collection: secure_doc
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.062Z [34mdebug[39m: Creating index name_1 on collection secure_doc.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.064Z [34mdebug[39m: Creating index uid on collection secure_doc.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.067Z [34mdebug[39m: Creating index uid_version on collection secure_doc.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.073Z [34mdebug[39m: Created collection: versioned_user
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.074Z [34mdebug[39m: Creating index name_1 on collection versioned_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.077Z [34mdebug[39m: Creating index uid on collection versioned_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.080Z [34mdebug[39m: Creating index uid_version on collection versioned_user.
+
+[ConnectionManager.emit] 2026-09-09T18:20:47.082Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.083Z [32minfo[39m: Registering class ACLUtils
+[DerivedLogger.emit] 2026-09-09T18:20:47.083Z [34mdebug[39m: Creating new instance of class [ACLUtils] with name [ACLUtils:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.083Z [32minfo[39m: Registering class RedisCache
+[DerivedLogger.emit] 2026-09-09T18:20:47.085Z [34mdebug[39m: Creating new instance of class [RedisCache] with name [RedisCache:AccessControlListMongo]
+
+[ACLUtils.emit] 2026-09-09T18:20:47.086Z [32minfo[39m: RBAC system is enabled and ready.
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.097Z [32minfo[39m: Registering class SessionManager
+[DerivedLogger.emit] 2026-09-09T18:20:47.098Z [34mdebug[39m: Creating new instance of class [SessionManager] with name [SessionManager:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.098Z [32minfo[39m: Registering class MemoryStore
+[DerivedLogger.emit] 2026-09-09T18:20:47.099Z [34mdebug[39m: Creating new instance of class [MemoryStore] with name [MemoryStore:893755a6-b4c9-469b-a3f6-ee0915ada55c]
+
+[SessionManager.emit] 2026-09-09T18:20:47.099Z [32minfo[39m: Session support enabled (store: memory).
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.099Z [32minfo[39m: Registering class RouteUtils
+[DerivedLogger.emit] 2026-09-09T18:20:47.100Z [34mdebug[39m: Creating new instance of class [RouteUtils] with name [RouteUtils:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.100Z [32minfo[39m: Registering class AuthMiddleware
+[DerivedLogger.emit] 2026-09-09T18:20:47.100Z [34mdebug[39m: Creating new instance of class [AuthMiddleware] with name [AuthMiddleware:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.101Z [32minfo[39m: Registering class auth.JWTStrategy
+[DerivedLogger.emit] 2026-09-09T18:20:47.101Z [34mdebug[39m: Creating new instance of class [auth.JWTStrategy] with name [auth.JWTStrategy:8bc13e59-f378-430f-8796-a1f665697967]
+[DerivedLogger.emit] 2026-09-09T18:20:47.102Z [32minfo[39m: Registering class RateLimiter
+[DerivedLogger.emit] 2026-09-09T18:20:47.102Z [34mdebug[39m: Creating new instance of class [RateLimiter] with name [RateLimiter:default]
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.103Z [32minfo[39m: Starting background services...
+[DerivedLogger.emit] 2026-09-09T18:20:47.103Z [32minfo[39m: Registering class BackgroundServiceManager
+[DerivedLogger.emit] 2026-09-09T18:20:47.103Z [34mdebug[39m: Creating new instance of class [BackgroundServiceManager] with name [BackgroundServiceManager:default]
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:47.104Z [32minfo[39m: Starting service jobs.MyFirstService...
+[DerivedLogger.emit] 2026-09-09T18:20:47.104Z [34mdebug[39m: Creating new instance of class [jobs.MyFirstService] with name [jobs.MyFirstService:jobs.MyFirstService]
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:47.116Z [32minfo[39m: Starting service jobs.MySecondService...
+[DerivedLogger.emit] 2026-09-09T18:20:47.116Z [34mdebug[39m: Creating new instance of class [jobs.MySecondService] with name [jobs.MySecondService:jobs.MySecondService]
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:47.117Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:47.117Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.118Z [32minfo[39m: Scanning for routes...
+[DerivedLogger.emit] 2026-09-09T18:20:47.118Z [34mdebug[39m: Creating new instance of class [routes.CacheUserRoute] with name [routes.CacheUserRoute:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.119Z [32minfo[39m: Registering class NotificationUtils
+[DerivedLogger.emit] 2026-09-09T18:20:47.119Z [34mdebug[39m: Creating new instance of class [NotificationUtils] with name [NotificationUtils:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.119Z [32minfo[39m: Registering class RepoUtils
+[DerivedLogger.emit] 2026-09-09T18:20:47.120Z [34mdebug[39m: Creating new instance of class [RepoUtils] with name [RepoUtils:CacheUser]
+[DerivedLogger.emit] 2026-09-09T18:20:47.121Z [32minfo[39m: Unable to register class undefined for ACLUtils/undefined
+[DerivedLogger.emit] 2026-09-09T18:20:47.121Z [34mdebug[39m: Creating new instance of class [RedisCache] with name [RedisCache:models.CacheUser]
+
+[RouteUtils.emit] 2026-09-09T18:20:47.123Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.124Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.125Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.125Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.126Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.126Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.126Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.127Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.127Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.128Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.128Z [34mdebug[39m: Creating new instance of class [routes.DefaultRoute] with name [routes.DefaultRoute:default]
+
+[RouteUtils.emit] 2026-09-09T18:20:47.128Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:47.129Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:47.129Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:47.129Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:47.130Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:47.130Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:47.130Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:47.131Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:47.131Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:47.132Z [32minfo[39m: Registered Route: WS /connect-query
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.132Z [34mdebug[39m: Creating new instance of class [routes.ItemRoute] with name [routes.ItemRoute:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.132Z [34mdebug[39m: Creating new instance of class [RepoUtils] with name [RepoUtils:Item]
+[DerivedLogger.emit] 2026-09-09T18:20:47.133Z [32minfo[39m: Unable to register class undefined for ACLUtils/undefined
+
+[RouteUtils.emit] 2026-09-09T18:20:47.133Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:47.134Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:47.134Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.134Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.135Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:47.135Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.136Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:47.136Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.136Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:47.136Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.137Z [34mdebug[39m: Creating new instance of class [routes.ProtectedRoute] with name [routes.ProtectedRoute:default]
+
+[RouteUtils.emit] 2026-09-09T18:20:47.144Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:47.144Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:47.145Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:47.145Z [32minfo[39m: Registered Route: GET /protected/token
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.145Z [34mdebug[39m: Creating new instance of class [routes.SecureDocRoute] with name [routes.SecureDocRoute:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.146Z [34mdebug[39m: Creating new instance of class [RepoUtils] with name [RepoUtils:SecureDoc]
+[DerivedLogger.emit] 2026-09-09T18:20:47.146Z [32minfo[39m: Unable to register class undefined for ACLUtils/undefined
+
+[RouteUtils.emit] 2026-09-09T18:20:47.153Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:47.153Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:47.154Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.154Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.154Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:47.155Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.155Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:47.155Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.155Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:47.156Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.156Z [34mdebug[39m: Creating new instance of class [routes.UserRoute] with name [routes.UserRoute:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.156Z [34mdebug[39m: Creating new instance of class [RepoUtils] with name [RepoUtils:User]
+[DerivedLogger.emit] 2026-09-09T18:20:47.157Z [32minfo[39m: Unable to register class undefined for ACLUtils/undefined
+
+[RouteUtils.emit] 2026-09-09T18:20:47.157Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.158Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:47.158Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:47.158Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.158Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.159Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:47.159Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:47.159Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.159Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:47.160Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.160Z [34mdebug[39m: Creating new instance of class [routes.UserWithACLRoute] with name [routes.UserWithACLRoute:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.160Z [34mdebug[39m: Creating new instance of class [RepoUtils] with name [RepoUtils:ProtectedUser]
+[DerivedLogger.emit] 2026-09-09T18:20:47.161Z [32minfo[39m: Unable to register class undefined for ACLUtils/undefined
+
+[RouteUtils.emit] 2026-09-09T18:20:47.163Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:47.163Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:47.164Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.164Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.164Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:47.164Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.165Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:47.165Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.165Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:47.165Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.166Z [34mdebug[39m: Creating new instance of class [routes.VersionedItemRoute] with name [routes.VersionedItemRoute:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.166Z [34mdebug[39m: Creating new instance of class [RepoUtils] with name [RepoUtils:VersionedItem]
+[DerivedLogger.emit] 2026-09-09T18:20:47.166Z [32minfo[39m: Unable to register class undefined for ACLUtils/undefined
+
+[RouteUtils.emit] 2026-09-09T18:20:47.167Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:47.167Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:47.168Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.168Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.168Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:47.169Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.169Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:47.169Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.170Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:47.170Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.170Z [34mdebug[39m: Creating new instance of class [routes.VersionedUserRoute] with name [routes.VersionedUserRoute:default]
+[DerivedLogger.emit] 2026-09-09T18:20:47.171Z [34mdebug[39m: Creating new instance of class [RepoUtils] with name [RepoUtils:VersionedUser]
+[DerivedLogger.emit] 2026-09-09T18:20:47.171Z [32minfo[39m: Unable to register class undefined for ACLUtils/undefined
+
+[RouteUtils.emit] 2026-09-09T18:20:47.172Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.172Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.172Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.173Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.173Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.173Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.174Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.174Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:47.174Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:47.175Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:47.175Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:48.193Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:48.194Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:48.194Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:48.195Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:48.195Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:48.198Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Lets an app-registered OPTIONS route run instead of the blanket CORS preflight 204, while an unregistered path keeps the default 204." time="1.0843313">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:48.199Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:48.199Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:48.210Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:48.211Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:48.211Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:48.211Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:48.212Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:48.220Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:48.220Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:48.225Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:48.225Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:48.225Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:48.226Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:48.227Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:48.227Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:48.227Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:48.228Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.228Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.229Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.229Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.229Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.230Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.230Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.230Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.231Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.231Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:48.231Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:48.232Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:48.232Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:48.233Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:48.233Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:48.233Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:48.234Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:48.234Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:48.234Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:48.235Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:48.235Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:48.235Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:48.236Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.236Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.236Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:48.237Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.237Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:48.237Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.238Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:48.238Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:48.246Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:48.246Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:48.246Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:48.247Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:48.247Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:48.247Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:48.248Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.248Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.249Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:48.249Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.249Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:48.249Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.250Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:48.250Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:48.251Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.251Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:48.251Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:48.251Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.252Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.252Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:48.252Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:48.252Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.253Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:48.253Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:48.253Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:48.254Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:48.254Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.254Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.255Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:48.255Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.255Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:48.255Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.256Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:48.256Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:48.256Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:48.257Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:48.257Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.257Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.258Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:48.258Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.258Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:48.259Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.259Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:48.259Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:48.260Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.260Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.260Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.260Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.261Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.261Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.261Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.261Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:48.262Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:48.262Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:48.263Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:49.280Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:49.280Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:49.280Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:49.281Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:49.281Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:49.282Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 204 to be 200 // Object.is equality" type="AssertionError">
+AssertionError: expected 204 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 204
+
+ ❯ test/Server.test.ts:59:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Can stop server." time="1.0851649">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:49.283Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:49.283Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:49.296Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:49.296Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:49.296Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:49.297Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:49.297Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:49.304Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:49.305Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:49.308Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:49.309Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:49.309Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:49.309Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:49.310Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:49.310Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:49.311Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:49.311Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.311Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.311Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.312Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.312Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.312Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.313Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.313Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.313Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.314Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:49.314Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:49.314Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:49.315Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:49.315Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:49.315Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:49.315Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:49.316Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:49.316Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:49.317Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:49.317Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:49.317Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:49.318Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:49.318Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.318Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.319Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:49.319Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.319Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:49.320Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.320Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:49.320Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:49.328Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:49.329Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:49.329Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:49.329Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:49.330Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:49.330Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:49.331Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.331Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.331Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:49.332Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.332Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:49.332Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.333Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:49.333Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:49.333Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.334Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:49.334Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:49.335Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.335Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.335Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:49.336Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:49.336Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.337Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:49.337Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:49.337Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:49.338Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:49.338Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.339Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.339Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:49.340Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.340Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:49.340Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.341Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:49.341Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:49.342Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:49.342Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:49.343Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.343Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.343Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:49.344Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.345Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:49.345Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.345Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:49.346Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:49.346Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.347Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.347Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.347Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.348Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.348Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.349Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.349Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:49.349Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:49.350Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:49.350Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.363Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:50.364Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:50.364Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.365Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:50.365Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:50.366Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.367Z [32minfo[39m: Stopping background services...
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.367Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:50.367Z [32minfo[39m: Closing database connections...
+[ConnectionManager.emit] 2026-09-09T18:20:50.368Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Can restart server." time="1.1189615">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:50.368Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.368Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.381Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:50.382Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:50.382Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:50.382Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:50.382Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:50.390Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:50.391Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:50.394Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.395Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:50.395Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:50.396Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:50.396Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:50.396Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.397Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:50.397Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.397Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.397Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.398Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.398Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.398Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.399Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.399Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.399Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.399Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:50.400Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:50.400Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:50.400Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:50.400Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:50.401Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:50.401Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:50.401Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:50.401Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:50.402Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:50.402Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:50.402Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:50.402Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:50.403Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.403Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.403Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:50.403Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.404Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:50.404Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.404Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:50.404Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:50.406Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:50.406Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:50.406Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:50.407Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:50.407Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:50.407Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:50.408Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.408Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.408Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:50.408Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.408Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:50.409Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.409Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:50.409Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:50.410Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.410Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:50.410Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:50.410Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.411Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.411Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:50.411Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:50.411Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.412Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:50.412Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:50.412Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:50.413Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:50.413Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.413Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.413Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:50.414Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.414Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:50.414Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.414Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:50.415Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:50.415Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:50.415Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:50.415Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.416Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.416Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:50.416Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.416Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:50.417Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.417Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:50.417Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:50.418Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.418Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.418Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.419Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.419Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.419Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.419Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.419Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:50.420Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:50.420Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:50.420Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.430Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.431Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.431Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.431Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:51.431Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.433Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.433Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.434Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.444Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:51.445Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:51.445Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:51.446Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:51.446Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.454Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.455Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.459Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.459Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.459Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.460Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.460Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:51.460Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.461Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:51.461Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.461Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.462Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.462Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.462Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.462Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.463Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.463Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.463Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.463Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.464Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:51.464Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:51.464Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:51.465Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:51.465Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:51.465Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:51.465Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:51.466Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:51.466Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:51.466Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:51.466Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:51.467Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:51.467Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.467Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.467Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:51.468Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.468Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:51.468Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.468Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:51.469Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.470Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:51.470Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:51.470Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:51.471Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:51.471Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.471Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.472Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.472Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.472Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.472Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.473Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.473Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.473Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.473Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.474Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.474Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:51.474Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:51.474Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.475Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.475Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:51.475Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:51.475Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.476Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:51.476Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.476Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.477Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.477Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.477Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.477Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.477Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.478Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.478Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.478Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.479Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.479Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.479Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.479Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.480Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.480Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.480Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.480Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.481Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.481Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.481Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.481Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.482Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.482Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.482Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.482Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.483Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.483Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.483Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.483Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.484Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.484Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.484Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.485Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.485Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.485Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:51.486Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.487Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Can serve hello world." time="1.0589876">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:51.487Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.487Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.497Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:51.498Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:51.498Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:51.498Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:51.498Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.505Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.505Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:51.509Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.509Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.509Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.510Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:51.510Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:51.510Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.511Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:51.511Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.511Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.511Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.512Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.512Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.512Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.512Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.513Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.513Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.513Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.514Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:51.514Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:51.514Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:51.514Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:51.515Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:51.515Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:51.515Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:51.516Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:51.516Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:51.516Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:51.516Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:51.517Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:51.517Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.517Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.518Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:51.518Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.518Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:51.518Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.519Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:51.519Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.521Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:51.521Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:51.522Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:51.522Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:51.522Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.523Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.523Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.523Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.523Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.524Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.524Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.524Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.524Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:51.525Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.525Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.525Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:51.525Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:51.526Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.526Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.526Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:51.526Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:51.527Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.527Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:51.527Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.528Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.528Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.528Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.528Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.529Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.529Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.529Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.529Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.530Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:51.530Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.530Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.530Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.531Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.531Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.531Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.531Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.532Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.532Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.532Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:51.532Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:51.533Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.533Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.533Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.534Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.534Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.534Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.534Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.535Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:51.535Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:51.535Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:51.535Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:52.543Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:52.543Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:52.544Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:52.544Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:52.544Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:52.545Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 404 to be 200 // Object.is equality" type="AssertionError">
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ test/Server.test.ts:83:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Can authorize user." time="1.0815989">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:52.546Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:52.546Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:52.557Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:52.558Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:52.558Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:52.558Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:52.559Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:52.565Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:52.566Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:52.575Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:52.575Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:52.576Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:52.576Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:52.576Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:52.577Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:52.577Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:52.577Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.578Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.578Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.578Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.578Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.579Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.579Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.579Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.580Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.580Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:52.580Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:52.580Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:52.581Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:52.581Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:52.581Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:52.582Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:52.582Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:52.585Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:52.585Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:52.585Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:52.586Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:52.586Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:52.586Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.586Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.587Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:52.587Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.587Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:52.587Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.588Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:52.588Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:52.589Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:52.590Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:52.590Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:52.590Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:52.590Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:52.591Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:52.595Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.595Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.596Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:52.596Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.596Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:52.596Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.597Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:52.597Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:52.597Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.598Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:52.598Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:52.598Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.598Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.599Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:52.599Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:52.599Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.599Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:52.600Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:52.600Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:52.600Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:52.600Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.601Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.601Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:52.601Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.601Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:52.602Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.602Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:52.602Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:52.603Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:52.603Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:52.603Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.603Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.604Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:52.604Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.607Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:52.607Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.607Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:52.608Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:52.608Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.608Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.609Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.609Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.609Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.610Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.610Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.610Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:52.611Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:52.612Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:52.612Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:53.625Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:53.625Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:53.625Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:53.626Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:53.626Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:53.627Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 404 to be 200 // Object.is equality" type="AssertionError">
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ test/Server.test.ts:94:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Can authorize user with query param." time="1.0714142">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:53.628Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:53.628Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:53.639Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:53.640Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:53.640Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:53.640Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:53.640Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:53.647Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:53.648Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:53.651Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:53.651Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:53.652Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:53.652Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:53.653Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:53.653Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:53.653Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:53.654Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.654Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.655Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.655Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.655Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.656Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.656Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.656Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.657Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.657Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:53.657Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:53.657Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:53.658Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:53.658Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:53.658Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:53.658Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:53.659Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:53.659Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:53.659Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:53.660Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:53.660Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:53.660Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:53.660Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.661Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.661Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:53.661Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.662Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:53.662Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.662Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:53.662Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:53.664Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:53.664Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:53.664Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:53.664Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:53.665Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:53.665Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:53.665Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.666Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.666Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:53.667Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.667Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:53.667Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.668Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:53.668Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:53.668Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.669Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:53.669Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:53.669Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.669Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.670Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:53.670Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:53.670Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.670Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:53.671Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:53.671Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:53.671Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:53.671Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.672Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.672Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:53.672Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.672Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:53.673Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.673Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:53.673Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:53.674Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:53.674Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:53.674Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.674Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.675Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:53.675Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.675Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:53.676Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.676Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:53.676Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:53.677Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.677Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.678Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.678Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.678Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.679Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.679Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.679Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:53.680Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:53.680Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:53.680Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:54.696Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:54.696Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:54.697Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:54.697Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:54.697Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:54.699Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 404 to be 200 // Object.is equality" type="AssertionError">
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ test/Server.test.ts:102:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Can handle error gracefully." time="1.0593283">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:54.699Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:54.699Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:54.710Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:54.711Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:54.711Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:54.711Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:54.711Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:54.719Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:54.719Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:54.723Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:54.723Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:54.724Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:54.724Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:54.724Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:54.725Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:54.725Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:54.725Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.726Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.726Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.726Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.726Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.727Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.727Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.727Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.727Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.728Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:54.728Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:54.728Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:54.728Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:54.729Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:54.729Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:54.729Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:54.729Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:54.730Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:54.730Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:54.730Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:54.730Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:54.731Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:54.731Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.731Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.732Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:54.732Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.732Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:54.732Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.733Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:54.733Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:54.734Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:54.735Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:54.735Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:54.735Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:54.735Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:54.736Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:54.736Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.736Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.736Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:54.737Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.737Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:54.737Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.737Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:54.738Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:54.738Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.738Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:54.738Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:54.739Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.739Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.739Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:54.739Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:54.740Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.740Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:54.740Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:54.740Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:54.741Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:54.741Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.741Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.741Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:54.742Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.742Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:54.742Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.743Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:54.743Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:54.743Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:54.743Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:54.744Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.744Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.744Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:54.744Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.745Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:54.745Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.745Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:54.745Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:54.746Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.746Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.746Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.746Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.747Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.747Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.747Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.747Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:54.748Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:54.748Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:54.748Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:55.755Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:55.756Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:55.756Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:55.756Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:55.757Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:55.758Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 404 to be 400 // Object.is equality" type="AssertionError">
+AssertionError: expected 404 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 404
+
+ ❯ test/Server.test.ts:109:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Logs (rather than debug-logs) a 500-level ApiError and still returns a clean JSON error body." time="1.0622068">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:55.758Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:55.759Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:55.769Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:55.769Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:55.769Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:55.770Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:55.770Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:55.777Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:55.777Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:55.781Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:55.781Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:55.782Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:55.782Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:55.783Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:55.783Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:55.783Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:55.784Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.784Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.784Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.785Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.785Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.785Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.785Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.786Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.786Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.786Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:55.786Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:55.787Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:55.787Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:55.787Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:55.787Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:55.788Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:55.788Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:55.788Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:55.788Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:55.789Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:55.789Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:55.789Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:55.789Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.790Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.790Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:55.790Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.791Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:55.791Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.791Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:55.791Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:55.793Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:55.794Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:55.794Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:55.794Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:55.794Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:55.795Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:55.795Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.795Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.796Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:55.796Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.796Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:55.796Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.797Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:55.797Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:55.797Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.798Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:55.798Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:55.798Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.798Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.799Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:55.799Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:55.799Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.799Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:55.800Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:55.800Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:55.800Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:55.800Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.801Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.801Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:55.801Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.801Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:55.802Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.802Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:55.802Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:55.802Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:55.803Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:55.803Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.803Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.803Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:55.804Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.804Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:55.804Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.804Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:55.805Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:55.805Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.805Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.806Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.806Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.806Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.806Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.806Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.807Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:55.807Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:55.807Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:55.808Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:56.818Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:56.818Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:56.818Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:56.819Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:56.819Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:56.820Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 404 to be 500 // Object.is equality" type="AssertionError">
+AssertionError: expected 404 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 404
+
+ ❯ test/Server.test.ts:117:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Wraps a raw (non-ApiError) thrown Error into a clean 500 ApiError response." time="1.0650624">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:56.821Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:56.821Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:56.833Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:56.834Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:56.834Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:56.834Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:56.834Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:56.840Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:56.841Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:56.844Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:56.845Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:56.845Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:56.845Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:56.846Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:56.846Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:56.847Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:56.847Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.847Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.847Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.848Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.848Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.848Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.848Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.849Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.849Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.849Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:56.849Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:56.850Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:56.850Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:56.850Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:56.851Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:56.851Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:56.851Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:56.851Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:56.852Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:56.852Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:56.852Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:56.852Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:56.853Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.853Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.853Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:56.854Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.854Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:56.854Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.854Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:56.855Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:56.856Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:56.856Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:56.857Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:56.857Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:56.857Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:56.857Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:56.858Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.858Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.858Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:56.859Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.859Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:56.859Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.859Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:56.860Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:56.860Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.860Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:56.861Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:56.861Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.861Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.862Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:56.862Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:56.862Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.862Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:56.863Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:56.863Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:56.863Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:56.863Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.864Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.864Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:56.864Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.864Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:56.865Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.865Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:56.868Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:56.868Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:56.869Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:56.869Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.869Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.870Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:56.870Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.870Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:56.870Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.870Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:56.871Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:56.871Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.871Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.872Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.872Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.872Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.872Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.873Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.873Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:56.873Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:56.873Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:56.874Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:57.881Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:57.881Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:57.882Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:57.883Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:57.883Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:57.885Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 404 to be 500 // Object.is equality" type="AssertionError">
+AssertionError: expected 404 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 404
+
+ ❯ test/Server.test.ts:124:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Handles a literal string thrown from a handler as a generic 500." time="1.0930214">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:57.886Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:57.886Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:57.901Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:57.901Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:57.902Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:57.902Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:57.903Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:57.910Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:57.911Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:57.915Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:57.915Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:57.916Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:57.916Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:57.917Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:57.917Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:57.918Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:57.919Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.919Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.919Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.920Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.920Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.920Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.921Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.921Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.921Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.922Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:57.923Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:57.923Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:57.923Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:57.924Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:57.924Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:57.924Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:57.924Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:57.925Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:57.925Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:57.926Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:57.926Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:57.926Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:57.927Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.927Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.927Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:57.928Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.928Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:57.930Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.930Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:57.930Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:57.933Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:57.933Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:57.934Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:57.934Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:57.935Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:57.935Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:57.936Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.936Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.937Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:57.937Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.938Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:57.938Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.939Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:57.939Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:57.940Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.940Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:57.941Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:57.941Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.942Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.943Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:57.943Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:57.944Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.944Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:57.945Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:57.946Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:57.946Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:57.947Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.947Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.948Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:57.949Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.949Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:57.950Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.950Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:57.951Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:57.952Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:57.952Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:57.953Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.954Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.954Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:57.955Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.955Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:57.956Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.956Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:57.957Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:57.958Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.958Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.959Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.960Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.960Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.961Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.961Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.962Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:57.962Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:57.963Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:57.964Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:20:58.975Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:20:58.976Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:58.976Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:20:58.976Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:20:58.977Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:20:58.978Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected 404 to be 500 // Object.is equality" type="AssertionError">
+AssertionError: expected 404 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 404
+
+ ❯ test/Server.test.ts:134:31
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Never leaks a stack trace to the client, regardless of NODE_ENV." time="1.0838475">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:20:58.979Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:20:58.979Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:20:58.993Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:20:58.993Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:20:58.994Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:20:58.994Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:20:58.994Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:20:59.001Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:59.005Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:20:59.009Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:20:59.010Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:59.010Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:59.011Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:20:59.011Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:20:59.012Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:20:59.012Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:20:59.012Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.013Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.013Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.013Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.014Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.014Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.014Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.014Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.015Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.015Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:59.015Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:20:59.016Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:20:59.016Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:20:59.018Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:20:59.018Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:20:59.018Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:20:59.018Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:20:59.019Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:20:59.019Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:20:59.019Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:20:59.020Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:20:59.020Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:20:59.020Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.021Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.021Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:20:59.021Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.022Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:20:59.022Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.023Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:20:59.023Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:59.025Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:20:59.025Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:20:59.025Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:20:59.026Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:20:59.026Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:59.027Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:59.027Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.027Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.028Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:59.028Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.028Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:59.029Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.031Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:20:59.031Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:59.032Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.032Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:20:59.032Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:20:59.033Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.033Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.033Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:20:59.034Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:20:59.034Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.034Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:20:59.034Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:59.035Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:59.035Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:59.035Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.036Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.036Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:59.036Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.037Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:59.037Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.037Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:20:59.038Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:59.038Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:59.038Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:59.039Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.039Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.039Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:59.039Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.040Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:59.040Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.040Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:20:59.041Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:20:59.043Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.044Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.044Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.044Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.045Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.045Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.045Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.046Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:20:59.046Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:20:59.046Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:20:59.047Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:21:00.059Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:21:00.060Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:00.060Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:21:00.060Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:21:00.061Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:21:00.062Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Returns a JSON 404 for a path that matches no registered route." time="1.0742185">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:21:00.063Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:21:00.063Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:21:00.075Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:21:00.076Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:21:00.076Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:21:00.077Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:21:00.077Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:21:00.085Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:21:00.085Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:21:00.089Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:21:00.090Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:00.090Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:00.091Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:00.091Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:21:00.091Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:21:00.092Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:21:00.092Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.092Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.093Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.093Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.093Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.094Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.094Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.094Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.095Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.095Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:00.095Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:21:00.095Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:21:00.096Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:21:00.096Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:21:00.096Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:21:00.097Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:21:00.097Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:21:00.097Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:21:00.098Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:21:00.098Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:21:00.099Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:21:00.099Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:21:00.099Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.100Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.100Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:21:00.100Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.101Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:21:00.101Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.102Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:21:00.102Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:00.104Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:21:00.104Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:21:00.104Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:21:00.105Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:21:00.105Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:00.106Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:00.106Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.106Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.107Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:00.107Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.107Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:00.108Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.108Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:00.108Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:00.109Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.109Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:21:00.109Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:21:00.110Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.110Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.110Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:21:00.111Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:21:00.111Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.111Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:21:00.112Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:00.112Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:00.112Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:00.115Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.116Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.116Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:00.116Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.116Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:00.117Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.117Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:00.117Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:00.118Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:00.118Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:00.118Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.119Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.119Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:00.119Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.119Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:00.120Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.120Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:00.120Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:00.121Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.121Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.122Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.122Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.122Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.123Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.123Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.123Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:00.124Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:00.124Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:21:00.124Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:21:01.133Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:21:01.134Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:01.134Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:21:01.135Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:21:01.135Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:21:01.136Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+            <failure message="expected &apos;text/html&apos; to be &apos;application/json&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;text/html&apos; to be &apos;application/json&apos; // Object.is equality
+
+Expected: &quot;application/json&quot;
+Received: &quot;text/html&quot;
+
+ ❯ test/Server.test.ts:163:29
+            </failure>
+        </testcase>
+        <testcase classname="test/Server.test.ts" name="Server Tests &gt; Returns a JSON 404 for an unbound path regardless of HTTP method." time="1.0954288">
+            <system-out>
+[DerivedLogger.emit] 2026-09-09T18:21:01.137Z [32minfo[39m: Starting server...
+
+[DerivedLogger.emit] 2026-09-09T18:21:01.137Z [32minfo[39m: Loading all service classes...
+
+[DerivedLogger.emit] 2026-09-09T18:21:01.154Z [32minfo[39m: Scanning for data models...
+[DerivedLogger.emit] 2026-09-09T18:21:01.155Z [32minfo[39m: Initializing database connection(s)...
+[ConnectionManager.emit] 2026-09-09T18:21:01.155Z [32minfo[39m: Connecting to database acl [mongodb://localhost:9999/acls]...
+[ConnectionManager.emit] 2026-09-09T18:21:01.155Z [32minfo[39m: Connecting to database mongodb [mongodb://localhost:9999/accounts]...
+[ConnectionManager.emit] 2026-09-09T18:21:01.155Z [32minfo[39m: Connecting to database sqlite [better-sqlite3://localhost/rrst-test]...
+
+[ConnectionManager.emit] 2026-09-09T18:21:01.163Z [33mwarn[39m: Datastore &apos;acl&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:21:01.164Z [33mwarn[39m: Datastore &apos;mongodb&apos; is a standalone MongoDB instance and does not support multi-document transactions. @Transactional will run without a transaction for models on this datastore. Configure MongoDB as a replica set (or sharded cluster) to enable it.
+
+[ConnectionManager.emit] 2026-09-09T18:21:01.167Z [32minfo[39m: Successfully connected to all configured databases.
+
+[DerivedLogger.emit] 2026-09-09T18:21:01.168Z [32minfo[39m: Starting background services...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:01.168Z [32minfo[39m: Starting service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:01.169Z [32minfo[39m: Starting service jobs.MySecondService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:01.169Z [32minfo[39m: Starting service jobs.MyThirdService...
+[DerivedLogger.emit] 2026-09-09T18:21:01.170Z [34mdebug[39m: Creating new instance of class [jobs.MyThirdService] with name [jobs.MyThirdService:jobs.MyThirdService]
+
+[DerivedLogger.emit] 2026-09-09T18:21:01.170Z [32minfo[39m: Scanning for routes...
+
+[RouteUtils.emit] 2026-09-09T18:21:01.170Z [32minfo[39m: Registered Route: HEAD /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.171Z [32minfo[39m: Registered Route: POST /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.171Z [32minfo[39m: Registered Route: DELETE /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.171Z [32minfo[39m: Registered Route: HEAD /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.171Z [32minfo[39m: Registered Route: GET /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.172Z [32minfo[39m: Registered Route: GET /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.172Z [32minfo[39m: Registered Route: DELETE /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.172Z [32minfo[39m: Registered Route: PUT /cachedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.173Z [32minfo[39m: Registered Route: PUT /cachedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.173Z [32minfo[39m: Registered Route: PUT /cachedusers/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:01.173Z [32minfo[39m: Registered Route: GET /hello
+[RouteUtils.emit] 2026-09-09T18:21:01.174Z [32minfo[39m: Registered Route: GET /token
+[RouteUtils.emit] 2026-09-09T18:21:01.174Z [32minfo[39m: Registered Route: GET /error
+[RouteUtils.emit] 2026-09-09T18:21:01.174Z [32minfo[39m: Registered Route: GET /error500
+[RouteUtils.emit] 2026-09-09T18:21:01.174Z [32minfo[39m: Registered Route: GET /error-raw
+[RouteUtils.emit] 2026-09-09T18:21:01.175Z [32minfo[39m: Registered Route: GET /error-string
+[RouteUtils.emit] 2026-09-09T18:21:01.175Z [32minfo[39m: Registered Route: OPTIONS /capabilities
+[RouteUtils.emit] 2026-09-09T18:21:01.175Z [32minfo[39m: Registered Route: WS /connect
+[RouteUtils.emit] 2026-09-09T18:21:01.179Z [32minfo[39m: Registered Route: WS /connect-secure
+[RouteUtils.emit] 2026-09-09T18:21:01.179Z [32minfo[39m: Registered Route: WS /connect-query
+
+[RouteUtils.emit] 2026-09-09T18:21:01.179Z [32minfo[39m: Registered Route: HEAD /items
+[RouteUtils.emit] 2026-09-09T18:21:01.180Z [32minfo[39m: Registered Route: POST /items
+[RouteUtils.emit] 2026-09-09T18:21:01.180Z [32minfo[39m: Registered Route: DELETE /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.180Z [32minfo[39m: Registered Route: HEAD /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.180Z [32minfo[39m: Registered Route: GET /items
+[RouteUtils.emit] 2026-09-09T18:21:01.181Z [32minfo[39m: Registered Route: GET /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.181Z [32minfo[39m: Registered Route: DELETE /items
+[RouteUtils.emit] 2026-09-09T18:21:01.181Z [32minfo[39m: Registered Route: PUT /items/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.182Z [32minfo[39m: Registered Route: PUT /items
+[RouteUtils.emit] 2026-09-09T18:21:01.182Z [32minfo[39m: Registered Route: PUT /items/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:01.183Z [32minfo[39m: Registered Route: GET /protected/hello
+[RouteUtils.emit] 2026-09-09T18:21:01.184Z [32minfo[39m: Registered Route: GET /protected/foobar
+[RouteUtils.emit] 2026-09-09T18:21:01.184Z [32minfo[39m: Registered Route: GET /protected/roletest
+[RouteUtils.emit] 2026-09-09T18:21:01.184Z [32minfo[39m: Registered Route: GET /protected/token
+
+[RouteUtils.emit] 2026-09-09T18:21:01.185Z [32minfo[39m: Registered Route: HEAD /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:01.185Z [32minfo[39m: Registered Route: POST /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:01.185Z [32minfo[39m: Registered Route: DELETE /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.186Z [32minfo[39m: Registered Route: HEAD /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.186Z [32minfo[39m: Registered Route: GET /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:01.186Z [32minfo[39m: Registered Route: GET /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.186Z [32minfo[39m: Registered Route: DELETE /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:01.189Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.190Z [32minfo[39m: Registered Route: PUT /api/securedocs
+[RouteUtils.emit] 2026-09-09T18:21:01.190Z [32minfo[39m: Registered Route: PUT /api/securedocs/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:01.190Z [32minfo[39m: Registered Route: GET /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.191Z [32minfo[39m: Registered Route: HEAD /users
+[RouteUtils.emit] 2026-09-09T18:21:01.191Z [32minfo[39m: Registered Route: POST /users
+[RouteUtils.emit] 2026-09-09T18:21:01.191Z [32minfo[39m: Registered Route: DELETE /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.191Z [32minfo[39m: Registered Route: HEAD /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.192Z [32minfo[39m: Registered Route: GET /users
+[RouteUtils.emit] 2026-09-09T18:21:01.192Z [32minfo[39m: Registered Route: DELETE /users
+[RouteUtils.emit] 2026-09-09T18:21:01.192Z [32minfo[39m: Registered Route: PUT /users/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.193Z [32minfo[39m: Registered Route: PUT /users
+[RouteUtils.emit] 2026-09-09T18:21:01.193Z [32minfo[39m: Registered Route: PUT /users/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:01.193Z [32minfo[39m: Registered Route: HEAD /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:01.194Z [32minfo[39m: Registered Route: POST /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:01.194Z [32minfo[39m: Registered Route: DELETE /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.194Z [32minfo[39m: Registered Route: HEAD /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.195Z [32minfo[39m: Registered Route: GET /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:01.195Z [32minfo[39m: Registered Route: GET /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.195Z [32minfo[39m: Registered Route: DELETE /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:01.196Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.196Z [32minfo[39m: Registered Route: PUT /api/userswithacl
+[RouteUtils.emit] 2026-09-09T18:21:01.200Z [32minfo[39m: Registered Route: PUT /api/userswithacl/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:01.200Z [32minfo[39m: Registered Route: HEAD /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:01.200Z [32minfo[39m: Registered Route: POST /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:01.201Z [32minfo[39m: Registered Route: DELETE /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.201Z [32minfo[39m: Registered Route: HEAD /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.205Z [32minfo[39m: Registered Route: GET /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:01.205Z [32minfo[39m: Registered Route: GET /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.206Z [32minfo[39m: Registered Route: DELETE /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:01.206Z [32minfo[39m: Registered Route: PUT /versioneditems/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.206Z [32minfo[39m: Registered Route: PUT /versioneditems
+[RouteUtils.emit] 2026-09-09T18:21:01.207Z [32minfo[39m: Registered Route: PUT /versioneditems/:id/:property
+
+[RouteUtils.emit] 2026-09-09T18:21:01.207Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.207Z [32minfo[39m: Registered Route: POST /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.208Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.208Z [32minfo[39m: Registered Route: HEAD /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.208Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.212Z [32minfo[39m: Registered Route: GET /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.212Z [32minfo[39m: Registered Route: DELETE /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.213Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id
+[RouteUtils.emit] 2026-09-09T18:21:01.213Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers
+[RouteUtils.emit] 2026-09-09T18:21:01.213Z [32minfo[39m: Registered Route: PUT /api/v2/versionedusers/:id/:property
+
+[DerivedLogger.emit] 2026-09-09T18:21:01.214Z [32minfo[39m: Listening on 0.0.0.0:3000...
+
+[DerivedLogger.emit] 2026-09-09T18:21:02.229Z [32minfo[39m: Stopping background services...
+[BackgroundServiceManager.emit] 2026-09-09T18:21:02.229Z [32minfo[39m: Stopping background service jobs.MyFirstService...
+
+[BackgroundServiceManager.emit] 2026-09-09T18:21:02.230Z [32minfo[39m: Stopping background service jobs.MySecondService...
+
+[DerivedLogger.emit] 2026-09-09T18:21:02.230Z [32minfo[39m: Stopping server...
+[DerivedLogger.emit] 2026-09-09T18:21:02.230Z [32minfo[39m: Closing database connections...
+
+[ConnectionManager.emit] 2026-09-09T18:21:02.232Z [32minfo[39m: Successfully disconnected from all configured databases.
+
+            </system-out>
+        </testcase>
+    </testsuite>
+</testsuites>

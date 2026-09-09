@@ -29,7 +29,7 @@ export const RATELIMIT_EXCEEDED_EVENT = "ratelimit.exceeded";
  * per-identifier throttle. Deliberately more permissive by default than the per-identifier limit, since a
  * single IP can legitimately represent many users behind NAT/a corporate proxy.
  */
-export interface IPRateLimiterConfig {
+export interface IPRateLimitConfig {
     /** Set to `false` to disable the per-IP counter. Default is `true`. */
     enabled?: boolean;
     /** The maximum number of attempts allowed from a single IP within `windowSeconds`. Default is `100`. */
@@ -41,15 +41,26 @@ export interface IPRateLimiterConfig {
 /**
  * Configuration options for `RateLimiter`, read from the `rateLimit` path of the application configuration.
  */
-export interface RateLimiterConfig {
-    /** Set to `false` to disable rate limiting entirely. Default is `true`. */
-    enabled?: boolean;
-    /** The maximum number of attempts allowed within `windowSeconds` before being rejected. Default is `5`. */
+export interface RateLimitConfig {
+    /**
+     * The maximum number of attempts allowed within `windowSeconds` before being rejected. Default is `100`.
+     * Note that when driven by the `@RateLimit` decorator this counts attempts against the identifier
+     * `<method> <path>` (see `RouteUtils.checkRateLimiter()`), i.e. combined across *every* caller of that
+     * route, not per-caller - the default is set well above the per-IP default below for that reason.
+     */
     maxAttempts?: number;
-    /** The length of the sliding window, in seconds, that `maxAttempts` applies to. Default is `300` (5 minutes). */
+    /** The length of the sliding window, in seconds, that `maxAttempts` applies to. Default is `60`. */
     windowSeconds?: number;
     /** Configuration for the additional, independent per-source-IP counter. */
-    ip?: IPRateLimiterConfig;
+    ip?: IPRateLimitConfig;
+}
+
+/**
+ * Configuration options for `RateLimiter`, read from the `rateLimit` path of the application configuration.
+ */
+export interface RateLimiterConfig extends RateLimitConfig {
+    /** Set to `false` to disable rate limiting entirely. Default is `true`. */
+    enabled?: boolean;
 }
 
 /**
@@ -61,11 +72,11 @@ export interface RateLimiterConfig {
  * @author Jean-Philippe Steinmetz
  */
 export class RateLimiter {
-    @Config("rateLimit", { enabled: true, maxAttempts: 5, windowSeconds: 300 })
+    @Config("rateLimit", { enabled: true, maxAttempts: 100, windowSeconds: 60 })
     protected config: RateLimiterConfig = {
         enabled: true,
-        maxAttempts: 5,
-        windowSeconds: 300,
+        maxAttempts: 100,
+        windowSeconds: 60,
     };
 
     @Config("trusted_proxies", [])
@@ -106,23 +117,26 @@ export class RateLimiter {
      * @param identifier A value that scopes the counter to a particular caller/target (e.g. a claimed username
      * or email). Callers should be aware that an identifier alone can be shared by an attacker and a victim
      * (e.g. a username), so this limits attempts against that identifier globally rather than per-source.
+     * @param config Optional configuration that will override the service-level configuration.
      * @param req The source HTTP request, used to derive the caller's IP for the additional per-IP counter.
      * Omit to check only the identifier-keyed counter (e.g. when no request is available).
      */
-    public async checkAndIncrement(identifier: string, req?: HttpRequest): Promise<void> {
+    public async checkAndIncrement(identifier: string, config?: RateLimitConfig, req?: HttpRequest): Promise<void> {
         if (this.config.enabled === false) {
             return;
         }
 
+        config = Object.assign({}, this.config, config);
+
         await this.enforceLimit(
             `${CACHE_KEY_PREFIX}:${identifier.toLowerCase()}`,
-            this.config.maxAttempts ?? 5,
-            this.config.windowSeconds ?? 300,
+            config.maxAttempts ?? 100,
+            config.windowSeconds ?? 60,
             identifier,
             "identifier",
         );
 
-        if (req && this.config.ip?.enabled !== false) {
+        if (req && config.ip?.enabled !== false) {
             // `trustedProxies`-aware: without it, `getIPAddress()` never trusts forwarding headers and
             // always falls back to `req.socket.remoteAddress` - behind any reverse proxy that's the
             // proxy's own fixed address for every caller, collapsing every distinct client behind it onto
@@ -131,8 +145,8 @@ export class RateLimiter {
             if (address) {
                 await this.enforceLimit(
                     `${CACHE_KEY_PREFIX}:ip:${address}`,
-                    this.config.ip?.maxAttempts ?? 100,
-                    this.config.ip?.windowSeconds ?? 300,
+                    config.ip?.maxAttempts ?? 100,
+                    config.ip?.windowSeconds ?? 300,
                     address,
                     "ip",
                 );

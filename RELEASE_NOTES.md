@@ -1,5 +1,17 @@
 # Release Notes
 
+## Unreleased
+
+- Raised `RateLimiter`'s default identifier-layer limit from 5 attempts/300s to 100 attempts/60s. That
+  counter is keyed on `<method>|<path>` when driven by `@RateLimit` (i.e. shared across every caller of
+  a route, not per-caller), so the old default was far stricter than the per-IP layer's default of
+  100/300s and caused frequent lockouts once `@RateLimit` was applied to general, non-auth endpoints.
+- `@RateLimit()` now takes options: `perUser` (default `true`) scopes the limit to the authenticated
+  caller instead of globally across the whole route, and `id` sets an explicit identifier. **Breaking:**
+  `RateLimiter.checkAndIncrement()`'s signature changed from `(identifier, req?)` to
+  `(identifier, config?, req?)` - it also now accepts a per-call `RateLimitConfig` override of
+  `maxAttempts`/`windowSeconds`/`ip` on top of the service-level config.
+
 ## v1.7.2
 
 - Upgraded @rapidrest/core dependency

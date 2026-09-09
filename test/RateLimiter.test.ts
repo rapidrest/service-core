@@ -72,8 +72,8 @@ describe("RateLimiter Tests", () => {
             const req: any = { socket: { remoteAddress: "1.2.3.4" }, headers: {} };
             const spy = vi.spyOn(EventUtils, "record").mockResolvedValue(undefined);
 
-            await limiter.checkAndIncrement("user-1", req);
-            await expect(limiter.checkAndIncrement("user-2", req)).rejects.toThrow(/Too many attempts/);
+            await limiter.checkAndIncrement("user-1", undefined, req);
+            await expect(limiter.checkAndIncrement("user-2", undefined, req)).rejects.toThrow(/Too many attempts/);
 
             expect(spy).toHaveBeenCalledWith({
                 type: RATELIMIT_EXCEEDED_EVENT,
@@ -111,10 +111,10 @@ describe("RateLimiter Tests", () => {
     });
 
     describe("in-memory fallback (no `cache` connection configured)", () => {
-        it("Uses sensible defaults (enabled, maxAttempts: 5, windowSeconds: 300).", async () => {
+        it("Uses sensible defaults (enabled, maxAttempts: 100, windowSeconds: 60).", async () => {
             const limiter = new RateLimiter();
 
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 100; i++) {
                 await expect(limiter.checkAndIncrement("user-1")).resolves.toBeUndefined();
             }
             await expect(limiter.checkAndIncrement("user-1")).rejects.toThrow(/Too many attempts/);
@@ -188,7 +188,7 @@ describe("RateLimiter Tests", () => {
             const limiter = new RateLimiter();
             (limiter as any).config = { enabled: true };
 
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 100; i++) {
                 await expect(limiter.checkAndIncrement("user-2")).resolves.toBeUndefined();
             }
             await expect(limiter.checkAndIncrement("user-2")).rejects.toThrow(/Too many attempts/);
@@ -248,9 +248,9 @@ describe("RateLimiter Tests", () => {
 
             // Three distinct identifiers, well within the (100) per-identifier limit each, but all from the
             // same source IP - the IP-keyed counter (limit 2) trips on the third regardless.
-            await limiter.checkAndIncrement("user-1", req);
-            await limiter.checkAndIncrement("user-2", req);
-            await expect(limiter.checkAndIncrement("user-3", req)).rejects.toThrow(/Too many attempts/);
+            await limiter.checkAndIncrement("user-1", undefined, req);
+            await limiter.checkAndIncrement("user-2", undefined, req);
+            await expect(limiter.checkAndIncrement("user-3", undefined, req)).rejects.toThrow(/Too many attempts/);
         });
 
         it("Does not check the per-IP limit when no req is supplied.", async () => {
@@ -278,7 +278,7 @@ describe("RateLimiter Tests", () => {
             const req = makeIpReq("1.2.3.4");
 
             for (let i = 0; i < 5; i++) {
-                await expect(limiter.checkAndIncrement(`user-${i}`, req)).resolves.toBeUndefined();
+                await expect(limiter.checkAndIncrement(`user-${i}`, undefined, req)).resolves.toBeUndefined();
             }
         });
 
@@ -291,11 +291,11 @@ describe("RateLimiter Tests", () => {
                 ip: { enabled: true, maxAttempts: 1, windowSeconds: 300 },
             };
 
-            await limiter.checkAndIncrement("user-1", makeIpReq("1.2.3.4"));
-            await expect(limiter.checkAndIncrement("user-2", makeIpReq("1.2.3.4"))).rejects.toThrow(
+            await limiter.checkAndIncrement("user-1", undefined, makeIpReq("1.2.3.4"));
+            await expect(limiter.checkAndIncrement("user-2", undefined, makeIpReq("1.2.3.4"))).rejects.toThrow(
                 /Too many attempts/,
             );
-            await expect(limiter.checkAndIncrement("user-3", makeIpReq("5.6.7.8"))).resolves.toBeUndefined();
+            await expect(limiter.checkAndIncrement("user-3", undefined, makeIpReq("5.6.7.8"))).resolves.toBeUndefined();
         });
 
         it("Falls back to default per-IP maxAttempts (100)/windowSeconds (300) when unconfigured.", async () => {
@@ -304,9 +304,11 @@ describe("RateLimiter Tests", () => {
             const req = makeIpReq("1.2.3.4");
 
             for (let i = 0; i < 100; i++) {
-                await expect(limiter.checkAndIncrement(`user-${i}`, req)).resolves.toBeUndefined();
+                await expect(limiter.checkAndIncrement(`user-${i}`, undefined, req)).resolves.toBeUndefined();
             }
-            await expect(limiter.checkAndIncrement("user-over-limit", req)).rejects.toThrow(/Too many attempts/);
+            await expect(limiter.checkAndIncrement("user-over-limit", undefined, req)).rejects.toThrow(
+                /Too many attempts/,
+            );
         });
 
         it("Does not check the per-IP limit when the request's address can't be resolved.", async () => {
@@ -320,7 +322,7 @@ describe("RateLimiter Tests", () => {
             const req: any = { headers: {} }; // No `socket` - NetUtils.getIPAddress() can't resolve an address.
 
             for (let i = 0; i < 5; i++) {
-                await expect(limiter.checkAndIncrement(`user-${i}`, req)).resolves.toBeUndefined();
+                await expect(limiter.checkAndIncrement(`user-${i}`, undefined, req)).resolves.toBeUndefined();
             }
         });
 
@@ -345,9 +347,9 @@ describe("RateLimiter Tests", () => {
 
                 // Two different claimed client IPs, but the same (untrusted) proxy socket address - without
                 // trustedProxies configured, both must be treated as the same caller for throttling purposes.
-                await limiter.checkAndIncrement("user-1", makeProxiedReq("10.0.0.1", "1.1.1.1"));
+                await limiter.checkAndIncrement("user-1", undefined, makeProxiedReq("10.0.0.1", "1.1.1.1"));
                 await expect(
-                    limiter.checkAndIncrement("user-2", makeProxiedReq("10.0.0.1", "2.2.2.2")),
+                    limiter.checkAndIncrement("user-2", undefined, makeProxiedReq("10.0.0.1", "2.2.2.2")),
                 ).rejects.toThrow(/Too many attempts/);
             });
 
@@ -363,14 +365,87 @@ describe("RateLimiter Tests", () => {
 
                 // Same trusted proxy socket address, two distinct forwarded client IPs - each must now be
                 // throttled independently instead of sharing the proxy's own bucket.
-                await limiter.checkAndIncrement("user-1", makeProxiedReq("10.0.0.1", "1.1.1.1"));
+                await limiter.checkAndIncrement("user-1", undefined, makeProxiedReq("10.0.0.1", "1.1.1.1"));
                 await expect(
-                    limiter.checkAndIncrement("user-2", makeProxiedReq("10.0.0.1", "1.1.1.1")),
+                    limiter.checkAndIncrement("user-2", undefined, makeProxiedReq("10.0.0.1", "1.1.1.1")),
                 ).rejects.toThrow(/Too many attempts/);
                 await expect(
-                    limiter.checkAndIncrement("user-3", makeProxiedReq("10.0.0.1", "2.2.2.2")),
+                    limiter.checkAndIncrement("user-3", undefined, makeProxiedReq("10.0.0.1", "2.2.2.2")),
                 ).resolves.toBeUndefined();
             });
+        });
+    });
+
+    // Regression: `checkAndIncrement()`'s per-call `config` override used to be merged into a local variable
+    // that was then never read by the identifier-layer `enforceLimit()` call, which kept using the stale
+    // service-level `this.config` - so a caller-supplied `maxAttempts`/`windowSeconds` silently had no effect
+    // on the primary counter (only `config.ip` ever reached anything).
+    describe("per-call config override", () => {
+        it("Tightens the identifier-layer limit below the service-level default for this call only.", async () => {
+            const limiter = new RateLimiter();
+            (limiter as any).config = { enabled: true, maxAttempts: 100, windowSeconds: 300 };
+
+            await limiter.checkAndIncrement("user-1", { maxAttempts: 1, windowSeconds: 300 });
+            await expect(
+                limiter.checkAndIncrement("user-1", { maxAttempts: 1, windowSeconds: 300 }),
+            ).rejects.toThrow(/Too many attempts/);
+
+            // A different identifier, still under the service-level default, is unaffected by the override
+            // passed for "user-1" above - the two calls don't leak state into each other.
+            await expect(limiter.checkAndIncrement("user-2")).resolves.toBeUndefined();
+        });
+
+        it("Loosens the identifier-layer limit above the service-level default for this call only.", async () => {
+            const limiter = new RateLimiter();
+            (limiter as any).config = { enabled: true, maxAttempts: 1, windowSeconds: 300 };
+
+            for (let i = 0; i < 5; i++) {
+                await expect(
+                    limiter.checkAndIncrement("user-1", { maxAttempts: 5, windowSeconds: 300 }),
+                ).resolves.toBeUndefined();
+            }
+            await expect(
+                limiter.checkAndIncrement("user-1", { maxAttempts: 5, windowSeconds: 300 }),
+            ).rejects.toThrow(/Too many attempts/);
+        });
+
+        it("Falls back to the service-level config when no override is passed.", async () => {
+            const limiter = new RateLimiter();
+            (limiter as any).config = { enabled: true, maxAttempts: 1, windowSeconds: 300 };
+
+            await limiter.checkAndIncrement("user-1");
+            await expect(limiter.checkAndIncrement("user-1")).rejects.toThrow(/Too many attempts/);
+        });
+
+        it("Merges a partial override onto the service-level config rather than replacing it outright.", async () => {
+            const limiter = new RateLimiter();
+            (limiter as any).config = { enabled: true, maxAttempts: 1, windowSeconds: 300 };
+            const req = { socket: { remoteAddress: "1.2.3.4" }, headers: {} } as any;
+
+            // Only `ip` is overridden for this call - `maxAttempts`/`windowSeconds` for the identifier layer
+            // must still come from the service-level config (1), not be wiped out by the partial override.
+            await limiter.checkAndIncrement("user-1", { ip: { maxAttempts: 100, windowSeconds: 300 } }, req);
+            await expect(
+                limiter.checkAndIncrement("user-1", { ip: { maxAttempts: 100, windowSeconds: 300 } }, req),
+            ).rejects.toThrow(/Too many attempts/);
+        });
+
+        it("Raises the per-IP layer's threshold via a per-call `ip` override, not just the identifier layer's.", async () => {
+            const limiter = new RateLimiter();
+            (limiter as any).config = {
+                enabled: true,
+                maxAttempts: 100,
+                windowSeconds: 300,
+                ip: { enabled: true, maxAttempts: 1, windowSeconds: 300 },
+            };
+            const req = { socket: { remoteAddress: "1.2.3.4" }, headers: {} } as any;
+
+            // Without the override, the service-level per-IP limit of 1 would trip on the second distinct
+            // identifier from this same IP - the override raises it to 5 for these calls only.
+            await limiter.checkAndIncrement("user-1", { ip: { maxAttempts: 5, windowSeconds: 300 } }, req);
+            await expect(
+                limiter.checkAndIncrement("user-2", { ip: { maxAttempts: 5, windowSeconds: 300 } }, req),
+            ).resolves.toBeUndefined();
         });
     });
 

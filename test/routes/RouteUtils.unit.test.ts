@@ -182,6 +182,97 @@ describe("RouteUtils.checkRequiredScopes", () => {
     });
 });
 
+describe("RouteUtils.checkRateLimiter", () => {
+    it("uses `<method>|<path>` as the identifier when no options.id is set and the request is unauthenticated", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({});
+        const next = vi.fn();
+        const req = makeReq({ method: "GET", path: "/widgets" });
+
+        await handler(req, makeRes(), next);
+
+        expect(checkAndIncrement).toHaveBeenCalledWith("GET|/widgets", {}, req);
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    it("scopes the identifier per-user when options.perUser is true and the request is authenticated", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({ perUser: true });
+        const next = vi.fn();
+        const req = makeReq({ method: "GET", path: "/widgets", user: { uid: "u1" } });
+
+        await handler(req, makeRes(), next);
+
+        expect(checkAndIncrement).toHaveBeenCalledWith("u1|GET|/widgets", { perUser: true }, req);
+    });
+
+    it("falls back to `<method>|<path>` when perUser is true but the request has no authenticated user", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({ perUser: true });
+        const next = vi.fn();
+        const req = makeReq({ method: "GET", path: "/widgets" });
+
+        await handler(req, makeRes(), next);
+
+        expect(checkAndIncrement).toHaveBeenCalledWith("GET|/widgets", { perUser: true }, req);
+    });
+
+    it("does not scope per-user when options.perUser is left unset, even for an authenticated request", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({ maxAttempts: 3 });
+        const next = vi.fn();
+        const req = makeReq({ method: "GET", path: "/widgets", user: { uid: "u1" } });
+
+        await handler(req, makeRes(), next);
+
+        expect(checkAndIncrement).toHaveBeenCalledWith("GET|/widgets", { maxAttempts: 3 }, req);
+    });
+
+    it("uses the explicit options.id regardless of perUser or the request's user", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({ id: "custom-id", perUser: true });
+        const next = vi.fn();
+        const req = makeReq({ method: "GET", path: "/widgets", user: { uid: "u1" } });
+
+        await handler(req, makeRes(), next);
+
+        expect(checkAndIncrement).toHaveBeenCalledWith("custom-id", { id: "custom-id", perUser: true }, req);
+    });
+
+    it("calls next(err) when the underlying rate limiter rejects", async () => {
+        const routeUtils: any = new RouteUtils();
+        const err = new Error("Too many attempts");
+        routeUtils.rateLimiter = { checkAndIncrement: vi.fn().mockRejectedValue(err) };
+        const handler = routeUtils.checkRateLimiter({});
+        const next = vi.fn();
+
+        await handler(makeReq({ method: "GET", path: "/widgets" }), makeRes(), next);
+
+        expect(next).toHaveBeenCalledWith(err);
+    });
+
+    it("is a no-op that calls next() when no RateLimiter has been injected", async () => {
+        const routeUtils: any = new RouteUtils();
+        routeUtils.rateLimiter = undefined;
+        const handler = routeUtils.checkRateLimiter({});
+        const next = vi.fn();
+
+        await handler(makeReq({ method: "GET", path: "/widgets" }), makeRes(), next);
+
+        expect(next).toHaveBeenCalledWith();
+    });
+});
+
 describe("RouteUtils.getFuncArray", () => {
     it("returns an empty array when funcs is undefined", () => {
         const routeUtils = new RouteUtils();
