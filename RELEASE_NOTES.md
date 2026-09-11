@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v2.0.0
 
 - Reworked `ModelUtils` search query building for correctness and SQL/MongoDB parity. **Breaking:** `like()` now
   takes glob syntax (`*`/`?`) translated per backend instead of raw SQL `LIKE`/regex, and an unrecognized

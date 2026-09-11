@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-11
+
+### Changed
+- Rework ModelUtils search query building for correctness and SQL/Mongo parity
+- Fixes an invalid Mongo not()/ne() query, un-coerced in()/nin()/range()
+- operands, inconsistent me substitution, and a SQL-only operator-injection
+- gap. Adds regex()/exists() operators, nested $or on SQL, a QueryNode AST
+- for boolean nesting the flat query-param form can't express, sort-field
+- validation, and implements the previously dead exactMatch option.
+- Breaking: like() now compiles glob syntax instead of raw SQL LIKE/regex,
+- and an unrecognized operator name is rejected rather than silently
+- treated as equality.
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+
 ### Added
 - `regex()` search operator for raw regular-expression matching on both SQL (PostgreSQL, MySQL/MariaDB, and
   `better-sqlite3` via an auto-registered `REGEXP` SQL function) and MongoDB.
@@ -151,7 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/rapidrest/service-core/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/rapidrest/service-core/compare/v1.7.2...v1.8.0
 [1.7.2]: https://github.com/rapidrest/service-core/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/rapidrest/service-core/compare/v1.7.0...v1.7.1
