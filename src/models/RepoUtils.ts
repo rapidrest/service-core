@@ -95,6 +95,18 @@ export interface RepoFindOptions extends RepoOperationOptions {
 export interface RepoUpdateOptions<T extends BaseEntity | SimpleEntity> extends RepoOperationOptions {
     /** The desired version number of the resource to update. */
     version?: number | string;
+    /**
+     * Set to `true` to let this update actually write `@ReadOnly` fields instead of unconditionally
+     * resetting them back to their existing persisted value. Defaults to `false` (the field is protected),
+     * matching this method's behavior prior to this option's introduction.
+     *
+     * For trusted server-side code only - this must never be derived from a client request. It exists for
+     * a caller that legitimately owns a `@ReadOnly` field's lifecycle outside the ordinary create/update
+     * path (e.g. a background job or route handler computing and persisting a system-managed value), where
+     * the alternative would be bypassing `RepoUtils.update()` entirely (losing its ACL/optimistic-locking/
+     * transaction handling) just to change that one field.
+     */
+    allowReadOnly?: boolean;
 }
 
 /**
@@ -1190,13 +1202,18 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         // Force system-managed fields back to their persisted value, discarding whatever the client sent (or
-        // didn't send) for them. `dateCreated` is always protected; `@ReadOnly`-decorated properties are an
-        // app-level opt-in for anything else (roles, ownership fields, etc.) that must never be client-settable.
+        // didn't send) for them. `dateCreated` is always protected, with no bypass - there is never a
+        // legitimate reason to change it via update(). `@ReadOnly`-decorated properties are an app-level
+        // opt-in for anything else (roles, ownership fields, etc.) that must never be client-settable, but
+        // trusted server-side code may pass `allowReadOnly: true` to write them anyway - see that option's
+        // own doc comment on `RepoUpdateOptions`.
         if (existing instanceof BaseEntity) {
             (obj as any).dateCreated = existing.dateCreated;
         }
-        for (const prop of ModelUtils.getReadOnlyPropertyNames(this.modelClass)) {
-            (obj as any)[prop] = (existing as any)[prop];
+        if (!options?.allowReadOnly) {
+            for (const prop of ModelUtils.getReadOnlyPropertyNames(this.modelClass)) {
+                (obj as any)[prop] = (existing as any)[prop];
+            }
         }
 
         // When using MongoDB we need to copy the _id property in order to prevent duplicate entries

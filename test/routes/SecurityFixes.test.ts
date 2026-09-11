@@ -99,6 +99,27 @@ describe("Security Fixes Tests [MongoDB]", () => {
             expect(updated.status).toBeLessThan(300);
             expect(updated.body.locked).toBe(false);
         });
+
+        it("Trusted server-side code can write a @ReadOnly field via RepoUtils.update({ allowReadOnly: true }), bypassing the client-facing HTTP layer entirely.", async () => {
+            const route: any = objectFactory.getInstance("routes.SecureDocRoute");
+            const repoUtils = route.repoUtils;
+
+            const created = await repoUtils.create({ name: uuid.v4(), content: "hello" }, { ignoreACL: true });
+            expect(created.locked).toBe(false);
+
+            // Without `allowReadOnly`, the same call is still protected - confirms the default hasn't changed.
+            const stillLocked = await repoUtils.update({ ...created, locked: true, version: created.version }, created, {
+                ignoreACL: true,
+            });
+            expect(stillLocked.locked).toBe(false);
+
+            const unlocked = await repoUtils.update(
+                { ...created, locked: true, version: stillLocked.version },
+                stillLocked,
+                { ignoreACL: true, allowReadOnly: true },
+            );
+            expect(unlocked.locked).toBe(true);
+        });
     });
 
     describe("Type confusion via _type/_fqn", () => {
