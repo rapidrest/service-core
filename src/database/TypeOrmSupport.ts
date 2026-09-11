@@ -213,5 +213,50 @@ export async function connect(
         }
     }
 
+    registerRegexpFunction(connection);
+
     return connection;
+}
+
+/**
+ * Registers a `REGEXP` custom SQL function on a `better-sqlite3` connection, so `ModelUtils`'s `regex()` search
+ * operator (compiled to `<column> REGEXP :pattern` for this driver) works the same way it does on PostgreSQL
+ * (`~*`) and MySQL/MariaDB (`REGEXP`), both of which support regex matching natively. No-op for any other
+ * driver type, or if the underlying driver connection doesn't expose the synchronous `.function()` registration
+ * API `better-sqlite3` provides (guarded rather than assumed, since TypeORM's `databaseConnection` is typed
+ * `any` and driver internals aren't a stable contract).
+ *
+ * The registered function fails closed (returns 0/no-match) for a pattern `ModelUtils.isUnsafeRegexPattern`
+ * flags as ReDoS-shaped, or that otherwise fails to compile as a `RegExp` - a query built through
+ * `ModelUtils.buildSearchQuerySQL`/`buildQueryFromNode` already rejects such a pattern before it reaches here,
+ * but this function may also be reached by a raw `Raw()`/QueryBuilder expression elsewhere that didn't go
+ * through those guards.
+ */
+function registerRegexpFunction(connection: typeorm.DataSource): void {
+    const driver: any = (connection as any).driver;
+    if (driver?.options?.type !== "better-sqlite3") {
+        return;
+    }
+    const db: any = driver.databaseConnection;
+    if (typeof db?.function !== "function") {
+        return;
+    }
+    try {
+        db.function("REGEXP", { deterministic: true }, (pattern: string, value: unknown) => {
+            if (value === null || value === undefined || typeof pattern !== "string") {
+                return 0;
+            }
+            if (ModelUtils.isUnsafeRegexPattern(pattern)) {
+                return 0;
+            }
+            try {
+                return new RegExp(pattern, "i").test(String(value)) ? 1 : 0;
+            } catch (err) {
+                return 0;
+            }
+        });
+    } catch (err) {
+        // A `REGEXP` function may already be registered (e.g. a reused/reconnected DataSource) - better-sqlite3
+        // throws on a duplicate registration. Not fatal: the existing registration is left in place.
+    }
 }

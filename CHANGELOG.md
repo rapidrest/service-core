@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `regex()` search operator for raw regular-expression matching on both SQL (PostgreSQL, MySQL/MariaDB, and
+  `better-sqlite3` via an auto-registered `REGEXP` SQL function) and MongoDB.
+- `exists()` search operator (`exists(true)`/`exists(false)`).
+- Nested `$or` support on the SQL search backend (previously MongoDB-only).
+- `QueryNode`/`GroupNode`/`PredicateNode` tree-shaped query form and `ModelUtils.buildQueryFromNode()`, for
+  boolean nesting the flat `op(value)` query-parameter form can't express.
+- `ModelUtils.toTsQuery()` to generate a PostgreSQL `tsquery` expression from a `QueryNode` tree.
+- `sort=-fieldName` descending shorthand and sort-field validation against the model's declared columns, on
+  both search backends.
+- `ModelUtils.resolvePagination()` and `ModelUtils.toFindQuery()` helpers for direct MongoDB query consumers.
+- `$or`/query-tree depth and node-count bounds to guard against pathological nested queries.
+
+### Changed
+- **Breaking:** `like()` now takes glob syntax (`*`/`?`) translated per backend, instead of raw SQL
+  `LIKE`/regular expression syntax.
+- **Breaking:** an unrecognized search operator name is now rejected with a 400 instead of silently treated as
+  equality; use `eq(...)` for a literal value shaped like an operator call.
+- The `exactMatch` search option is now implemented: `false` makes a string-valued parameter with no explicit
+  operator match as a case-insensitive "contains" search instead of always matching exactly.
+
+### Fixed
+- `not()`/`ne()` no longer produce an invalid MongoDB query (`$not` on a scalar); both compile to `$ne`.
+- `in()`/`nin()`/`range()` operands are now coerced per-element to the field's declared column type, and search
+  value coercion in general now prefers the model's declared type over guessing from the value's shape.
+- The `me` keyword now resolves inside any operator (`eq(me)`, `in(me,other)`), not just as a bare value, and no
+  longer mutates the caller's query object.
+- The operator-injection guard is now applied uniformly on both the SQL and MongoDB backends.
+- The ReDoS guard on `regex()` now also catches quantified-alternation patterns (e.g. `(a|ab)*`).
+
 ## [1.8.0] - 2026-09-09
 
 ### Added

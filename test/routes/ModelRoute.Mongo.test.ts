@@ -607,11 +607,11 @@ describe("ModelRoute Tests [MongoDB]", () => {
             expect(result.headers["content-length"]).toEqual(users.length.toString());
         });
 
-        it("Can count documents with criteria (like-regex). [MongoDB]", async () => {
+        it("Can count documents with criteria (regex). [MongoDB]", async () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server).head("/users?lastName=like(Doc.*)");
+            const result = await request(server).head("/users?lastName=regex(Doc.*)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });
@@ -629,7 +629,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
             const users: User[] = await createUsers(13);
             await createUser("dtennant", "David", "Tennant", 47);
             await createUser("msmith", "Matt", "Smith", 36);
-            const result = await request(server).head("/users?lastName=like(Doc)");
+            const result = await request(server).head("/users?lastName=like(Doc*)");
             expect(result.headers).toHaveProperty("content-length");
             expect(result.headers["content-length"]).toBe(users.length.toString());
         });

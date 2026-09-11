@@ -1,5 +1,36 @@
 # Release Notes
 
+## Unreleased
+
+- Reworked `ModelUtils` search query building for correctness and SQL/MongoDB parity. **Breaking:** `like()` now
+  takes glob syntax (`*`/`?`) translated per backend instead of raw SQL `LIKE`/regex, and an unrecognized
+  operator name (e.g. a typo) is now rejected with a 400 instead of silently falling back to an equality
+  comparison (`eq(...)` remains the escape hatch for a literal value shaped like an operator call).
+- Added a `regex()` operator for raw regular-expression matching on both backends - PostgreSQL (`~*`),
+  MySQL/MariaDB (`REGEXP`) and now also `better-sqlite3`, via a `REGEXP` SQL function registered automatically
+  per connection.
+- Added an `exists()` operator (`exists(true)`/`exists(false)`) for null-checking, on both backends.
+- Implemented the previously-unused `exactMatch` option: when `false`, a string-valued parameter with no
+  explicit operator now matches as a case-insensitive "contains" search instead of always matching exactly.
+- Added nested `$or` support on the SQL backend (previously MongoDB-only), and a new `QueryNode`/`GroupNode`/
+  `PredicateNode` tree-shaped query form (`ModelUtils.buildQueryFromNode()`) for boolean nesting the flat
+  `op(value)` query-parameter form can't express, plus `ModelUtils.toTsQuery()` for generating a PostgreSQL
+  `tsquery` expression from that tree.
+- `sort` now validates requested fields against the model's declared columns (when available) and supports the
+  `sort=-fieldName` descending shorthand, on both backends.
+- Fixed `not()`/`ne()` producing an invalid MongoDB query (`$not` on a scalar) - both now compile to `$ne`.
+- Fixed `in()`/`nin()`/`range()` operands not being coerced to the field's declared type, and search values in
+  general being coerced by guessing from their shape (e.g. a text value like `"Mar 5"` silently becoming a
+  `Date`) rather than the model's declared column type.
+- Fixed the `me` keyword only resolving as a bare value (not inside `eq(me)`/`in(me,other)`) and mutating the
+  caller's query object when substituting it.
+- Fixed the operator-injection guard only being applied on the MongoDB backend, not SQL.
+- Improved the ReDoS guard on `regex()` to also catch quantified-alternation patterns (e.g. `(a|ab)*`).
+- Added `$or`/query-tree depth and complexity bounds to guard against pathological nested queries.
+- Added `ModelUtils.resolvePagination()` and `ModelUtils.toFindQuery()` helpers for callers building a MongoDB
+  query directly (outside of `RepoUtils`) that want the same bounded pagination and single return shape the SQL
+  path already provides.
+
 ## v1.8.0
 
 - Raised `RateLimiter`'s default identifier-layer limit from 5 attempts/300s to 100 attempts/60s. That

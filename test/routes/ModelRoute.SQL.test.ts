@@ -212,6 +212,18 @@ describe("ModelRoute Tests [SQL]", () => {
             expect(result.headers["content-length"]).toBe(items.length.toString());
         });
 
+        it("Can count documents with criteria (regex). [SQL]", async () => {
+            // Exercises the `REGEXP` custom SQL function TypeOrmSupport registers on the better-sqlite3
+            // connection - this driver has no native regex support, unlike PostgreSQL/MySQL/MariaDB.
+            const items: Item[] = await createItems(15);
+            await createItem("BFG", 1, 10000);
+            await createItem("B-Bomb", 5, 50);
+            await createItem("Boomerang", 1, 100);
+            const result = await request(server).head("/items?name=regex(^Item[0-9]+$)");
+            expect(result.headers).toHaveProperty("content-length");
+            expect(result.headers["content-length"]).toBe(items.length.toString());
+        });
+
         it("Can count documents with criteria (ne). [SQL]", async () => {
             const items: Item[] = await createItems(13);
             await createItem("BFG", 1, 10000);
