@@ -4,7 +4,16 @@
 ///////////////////////////////////////////////////////////////////////////////
 import uWS from "uWebSockets.js";
 import { DEFAULT_MAX_BODY_SIZE, UWSRequest, UWSResponse, readBody } from "./Adapters.js";
-import type { HttpRequest, HttpResponse, IHttpRouter, NextFunction, RequestHandler } from "../types.js";
+import {
+    DEFAULT_WS_OPTIONS,
+    type HttpRequest,
+    type HttpResponse,
+    type IHttpRouter,
+    type NextFunction,
+    type RequestHandler,
+    type WebSocketOptions,
+} from "../types.js";
+import { NetUtils } from "../../NetUtils.js";
 import { UWSWebSocketShim, type RequestWS } from "./WebSocket.js";
 import { extractParamNames, makeWsStubResponse, runChain, type WsUpgradeAuth } from "../MiddlewareChain.js";
 import { ApiError } from "@rapidrest/core";
@@ -23,6 +32,31 @@ function normalizePath(pathname: string): string {
     return pathname;
 }
 
+/** Reads a uWS connection's remote address and normalizes it (uWS reports IPv4 clients of a dual-stack socket as a
+ * fully expanded IPv4-mapped IPv6 address, e.g. `0000:0000:0000:0000:0000:ffff:7f00:0001`). */
+function remoteAddressOf(uwsRes: uWS.HttpResponse): string {
+    const raw: string = Buffer.from(uwsRes.getRemoteAddressAsText()).toString();
+    return NetUtils.normalizeIP(raw) ?? raw;
+}
+
+/** Counts the HTTP requests a router is currently handling, so `shutdown()` can wait for them. */
+interface InFlightCounter {
+    count: number;
+}
+
+/** Options for `makeUWSHandler()`. */
+interface UWSHandlerOptions {
+    /** The number of global middleware registered before this route. */
+    preLength: number;
+    /** The route's `:param` names, in order. */
+    paramNames: string[];
+    /** The registered route pattern, exposed as `req.routePattern`. `undefined` for the router's own fallbacks. */
+    routePattern: string | undefined;
+    isHead?: boolean;
+    maxBodySize?: number;
+    inFlight: InFlightCounter;
+}
+
 /**
  * Wraps a uWS route handler to convert uWS request/response objects into `HttpRequest`/`HttpResponse`
  * adapters, reads the body, and runs the full middleware chain (pre-route global + route-specific + post-route global).
@@ -34,21 +68,36 @@ function normalizePath(pathname: string): string {
 function makeUWSHandler(
     globalMiddleware: RequestHandler[],
     routeHandlers: RequestHandler[],
-    preLength: number,
-    paramNames: string[],
-    isHead: boolean = false,
-    maxBodySize: number = DEFAULT_MAX_BODY_SIZE,
+    options: UWSHandlerOptions,
 ) {
+    const {
+        preLength,
+        paramNames,
+        routePattern,
+        isHead = false,
+        maxBodySize = DEFAULT_MAX_BODY_SIZE,
+        inFlight,
+    } = options;
     // Built lazily on the first request and reused thereafter. Safe because all use() calls
     // complete before listen() is invoked, and requests only arrive after listen().
     let allHandlers: RequestHandler[] | null = null;
 
     return async (uwsRes: uWS.HttpResponse, uwsReq: uWS.HttpRequest) => {
+        inFlight.count++;
+        try {
+            await handle(uwsRes, uwsReq);
+        } finally {
+            inFlight.count--;
+        }
+    };
+
+    async function handle(uwsRes: uWS.HttpResponse, uwsReq: uWS.HttpRequest): Promise<void> {
         // Capture remote address before any async work
-        const remoteAddress = Buffer.from(uwsRes.getRemoteAddressAsText()).toString();
+        const remoteAddress = remoteAddressOf(uwsRes);
 
         // Build adapters — all uWS HttpRequest reads happen here synchronously
         const req = new UWSRequest(uwsReq, remoteAddress);
+        req.routePattern = routePattern;
         const res = new UWSResponse(uwsRes);
         res.isHead = isHead;
 
@@ -94,7 +143,7 @@ function makeUWSHandler(
         if (!res.writableEnded && !res["_aborted"]) {
             res.status(204).end();
         }
-    };
+    }
 }
 
 /**
@@ -134,6 +183,8 @@ export class HttpRouter implements IHttpRouter {
     private readonly explicitOptionsPaths: Set<string> = new Set();
     /** Maximum accepted request body size, in bytes. */
     private readonly maxBodySize: number;
+    /** The HTTP requests currently being handled. */
+    private readonly inFlight: InFlightCounter = { count: 0 };
 
     constructor(uwsApp: uWS.TemplatedApp, maxBodySize: number = DEFAULT_MAX_BODY_SIZE) {
         this.uwsApp = uwsApp;
@@ -163,6 +214,23 @@ export class HttpRouter implements IHttpRouter {
         return this.preRouteCount;
     }
 
+    /** Builds the uWS handler for a route registered at `routePattern` (`undefined` for the router's own fallbacks). */
+    private makeHandler(
+        handlers: RequestHandler[],
+        preLength: number,
+        routePattern: string | undefined,
+        isHead: boolean = false,
+    ) {
+        return makeUWSHandler(this.globalMiddleware, handlers, {
+            preLength,
+            paramNames: routePattern ? extractParamNames(routePattern) : [],
+            routePattern,
+            isHead,
+            maxBodySize: this.maxBodySize,
+            inFlight: this.inFlight,
+        });
+    }
+
     // -------------------------------------------------------------------------
     // HTTP verb methods — each registers a uWS route
     // -------------------------------------------------------------------------
@@ -170,50 +238,35 @@ export class HttpRouter implements IHttpRouter {
     public get(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("get");
-        this.uwsApp.get(
-            routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
-        );
+        this.uwsApp.get(routePath, this.makeHandler(handlers, pre, routePath));
         return this;
     }
 
     public post(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("post");
-        this.uwsApp.post(
-            routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
-        );
+        this.uwsApp.post(routePath, this.makeHandler(handlers, pre, routePath));
         return this;
     }
 
     public put(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("put");
-        this.uwsApp.put(
-            routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
-        );
+        this.uwsApp.put(routePath, this.makeHandler(handlers, pre, routePath));
         return this;
     }
 
     public delete(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("delete");
-        this.uwsApp.del(
-            routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
-        );
+        this.uwsApp.del(routePath, this.makeHandler(handlers, pre, routePath));
         return this;
     }
 
     public patch(routePath: string, ...handlers: RequestHandler[]): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("patch");
-        this.uwsApp.patch(
-            routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
-        );
+        this.uwsApp.patch(routePath, this.makeHandler(handlers, pre, routePath));
         return this;
     }
 
@@ -221,10 +274,7 @@ export class HttpRouter implements IHttpRouter {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("head");
         // uWS explicitly-registered HEAD routes do send body bytes — suppress them via isHead flag
-        this.uwsApp.head(
-            routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), true, this.maxBodySize),
-        );
+        this.uwsApp.head(routePath, this.makeHandler(handlers, pre, routePath, true));
         return this;
     }
 
@@ -234,10 +284,7 @@ export class HttpRouter implements IHttpRouter {
         // The framework's own `listen()` fallback registers exactly "/*" for CORS preflight support -
         // never treated as "explicit" here, so it keeps deferring to the CORS middleware's blanket 204.
         if (normalized !== "/*") this.explicitOptionsPaths.add(normalized);
-        this.uwsApp.options(
-            routePath,
-            makeUWSHandler(this.globalMiddleware, handlers, pre, extractParamNames(routePath), false, this.maxBodySize),
-        );
+        this.uwsApp.options(routePath, this.makeHandler(handlers, pre, routePath));
         return this;
     }
 
@@ -266,16 +313,18 @@ export class HttpRouter implements IHttpRouter {
     public ws(
         routePath: string,
         handlers: RequestHandler[],
-        wsOptions?: Partial<uWS.WebSocketBehavior<any>>,
+        wsOptions?: Partial<uWS.WebSocketBehavior<any>> | WebSocketOptions,
         upgradeAuth?: WsUpgradeAuth,
     ): this {
         const behavior: uWS.WebSocketBehavior<any> = {
-            ...wsOptions,
+            // Explicit defaults, identical to the ones BunRouter applies, so a route behaves the same on both runtimes.
+            ...DEFAULT_WS_OPTIONS,
+            ...(wsOptions as Partial<uWS.WebSocketBehavior<any>>),
 
             upgrade: (uwsRes, uwsReq, context) => {
                 // Capture all request data synchronously — uWS HttpRequest is stack-allocated
-                const remoteAddress = Buffer.from(uwsRes.getRemoteAddressAsText()).toString();
-                const req = new UWSRequest(uwsReq, remoteAddress);
+                const req = new UWSRequest(uwsReq, remoteAddressOf(uwsRes));
+                req.routePattern = routePath;
                 const secWebSocketKey = uwsReq.getHeader("sec-websocket-key");
                 const secWebSocketProtocol = uwsReq.getHeader("sec-websocket-protocol");
                 const secWebSocketExtensions = uwsReq.getHeader("sec-websocket-extensions");
@@ -347,10 +396,13 @@ export class HttpRouter implements IHttpRouter {
 
             message: (ws, message, isBinary) => {
                 const userData = ws.getUserData() as { shim?: UWSWebSocketShim };
-                // Forward message events to the per-socket EventEmitter shim
+                // Forward message events to the per-socket EventEmitter shim. uWS neuters `message` once this callback
+                // returns, and `Buffer.from(arrayBuffer)` is only a view over it, so a binary message must be copied
+                // (`slice(0)`) or a listener that keeps the Buffer would later read freed memory. The text path
+                // decodes into a new string right away, so it needs no copy.
                 userData.shim?.emit(
                     "message",
-                    isBinary ? Buffer.from(message) : Buffer.from(message).toString(),
+                    isBinary ? Buffer.from(message.slice(0)) : Buffer.from(message).toString(),
                     isBinary,
                 );
             },
@@ -380,7 +432,7 @@ export class HttpRouter implements IHttpRouter {
         // This must happen before the uWS listen call so it is ready when the first request arrives.
         // preLength=0 places all globalMiddleware as "post-route" so they all execute sequentially;
         // the CORS middleware terminates the chain early for OPTIONS (sends 204 without calling next).
-        this.uwsApp.options("/*", makeUWSHandler(this.globalMiddleware, [], 0, [], false, this.maxBodySize));
+        this.uwsApp.options("/*", this.makeHandler([], 0, undefined));
 
         // Register a JSON 404 fallback for any request that doesn't match a registered route, so
         // clients get the framework's normal ApiError response shape instead of uWS's built-in HTML
@@ -392,9 +444,13 @@ export class HttpRouter implements IHttpRouter {
         const notFoundHandler: RequestHandler = (_req, _res, next: NextFunction) => {
             next(new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND));
         };
+        const uwsVerbs = { get: "get", post: "post", put: "put", delete: "del", patch: "patch", head: "head" } as const;
         for (const verb of ["get", "post", "put", "delete", "patch", "head"] as const) {
             if (!this.rootWildcardVerbs.has(verb)) {
-                this[verb]("/*", notFoundHandler);
+                // Registered directly rather than via this[verb]() so the fallback has no route pattern: every
+                // unmatched path shares one "unmatched" identity instead of looking like an app-defined `/*` route.
+                const pre = this.capturePreRouteCount();
+                this.uwsApp[uwsVerbs[verb]]("/*", this.makeHandler([notFoundHandler], pre, undefined, verb === "head"));
             }
         }
 
@@ -416,6 +472,30 @@ export class HttpRouter implements IHttpRouter {
         if (this.listenSocket) {
             uWS.us_listen_socket_close(this.listenSocket);
             this.listenSocket = null;
+        }
+    }
+
+    /** The number of HTTP requests currently being handled. */
+    public get inFlightRequests(): number {
+        return this.inFlight.count;
+    }
+
+    /**
+     * Stops accepting new connections, waits up to `timeoutMs` for in-flight HTTP requests to finish, then closes
+     * every remaining connection (keep-alive and WebSocket connections included).
+     *
+     * @param timeoutMs The maximum time to wait for in-flight requests, in milliseconds.
+     */
+    public async shutdown(timeoutMs: number = 10000): Promise<void> {
+        this.close();
+        const deadline: number = Date.now() + Math.max(0, timeoutMs);
+        while (this.inFlight.count > 0 && Date.now() < deadline) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+        try {
+            this.uwsApp.close();
+        } catch {
+            // Already closed
         }
     }
 

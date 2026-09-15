@@ -7,8 +7,11 @@
 // redis.subscribe() failure during connect(), and a failed message-forward callback. Constructs
 // BasePushRoute directly with manually-set fields, the same approach ACLUtils.unit.test.ts uses,
 // rather than spinning up a full Server/ObjectFactory/Mongo/Redis stack for these narrow cases.
-const { subscribeMock, createdInstances } = vi.hoisted(() => ({
+const { subscribeMock, connectMock, unsubscribeMock, disconnectMock, createdInstances } = vi.hoisted(() => ({
     subscribeMock: vi.fn().mockResolvedValue(undefined),
+    connectMock: vi.fn().mockResolvedValue(undefined),
+    unsubscribeMock: vi.fn().mockResolvedValue(undefined),
+    disconnectMock: vi.fn().mockResolvedValue(undefined),
     createdInstances: [] as any[],
 }));
 
@@ -22,7 +25,9 @@ vi.mock("redis", () => {
             this.url = opts?.url;
             createdInstances.push(this);
         }
+        public disconnected: boolean = false;
         async connect() {
+            await connectMock();
             return this;
         }
         async subscribe(channels: string | string[], listener: Function) {
@@ -32,11 +37,12 @@ vi.mock("redis", () => {
             }
             return result;
         }
-        async unsubscribe() {
-            return Promise.resolve();
+        async unsubscribe(channels?: string | string[]) {
+            return unsubscribeMock(channels);
         }
         async disconnect() {
-            // no-op
+            this.disconnected = true;
+            return disconnectMock();
         }
         async publish() {
             return 0;
@@ -59,15 +65,33 @@ function makeRoute(overrides: Partial<{ redisConfig: any; aclUtils: any }> = {})
 
 function makeSock() {
     return {
+        readyState: 1,
         close: vi.fn(),
         send: vi.fn((_data: any, cb?: (err?: any) => void) => cb?.(undefined)),
         on: vi.fn(),
     };
 }
 
+/** Returns the listener `sock.on()` registered for `event`, if any. */
+function listenerFor(sock: ReturnType<typeof makeSock>, event: string): any {
+    return sock.on.mock.calls.find(([name]: [string]) => name === event)?.[1];
+}
+
+/** A promise plus its resolve function, to hold redis `connect()` open while a test closes the socket. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve!: () => void;
+    const promise = new Promise<void>((r) => {
+        resolve = r;
+    });
+    return { promise, resolve };
+}
+
 describe("BasePushRoute Tests (unit)", () => {
     beforeEach(() => {
         subscribeMock.mockReset().mockResolvedValue(undefined);
+        connectMock.mockReset().mockResolvedValue(undefined);
+        unsubscribeMock.mockReset().mockResolvedValue(undefined);
+        disconnectMock.mockReset().mockResolvedValue(undefined);
         createdInstances.length = 0;
     });
 
@@ -233,6 +257,174 @@ describe("BasePushRoute Tests (unit)", () => {
             const onMessage = sock.on.mock.calls.find(([event]: [string]) => event === "message")![1];
             await onMessage(JSON.stringify({ id: 1, type: "UNSUBSCRIBE", data: "not-subscribed" }), false);
 
+            expect(route.activeSubs.get("u1")).toEqual(["u1"]);
+        });
+    });
+
+    describe("connect - sockets closing during setup", () => {
+        it("keeps serializing a user's messages after one of them fails inside the per-user lock", async () => {
+            const route = makeRoute();
+            const user = { uid: "u1" };
+            const sock = makeSock();
+            await route.connect(sock, user);
+            const onMessage = listenerFor(sock, "message");
+
+            subscribeMock.mockRejectedValueOnce(new Error("subscribe failed"));
+            await onMessage(JSON.stringify({ id: 1, type: "SUBSCRIBE", data: "channelA" }), false);
+            expect(route.logger.debug).toHaveBeenCalledWith("Received invalid message from user u1.");
+
+            await onMessage(JSON.stringify({ id: 2, type: "SUBSCRIBE", data: "channelB" }), false);
+            expect(route.activeSubs.get("u1")).toEqual(["u1", "channelB"]);
+        });
+
+        it("registers the close listener before connecting to redis", async () => {
+            const gate = deferred();
+            connectMock.mockImplementationOnce(() => gate.promise);
+            const route = makeRoute();
+            const sock = makeSock();
+
+            const pending = route.connect(sock, { uid: "u1" });
+            expect(listenerFor(sock, "close")).toBeDefined();
+            gate.resolve();
+            await pending;
+        });
+
+        it("releases the redis client and socket slot when the socket closes while redis is still connecting", async () => {
+            const gate = deferred();
+            connectMock.mockImplementationOnce(() => gate.promise);
+            const route = makeRoute();
+            const sock = makeSock();
+
+            const pending = route.connect(sock, { uid: "u1" });
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(connectMock).toHaveBeenCalled();
+            sock.readyState = 3;
+            const closed = listenerFor(sock, "close")(1006, "");
+            gate.resolve();
+            await pending;
+            await closed;
+
+            expect(createdInstances).toHaveLength(1);
+            expect(createdInstances[0].disconnected).toBe(true);
+            expect(route.activeSocks.has("u1")).toBe(false);
+            expect(route.activeSubs.has("u1")).toBe(false);
+            // No message handler is set up for a socket that is already gone.
+            expect(listenerFor(sock, "message")).toBeUndefined();
+        });
+
+        it("cleans up inline when the socket closed during setup but its close event never reached the listener", async () => {
+            const gate = deferred();
+            connectMock.mockImplementationOnce(() => gate.promise);
+            const route = makeRoute();
+            const sock = makeSock();
+
+            const pending = route.connect(sock, { uid: "u1" });
+            await new Promise((resolve) => setImmediate(resolve));
+            sock.readyState = 2;
+            gate.resolve();
+            await pending;
+
+            expect(createdInstances[0].disconnected).toBe(true);
+            expect(route.activeSocks.has("u1")).toBe(false);
+
+            // A late close event must not clean up twice.
+            disconnectMock.mockClear();
+            await listenerFor(sock, "close")(1006, "");
+            expect(disconnectMock).not.toHaveBeenCalled();
+        });
+
+        it("does not create a redis client at all for a socket that was already closed when connect() ran", async () => {
+            const route = makeRoute();
+            const sock = makeSock();
+            sock.readyState = 3;
+
+            await route.connect(sock, { uid: "u1" });
+
+            expect(createdInstances).toHaveLength(0);
+            expect(route.activeSocks.has("u1")).toBe(false);
+            expect(sock.close).not.toHaveBeenCalled();
+        });
+
+        it("does not lock a user out after max_sockets_per_user sockets closed during setup", async () => {
+            const route = makeRoute();
+            route.maxSocketsPerUser = 3;
+            const user = { uid: "u1" };
+
+            for (let i = 0; i < 5; i++) {
+                const gate = deferred();
+                connectMock.mockImplementationOnce(() => gate.promise);
+                const sock = makeSock();
+                const pending = route.connect(sock, user);
+                await new Promise((resolve) => setImmediate(resolve));
+                sock.readyState = 3;
+                const closed = listenerFor(sock, "close")(1006, "");
+                gate.resolve();
+                await pending;
+                await closed;
+            }
+            expect(createdInstances).toHaveLength(5);
+            expect(createdInstances.every((c: any) => c.disconnected)).toBe(true);
+
+            const sock = makeSock();
+            await route.connect(sock, user);
+            expect(sock.close).not.toHaveBeenCalled();
+            expect(route.activeSocks.get("u1")).toEqual([sock]);
+        });
+
+        it("closes the socket with 1011 and releases the client when redis connect() fails", async () => {
+            connectMock.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+            const route = makeRoute();
+            const sock = makeSock();
+
+            await expect(route.connect(sock, { uid: "u1" })).resolves.toBeUndefined();
+
+            expect(sock.close).toHaveBeenCalledWith(1011, expect.any(String));
+            expect(createdInstances[0].disconnected).toBe(true);
+            expect(route.activeSocks.has("u1")).toBe(false);
+            expect(route.logger.error).toHaveBeenCalledWith(expect.stringContaining("Failed to connect"));
+        });
+
+        it("still releases the socket slot when unsubscribing or disconnecting the redis client fails", async () => {
+            const route = makeRoute();
+            const sock = makeSock();
+            await route.connect(sock, { uid: "u1" });
+            unsubscribeMock.mockRejectedValueOnce(new Error("unsubscribe failed"));
+            disconnectMock.mockRejectedValueOnce(new Error("disconnect failed"));
+
+            await listenerFor(sock, "close")(1000, "");
+
+            expect(route.activeSocks.has("u1")).toBe(false);
+            expect(route.logger.debug).toHaveBeenCalledWith(expect.stringContaining("Failed to unsubscribe"));
+            expect(route.logger.debug).toHaveBeenCalledWith(expect.stringContaining("Failed to disconnect"));
+        });
+
+        it("keeps the user's other sockets tracked when one of them closes", async () => {
+            const route = makeRoute();
+            const user = { uid: "u1" };
+            const sockA = makeSock();
+            const sockB = makeSock();
+            await route.connect(sockA, user);
+            await route.connect(sockB, user);
+
+            await listenerFor(sockA, "close")(1000, "");
+
+            expect(route.activeSocks.get("u1")).toEqual([sockB]);
+            expect(route.activeSubs.get("u1")).toEqual(["u1"]);
+        });
+
+        it("a socket rejected for exceeding the limit does not disturb the user's tracked sockets when it closes", async () => {
+            const route = makeRoute();
+            route.maxSocketsPerUser = 1;
+            const user = { uid: "u1" };
+            const sockA = makeSock();
+            const rejected = makeSock();
+            await route.connect(sockA, user);
+            await route.connect(rejected, user);
+            expect(rejected.close).toHaveBeenCalledWith(1008, expect.any(String));
+
+            await listenerFor(rejected, "close")(1008, "");
+
+            expect(route.activeSocks.get("u1")).toEqual([sockA]);
             expect(route.activeSubs.get("u1")).toEqual(["u1"]);
         });
     });

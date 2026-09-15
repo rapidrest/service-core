@@ -94,26 +94,38 @@ export class BackgroundServiceManager {
         clazz = clazz ? clazz : this.classes[serviceName];
 
         if (clazz) {
+            let service: BackgroundService | undefined = undefined;
+            let startedService: BackgroundService | undefined = undefined;
             try {
                 this.logger.info("Starting service " + serviceName + "...");
 
                 // Instantiate the service class
-                const service: BackgroundService = await this.objectFactory.newInstance(clazz, {
+                const instance: BackgroundService = await this.objectFactory.newInstance(clazz, {
                     name: serviceName,
                     initialize: true,
                     args: [...args],
                 });
-                this.services[serviceName] = service;
+                service = instance;
+                this.services[serviceName] = instance;
+
+                // Reject an invalid schedule before starting the service. `scheduleJob()` returns `null` for a spec
+                // it can't parse, which would otherwise only surface after `start()` had already run, leaving a
+                // started service that nothing ever stops.
+                if (instance.schedule && !BackgroundServiceManager.isValidSchedule(instance.schedule)) {
+                    throw new Error(`Invalid schedule '${instance.schedule}' for background service '${serviceName}'.`);
+                }
 
                 // Initialize the service
-                await service.start();
+                await instance.start();
+                startedService = instance;
 
                 // Schedule the service for background execution. Guard against overlapping runs: node-schedule
                 // fires on every tick regardless of whether the previous invocation's `run()` has settled, so a
                 // service whose `run()` occasionally outlasts its own interval would otherwise get a second,
                 // concurrent invocation racing the first against the same external resources/DB writes.
-                if (service.schedule) {
-                    const job: schedule.Job = schedule.scheduleJob(service.schedule, async () => {
+                if (instance.schedule) {
+                    const scheduled: BackgroundService = instance;
+                    const job: schedule.Job | null = schedule.scheduleJob(scheduled.schedule!, async () => {
                         if (this.runningJobs.has(serviceName)) {
                             this.logger.warn(
                                 `Background service '${serviceName}' is still running from a previous scheduled tick; skipping this invocation to avoid an overlapping run.`,
@@ -122,11 +134,16 @@ export class BackgroundServiceManager {
                         }
                         this.runningJobs.add(serviceName);
                         try {
-                            await service.run();
+                            await scheduled.run();
                         } finally {
                             this.runningJobs.delete(serviceName);
                         }
                     });
+                    if (!job) {
+                        throw new Error(
+                            `Failed to schedule background service '${serviceName}' with schedule '${scheduled.schedule}'.`,
+                        );
+                    }
                     job.on("error", (err: any) => {
                         this.logger.error(`Background service '${serviceName}' failed during a scheduled run.`);
                         this.logger.debug(err);
@@ -134,15 +151,44 @@ export class BackgroundServiceManager {
                     this.jobs[serviceName] = job;
                 } else {
                     // One time execution services are run once and then immediately cleaned up
-                    await service.run();
-                    await service.stop();
-                    await this.objectFactory.destroy(service);
+                    await instance.run();
+                    startedService = undefined;
+                    await instance.stop();
+                    await this.objectFactory.destroy(instance);
                 }
             } catch (err) {
                 this.logger.error(`Failed to start service: ${serviceName}`);
                 this.logger.debug(err);
+
+                // Don't leave a half-started service behind: `stopAll()` only stops services that have a job.
+                if (this.jobs[serviceName]) {
+                    this.jobs[serviceName].cancel(false);
+                    delete this.jobs[serviceName];
+                }
+                if (startedService) {
+                    try {
+                        await startedService.stop();
+                    } catch (stopErr) {
+                        this.logger.debug(stopErr);
+                    }
+                }
+                if (this.services[serviceName] === service) {
+                    delete this.services[serviceName];
+                }
             }
         }
+    }
+
+    /**
+     * Returns `true` if node-schedule accepts the given schedule, without scheduling anything.
+     *
+     * @param spec The cron string, date or recurrence rule to validate.
+     */
+    private static isValidSchedule(spec: any): boolean {
+        const probe: schedule.Job = new schedule.Job("rrst:schedule-probe");
+        const valid: boolean = probe.schedule(spec);
+        probe.cancel();
+        return valid;
     }
 
     /**

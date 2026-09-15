@@ -4,7 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 import { ObjectFactory as CoreObjectFactory } from "@rapidrest/core";
-import { ConnectionManager } from "./database/ConnectionManager.js";
+import { attachRedisErrorHandler, ConnectionManager } from "./database/ConnectionManager.js";
 import { isSqlDataSource } from "./database/ConnectionKinds.js";
 import { MongoConnection } from "./database/MongoConnection.js";
 
@@ -43,7 +43,12 @@ export class ObjectFactory extends CoreObjectFactory {
                     if (conn) {
                         // Always create a copy of the connection so that the user can perform context aware operations without
                         // error. We must also check that it is possible to duplicate the connection.
-                        let value: any = typeof conn.duplicate === "function" ? conn.duplicate() : conn;
+                        let value: any = conn;
+                        if (typeof conn.duplicate === "function") {
+                            // A duplicate is a separate client with no listeners of its own, so without this a
+                            // dropped socket would emit an unhandled `error` and crash the process.
+                            value = attachRedisErrorHandler(conn.duplicate(), this.logger, `${name} (duplicate)`);
+                        }
                         if (
                             typeof value?.connect === "function" &&
                             typeof value?.isOpen === "boolean" &&

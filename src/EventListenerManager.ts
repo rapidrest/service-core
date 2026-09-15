@@ -5,6 +5,7 @@
 import type { RedisClientType } from "redis";
 import { Event, ObjectDecorators } from "@rapidrest/core";
 import { ObjectFactory } from "./ObjectFactory.js";
+import { attachRedisErrorHandler } from "./database/ConnectionManager.js";
 const { Config, Destroy, Init, Logger } = ObjectDecorators;
 
 /**
@@ -30,7 +31,13 @@ export class EventListenerManager {
 
     constructor(objectFactory: ObjectFactory, redis: RedisClientType) {
         this.objectFactory = objectFactory;
-        this.redis = redis.duplicate();
+        // `@Logger` is only injected after construction, so the listener resolves the logger lazily.
+        const logger = {
+            error: (msg: string) => this.logger?.error(msg),
+            debug: (msg: string) => this.logger?.debug(msg),
+            info: (msg: string) => this.logger?.info(msg),
+        };
+        this.redis = attachRedisErrorHandler(redis.duplicate(), logger, "events (EventListenerManager)");
     }
 
     @Init
@@ -88,11 +95,34 @@ export class EventListenerManager {
         }
     }
 
+    /**
+     * Unsubscribes from all channels, closes this manager's own (duplicated) redis client and removes all
+     * registered handlers. Safe to call more than once.
+     */
     @Destroy
     public async destroy(): Promise<void> {
-        await this.redis.unsubscribe(...this.channels);
         this.handlers.clear();
         this.typePatterns.clear();
+        if (!this.redis.isOpen) {
+            return;
+        }
+        try {
+            if (this.channels.length > 0) {
+                await this.redis.unsubscribe(this.channels);
+            }
+        } catch (err: any) {
+            this.logger?.debug(`EventManager: Failed to unsubscribe from pubsub channels: ${err}`);
+        }
+        try {
+            // `destroy()` closes the socket immediately and never waits on (or retries against) an unreachable server.
+            if (typeof (this.redis as any).destroy === "function") {
+                (this.redis as any).destroy();
+            } else {
+                await this.redis.disconnect();
+            }
+        } catch (err: any) {
+            this.logger?.debug(`EventManager: Failed to close the redis client: ${err}`);
+        }
     }
 
     /**

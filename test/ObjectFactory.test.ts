@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
+import { EventEmitter } from "events";
 import { Logger } from "@rapidrest/core";
 import config from "./config";
 import { ObjectFactory } from "../src/ObjectFactory";
@@ -215,6 +216,22 @@ describe("ObjectFactory Tests", () => {
             const target = await objectFactory.initialize<Target>(new Target());
             expect(target.redis.isOpen).toBe(true);
             expect(connectCalls).toBe(0);
+        });
+
+        it("attaches an error listener to the duplicated client so a socket error can't crash the process", async () => {
+            const duplicate: any = new EventEmitter();
+            duplicate.isOpen = true;
+            const conn: any = new EventEmitter();
+            conn.duplicate = () => duplicate;
+            class Target {
+                @Redis("events")
+                public redis: any;
+            }
+            const objectFactory = makeFactoryWithConnections({ events: conn });
+            const target = await objectFactory.initialize<Target>(new Target());
+            expect(target.redis).toBe(duplicate);
+            expect(duplicate.listenerCount("error")).toBe(1);
+            expect(() => duplicate.emit("error", new Error("ECONNRESET"))).not.toThrow();
         });
 
         it("assigns the connection directly when duplicate() is not available", async () => {

@@ -6,10 +6,10 @@
 // not-found, and recordEvent) that are impractical to reach through the full Mongo/SQL
 // integration tests, which never set `recordEvent: true` and always have a healthy repoUtils.
 import "reflect-metadata";
-import { EventUtils, JWTUtils, Logger } from "@rapidrest/core";
+import { ApiError, EventUtils, JWTUtils, Logger } from "@rapidrest/core";
 import * as uuid from "uuid";
 import config from "../config";
-import { CRUDRoute, ModelRoute, RepoUtils } from "../../src";
+import { ApiErrorMessages, ApiErrors, BulkError, CRUDRoute, ModelRoute, RepoUtils } from "../../src";
 import User from "../server/models/User";
 
 class TestRoute extends ModelRoute<User> {
@@ -376,23 +376,74 @@ describe("ModelRoute.doUpdateProperty", () => {
     });
 });
 
+describe("CRUDRoute.validateCreateBulk", () => {
+    it("throws BULK_CREATE_FAILURE with a per-object ApiError reason when an item fails validation", async () => {
+        const route: any = new TestCRUDRoute();
+        const reason = new ApiError(ApiErrors.INVALID_REQUEST, 400, "name is invalid");
+        route.validateCreate = vi
+            .fn()
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(reason)
+            .mockRejectedValueOnce(new Error("mongo: connection string mongodb://secret@host"));
+
+        const err: any = await route
+            .validateCreateBulk([{ name: "ok" }, { name: "bad name" }, { name: "boom" }], { uid: "actor" })
+            .catch((e: any) => e);
+
+        expect(err).toBeInstanceOf(BulkError);
+        expect(err.code).toBe(ApiErrors.BULK_CREATE_FAILURE);
+        expect(err.message).toBe(ApiErrorMessages.BULK_CREATE_FAILURE);
+        expect(err.status).toBe(400);
+        expect(err.errors).toHaveLength(3);
+        expect(err.errors[0]).toBeNull();
+        expect(err.errors[1]).toBe(reason);
+        // A non-ApiError reason is replaced with a generic ApiError so internal details aren't sent to the client.
+        expect(err.errors[2]).toBeInstanceOf(ApiError);
+        expect(err.errors[2].code).toBe(ApiErrors.INVALID_REQUEST);
+        expect(err.errors[2].message).not.toContain("secret");
+    });
+
+    it("rethrows the validation error itself for a single (non-array) object", async () => {
+        const route: any = new TestCRUDRoute();
+        const reason = new ApiError(ApiErrors.INVALID_REQUEST, 400, "name is invalid");
+        route.validateCreate = vi.fn().mockRejectedValue(reason);
+        await expect(route.validateCreateBulk({ name: "bad name" }, { uid: "actor" })).rejects.toBe(reason);
+
+        route.validateCreate = vi.fn().mockRejectedValue(new Error("internal detail"));
+        const err: any = await route.validateCreateBulk({ name: "bad name" }, { uid: "actor" }).catch((e: any) => e);
+        expect(err).not.toBeInstanceOf(BulkError);
+        expect(err.code).toBe(ApiErrors.INVALID_REQUEST);
+        expect(err.message).toBe(ApiErrorMessages.INVALID_REQUEST);
+    });
+
+    it("does not throw when every object passes validation", async () => {
+        const route: any = new TestCRUDRoute();
+        route.validateCreate = vi.fn().mockResolvedValue(undefined);
+        await expect(
+            route.validateCreateBulk([{ name: "a" }, { name: "b" }], { uid: "actor" }),
+        ).resolves.toBeUndefined();
+        await expect(route.validateCreateBulk({ name: "a" }, { uid: "actor" })).resolves.toBeUndefined();
+    });
+});
+
 describe("CRUDRoute.validateUpdateBulk", () => {
     it("throws BULK_UPDATE_FAILURE when at least one item in the batch fails validation", async () => {
         const route: any = new TestCRUDRoute();
-        route.validateUpdate = vi
-            .fn()
-            .mockResolvedValueOnce(undefined)
-            .mockRejectedValueOnce(new Error("invalid item"));
+        const reason = new ApiError(ApiErrors.INVALID_REQUEST, 400, "invalid item");
+        route.validateUpdate = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(reason);
 
-        await expect(
-            route.validateUpdateBulk(
+        const err: any = await route
+            .validateUpdateBulk(
                 [
                     { uid: "user-1", name: "ok" },
                     { uid: "user-2", name: "bad" },
                 ],
                 { uid: "actor" },
-            ),
-        ).rejects.toThrow();
+            )
+            .catch((e: any) => e);
+        expect(err).toBeInstanceOf(BulkError);
+        expect(err.code).toBe(ApiErrors.BULK_UPDATE_FAILURE);
+        expect(err.errors).toEqual([null, reason]);
     });
 
     it("does not throw when every item in the batch passes validation", async () => {

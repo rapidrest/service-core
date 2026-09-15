@@ -16,6 +16,7 @@ import { MongoRepository } from "../database/MongoRepository.js";
 import { RedisCache } from "../database/RedisCache.js";
 import { ObjectFactory } from "../ObjectFactory.js";
 import { registerRollbackHook, Transactional, transactionContext } from "../decorators/DatabaseDecorators.js";
+import { isDuplicateKeyError } from "../database/DatabaseErrors.js";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -37,6 +38,12 @@ export class ACLUtils {
 
     @Logger
     private logger?: any;
+
+    /**
+     * The uids of every code-defined (class, route and endpoint) ACL registered via `saveDefaultACL()` in this
+     * process, together with their `default_<uid>` counterparts. See `isReservedUid()`.
+     */
+    private reservedUids: Set<string> = new Set();
 
     @Config("trusted_roles", ["admin"])
     private trustedRoles: string[] = ["admin"];
@@ -93,6 +100,42 @@ export class ACLUtils {
         // Explicit wildcards — match any authenticated user; no regex engine involved
         if (userOrRoleId === ".*" || userOrRoleId === "*") return "wildcard";
         return "none";
+    }
+
+    /**
+     * Determines whether `uid` names a code-defined ACL: any `default_<uid>` ACL, or a class/route/endpoint ACL (or
+     * its `default_` counterpart) registered through `saveDefaultACL()`. Such an ACL governs a whole model or route,
+     * so a record must never be created at, adopt, or remove it (see `RepoUtils.create()`/`delete()`/`truncate()`).
+     *
+     * @param uid The ACL uid to check.
+     */
+    public isReservedUid(uid: string | undefined): boolean {
+        return typeof uid === "string" && (uid.startsWith("default_") || this.reservedUids.has(uid));
+    }
+
+    /**
+     * Determines whether `acl` is a code-defined ACL: its uid is reserved (see `isReservedUid()`), or it has the
+     * shape of the user-editable half of a default ACL (its parent is `default_<uid>`). The latter also catches one
+     * registered by a route or model that this process doesn't load.
+     *
+     * @param acl The ACL to check.
+     */
+    public isProtectedACL(acl: AccessControlList | undefined | null): boolean {
+        return !!acl && (this.isReservedUid(acl.uid) || acl.parentUid === `default_${acl.uid}`);
+    }
+
+    /**
+     * Drops the cached copies of the given ACLs, so the next permission check reads them from the database. Any code
+     * that writes ACL documents without going through `saveACL()`/`removeACL()` must call this (e.g. `RepoUtils`
+     * serving the ACL REST routes).
+     *
+     * @param uids The uids of the ACLs to invalidate.
+     */
+    public async invalidateACLs(uids: string[]): Promise<void> {
+        if (!this.cache || uids.length === 0) {
+            return;
+        }
+        await this.cache.deleteMany(uids);
     }
 
     /**
@@ -196,13 +239,14 @@ export class ACLUtils {
      * @param entityId The unique identifier of the ACL to retrieve.
      * @param parentUids The list of already found parent UIDs. This is used to break circular dependencies.
      * @param options Set `skipCache: true` to bypass the cache and always read the current database state —
-     * mirrors `RepoUtils`'s `RepoFindOptions.skipCache`. The result is still written back into the cache
-     * afterward, same as a normal (non-skipped) lookup.
+     * mirrors `RepoUtils`'s `RepoFindOptions.skipCache` (applies to the whole parent chain). A database read is
+     * written back into the cache afterward. Set `skipParents: true` to not populate the parent chain at all, when
+     * only the ACL itself is needed.
      */
     public async findACL(
         entityId: string,
         parentUids: string[] = [],
-        options?: { skipCache?: boolean },
+        options?: { skipCache?: boolean; skipParents?: boolean },
     ): Promise<AccessControlList | undefined> {
         if (!this.enabled || !this.repo) {
             return undefined;
@@ -211,8 +255,12 @@ export class ACLUtils {
         // Retrieve the ACL from the cache if present. A cache hit must still fall through to the parent-chain
         // population below (not return early) — a cached ACL was stored via its own plain, unpopulated `.parent`
         // (see the cache write below), so skipping that step here would silently return an ACL with no parent
-        // chain, which `hasPermission()` needs to find inherited records.
+        // chain, which `hasPermission()` needs to find inherited records. A cached entry that isn't the requested
+        // ACL is ignored (defense in depth: the key space is shared with `RepoUtils`' cache of the ACL model).
         let acl: AccessControlList | undefined = options?.skipCache ? undefined : await this.cache?.load(entityId);
+        if (acl && acl.uid !== entityId) {
+            acl = undefined;
+        }
 
         // If the acl wasn't found in the cache (or the cache was skipped) look in the database
         if (!acl) {
@@ -223,19 +271,21 @@ export class ACLUtils {
                 acl = await this.repo.findOne({ where: { uid: entityId } });
                 acl = acl ? new AccessControlListSQL(acl) : undefined;
             }
-        }
 
-        // Store a copy in the cache for faster retrieval next time.
-        if (acl && this.cache) {
-            this.cache.save(entityId, acl).catch((err) => {
-                this.logger?.warn(`ACLUtils: Cache save failed for ACL ${entityId}.`);
-                this.logger?.debug(err);
-            });
+            // Store a copy in the cache for faster retrieval next time. Only after a database read: re-saving on
+            // every cache hit would keep renewing (and re-publishing to Redis) an entry that has since gone stale,
+            // for as long as someone keeps making requests against it.
+            if (acl && this.cache) {
+                this.cache.save(entityId, acl).catch((err) => {
+                    this.logger?.warn(`ACLUtils: Cache save failed for ACL ${entityId}.`);
+                    this.logger?.debug(err);
+                });
+            }
         }
 
         // Retrieve the parent ACL and assign it if available. Don't populate parents we've
         // already found to prevent a circular dependency.
-        if (acl && acl.parentUid && !parentUids.includes(acl.parentUid)) {
+        if (acl && acl.parentUid && !options?.skipParents && !parentUids.includes(acl.parentUid)) {
             parentUids.push(acl.parentUid);
             acl.parent = await this.findACL(acl.parentUid, parentUids, options);
         }
@@ -259,15 +309,26 @@ export class ACLUtils {
      * actually belongs to the same physical connection this repo does. Reusing it directly used to throw
      * (Mongo) or silently target the wrong connection (SQL).
      *
+     * Pass `unlessProtected: true` to leave a code-defined ACL (see `isProtectedACL()`) in place, resolving to
+     * `undefined` as if there had been nothing to remove. `RepoUtils` uses this when cleaning up after a record, so a
+     * record that shares a class/route ACL's uid can never delete that ACL.
+     *
      * @param uid The unique identifier of the ACL to remove.
+     * @param options Set `unlessProtected: true` to never remove a code-defined ACL.
      */
     @Transactional("acl")
-    public async removeACL(uid: string): Promise<AccessControlList | undefined> {
+    public async removeACL(
+        uid: string,
+        options?: { unlessProtected?: boolean },
+    ): Promise<AccessControlList | undefined> {
         if (!this.enabled) {
             return undefined;
         }
         if (!this.repo) {
             throw new Error("repo is not set.");
+        }
+        if (options?.unlessProtected && this.isReservedUid(uid)) {
+            return undefined;
         }
 
         const ctx = transactionContext.getStore();
@@ -275,12 +336,16 @@ export class ACLUtils {
 
         try {
             if (this.repo instanceof MongoRepository) {
-                const deleted = await this.repo.findOneAndDelete({ uid } as any, { session: ctx?.session });
+                // The parent condition is part of the atomic delete itself, so a protected ACL is never removed.
+                const filter: any = options?.unlessProtected
+                    ? { uid, parentUid: { $ne: `default_${uid}` } }
+                    : { uid };
+                const deleted = await this.repo.findOneAndDelete(filter, { session: ctx?.session });
                 removed = deleted ? new AccessControlListMongo(deleted) : undefined;
             } else {
                 const repo = ctx?.entityManager ? ctx.entityManager.getRepository(AccessControlListSQL) : this.repo;
                 const existing = await repo.findOne({ where: { uid } });
-                if (existing) {
+                if (existing && !(options?.unlessProtected && this.isProtectedACL(existing))) {
                     await repo.delete({ uid });
                     removed = new AccessControlListSQL(existing);
                 }
@@ -512,7 +577,7 @@ export class ACLUtils {
                 return await repo.save(aclMongo, { session: ctx?.session, insertOnly: true });
             } catch (err: any) {
                 // (uid, version) is unique for ACL documents, so a concurrent claim of the same uid fails here.
-                if (err?.code === 11000) {
+                if (isDuplicateKeyError(err)) {
                     throw exists();
                 }
                 throw err;
@@ -553,8 +618,15 @@ export class ACLUtils {
      * overrides. As the `default_<uid>` record is always overwritten with the lastest version of the code, any
      * user-defined changes made to it are lost on service restart.
      *
-     * @param defaultAcl
-     * @returns
+     * Both uids are reserved (see `isReservedUid()`), so no record can be created at, adopt or remove either ACL.
+     *
+     * Contract: when RBAC is enabled and `acl` is given, this either resolves to the user-editable ACL (whose `uid`
+     * is `acl.uid`) or throws; it never resolves to `null` then. A missing user-editable ACL (e.g. one deleted since
+     * the last start) is recreated, with no records, under `default_<uid>`. It resolves to `null` only when RBAC is
+     * disabled or no `acl` is given, and then stores nothing.
+     *
+     * @param acl The code-defined ACL to store.
+     * @returns The user-editable ACL, or `null` when RBAC is disabled or no ACL was given.
      */
     public async saveDefaultACL(acl: AccessControlList): Promise<AccessControlList | null> {
         let result: AccessControlList | null = null;
@@ -567,6 +639,8 @@ export class ACLUtils {
             ...acl,
             uid: `default_${acl.uid}`,
         };
+        this.reservedUids.add(acl.uid);
+        this.reservedUids.add(defaultAcl.uid);
 
         // Attempt to update the default ACL record. If a version mismatch occurs we will try again.
         const maxAttempts: number = 3;
@@ -577,23 +651,31 @@ export class ACLUtils {
                 // and another named `<NAME>`. The `<NAME>` record stores the user-defined
                 // overrides that overlay the `default_<NAME>` document. The `default_<NAME>` is
                 // therefore always updated with whatever is provided as the `defaultAcl` argument.
-                const existing: AccessControlList | undefined = await this.findACL(defaultAcl.uid);
+                // Read from the database, not the cache: these reads decide whether the ACLs must be (re)created.
+                const existing: AccessControlList | undefined = await this.findACL(defaultAcl.uid, [], {
+                    skipCache: true,
+                    skipParents: true,
+                });
 
                 if (existing) {
                     // Copy over the new records from code
                     existing.records = defaultAcl.records;
                     defaultAcl = existing;
+                }
 
-                    // The user-defined override record was already created on a previous run. Look it
-                    // up so callers still receive a valid ACL to register routes against instead of `null`.
-                    result = (await this.findACL(acl.uid)) ?? null;
-                } else {
-                    // Create the user-defined override record
-                    result = await this.saveACL({
-                        uid: acl.uid,
-                        parentUid: defaultAcl.uid,
-                        records: [],
-                    });
+                // The user-defined override record normally exists from a previous run. When it's missing (never
+                // created, or deleted since) it is recreated: without it `checkRequestPerms()` has nothing to find,
+                // and a route registered against `null` would silently lose its permission checks.
+                result = (await this.findACL(acl.uid, [], { skipCache: true })) ?? null;
+                if (!result) {
+                    result = await this.saveACL(
+                        { uid: acl.uid, parentUid: defaultAcl.uid, records: [] },
+                        { createOnly: true },
+                    );
+                } else if (result.parentUid !== defaultAcl.uid) {
+                    this.logger?.warn(
+                        `ACLUtils: ACL ${acl.uid} does not inherit from ${defaultAcl.uid} (parentUid=${result.parentUid}).`,
+                    );
                 }
 
                 // Always save the ACL into the datasource
@@ -624,12 +706,13 @@ export class ACLUtils {
      * would issue overlapping commands against one session, which drivers reject or misorder.
      *
      * @param uids The unique identifiers of the ACLs to remove.
+     * @param options Set `unlessProtected: true` to never remove a code-defined ACL (see `removeACL()`).
      */
     @Transactional("acl")
-    public async removeACLs(uids: string[]): Promise<AccessControlList[]> {
+    public async removeACLs(uids: string[], options?: { unlessProtected?: boolean }): Promise<AccessControlList[]> {
         const removed: AccessControlList[] = [];
         for (const uid of uids) {
-            const acl = await this.removeACL(uid);
+            const acl = await this.removeACL(uid, options);
             if (acl) {
                 removed.push(acl);
             }

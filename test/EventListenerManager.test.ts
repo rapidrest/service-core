@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
+import { EventEmitter } from "events";
 import { Logger } from "@rapidrest/core";
 import config from "./config";
 import { EventListenerManager } from "../src/EventListenerManager";
@@ -324,5 +325,78 @@ describe("EventListenerManager Tests", () => {
 
         await emit(redis, "channel1", JSON.stringify({ type: "some.event" }));
         expect(received.length).toBe(0);
+    });
+
+    it("closes its own duplicated redis client on destroy, and a second destroy is a no-op", async () => {
+        const redis = makeRedis();
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+        const client = (manager as any).redis;
+        expect(client.isOpen).toBe(true);
+
+        await manager.destroy();
+        expect(client.isOpen).toBe(false);
+
+        const unsubscribeSpy = vi.spyOn(client, "unsubscribe");
+        await manager.destroy();
+        expect(unsubscribeSpy).not.toHaveBeenCalled();
+    });
+
+    it("prefers the client's immediate destroy() over disconnect() when available", async () => {
+        const redis = makeRedis();
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+        const client = (manager as any).redis;
+        client.destroy = vi.fn();
+        const disconnectSpy = vi.spyOn(client, "disconnect");
+
+        await manager.destroy();
+        expect(client.destroy).toHaveBeenCalled();
+        expect(disconnectSpy).not.toHaveBeenCalled();
+    });
+
+    it("still closes the client when unsubscribing fails, and swallows a failing close", async () => {
+        const redis = makeRedis();
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+        const client = (manager as any).redis;
+        client.unsubscribe = vi.fn().mockRejectedValue(new Error("unsubscribe failed"));
+        client.disconnect = vi.fn().mockRejectedValue(new Error("disconnect failed"));
+
+        await expect(manager.destroy()).resolves.toBeUndefined();
+        expect(client.disconnect).toHaveBeenCalled();
+    });
+
+    it("skips unsubscribing when no channels are configured", async () => {
+        const redis = makeRedis();
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+        (manager as any).channels = [];
+        const unsubscribeSpy = vi.spyOn((manager as any).redis, "unsubscribe");
+
+        await manager.destroy();
+        expect(unsubscribeSpy).not.toHaveBeenCalled();
+    });
+
+    it("attaches an error listener to its duplicated client so a dropped socket can't crash the process", async () => {
+        const redis = makeRedis();
+        const duplicate: any = redis.duplicate();
+        const emitter = new EventEmitter();
+        duplicate.on = emitter.on.bind(emitter);
+        duplicate.emit = emitter.emit.bind(emitter);
+        vi.spyOn(redis, "duplicate").mockReturnValue(duplicate);
+        const objectFactory = new ObjectFactory(config, Logger());
+        const manager = await createManager(objectFactory, redis);
+        const logger = { error: vi.fn(), debug: vi.fn(), info: vi.fn() };
+        (manager as any).logger = logger;
+
+        expect(emitter.listenerCount("error")).toBe(1);
+        expect(() => duplicate.emit("error", new Error("Socket closed unexpectedly"))).not.toThrow();
+        expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Socket closed unexpectedly"));
+        duplicate.emit("error", new Error("still down"));
+        expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("still down"));
+        duplicate.emit("reconnecting");
+        duplicate.emit("ready");
+        expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("re-established"));
     });
 });

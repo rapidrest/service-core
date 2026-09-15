@@ -55,8 +55,10 @@ export class UWSWebSocketShim extends EventEmitter implements IWebSocketShim {
      */
     public send(data: any, cb?: (err?: Error) => void): void {
         try {
-            const ok = this._ws.send(typeof data === "string" ? data : Buffer.from(data), typeof data !== "string");
-            if (cb) cb(ok ? undefined : new Error("uWS backpressure: send failed"));
+            // uWS returns 1 (sent), 0 (backpressure built up, but the message is queued and will still be delivered)
+            // or 2 (dropped because the backpressure limit was reached). Only a dropped message is an error.
+            const status = this._ws.send(typeof data === "string" ? data : Buffer.from(data), typeof data !== "string");
+            if (cb) cb(status === 2 ? new Error("uWS backpressure limit reached: message dropped") : undefined);
         } catch (err: any) {
             if (cb) cb(err);
         }

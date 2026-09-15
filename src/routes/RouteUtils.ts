@@ -15,6 +15,7 @@ import { AuthMiddleware } from "../auth/AuthMiddleware.js";
 import type { AuthResult } from "../auth/AuthStrategy.js";
 import { RateLimiter } from "../RateLimiter.js";
 import { RateLimitOptions } from "../decorators/RouteDecorators.js";
+import { NetUtils } from "../NetUtils.js";
 const { Config, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -40,6 +41,9 @@ export class RouteUtils {
 
     @Config("trusted_roles", ["admin"])
     protected trustedRoles: string[] = ["admin"];
+
+    @Config("trusted_proxies", [])
+    protected trustedProxies: string[] = [];
 
     /**
      * Creates a middleware function that checks if the user has elevated privileges and if not
@@ -72,16 +76,77 @@ export class RouteUtils {
     }
 
     /**
+     * Returns a canonical form of a request path for use in rate limit identifiers. The router percent-decodes
+     * `:param` values, so `/clients/%61bc` and `/clients/abc` reach the same handler. Keying on the raw path would
+     * give an attacker a separate bucket for every encoding variant. Each segment is decoded and then re-encoded
+     * (a malformed segment is kept as is), and empty segments from repeated or trailing slashes are dropped.
+     *
+     * @param path The request path to normalize.
+     */
+    public static normalizeRateLimitPath(path: string): string {
+        const segments: string[] = [];
+        for (const segment of path.split("/")) {
+            if (segment.length === 0) {
+                continue;
+            }
+            let decoded: string = segment;
+            try {
+                decoded = decodeURIComponent(segment);
+            } catch {
+                // Malformed percent-encoding. The router falls back to the raw value too.
+            }
+            segments.push(encodeURIComponent(decoded));
+        }
+        return "/" + segments.join("/");
+    }
+
+    /**
+     * Returns the path part of a rate limit identifier for `req`. When the router has set `req.routePattern`, the
+     * pattern is used with each `:param` segment replaced by its decoded value from `req.params`, re-encoded. A
+     * pattern with a `*` wildcard can't be rebuilt from params, so it and a request without a pattern fall back to
+     * `normalizeRateLimitPath(req.path)`.
+     *
+     * @param req The request to build the identifier path for.
+     */
+    public static getRateLimitPath(req: HttpRequest): string {
+        const pattern: string | undefined = req.routePattern;
+        if (!pattern || pattern.includes("*")) {
+            return RouteUtils.normalizeRateLimitPath(req.path);
+        }
+        const segments: string[] = [];
+        for (const segment of pattern.split("/")) {
+            if (segment.length === 0) {
+                continue;
+            }
+            const param: string | undefined = segment.startsWith(":") ? segment.substring(1) : undefined;
+            segments.push(param !== undefined ? encodeURIComponent(String(req.params?.[param] ?? "")) : segment);
+        }
+        return "/" + segments.join("/");
+    }
+
+    /**
      * Creates a middleware function that performs rate limiting on the request.
+     *
+     * The identifier is `options.id` when set. Otherwise it is the request method plus the matched route pattern with
+     * its decoded params, or the normalized request path (see `getRateLimitPath()`). With `options.perUser`, an authenticated caller gets a bucket keyed on their
+     * uid and an anonymous caller gets a bucket keyed on their client IP address, so one anonymous client can't
+     * exhaust the limit for every other anonymous caller.
      */
     public checkRateLimiter(options: RateLimitOptions): RequestHandler {
         return async (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
             try {
-                const id =
-                    options.id ??
-                    (options.perUser && req.user && req.user.uid
-                        ? `${req.user.uid}|${req.method}|${req.path}`
-                        : `${req.method}|${req.path}`);
+                let id: string | undefined = options.id;
+                if (id === undefined) {
+                    const route: string = `${req.method}|${RouteUtils.getRateLimitPath(req)}`;
+                    if (options.perUser && req.user?.uid) {
+                        id = `${req.user.uid}|${route}`;
+                    } else if (options.perUser) {
+                        const address: string | undefined = NetUtils.getClientIP(req, this.trustedProxies);
+                        id = address ? `ip:${address}|${route}` : route;
+                    } else {
+                        id = route;
+                    }
+                }
                 await this.rateLimiter?.checkAndIncrement(id, options, req);
             } catch (err: any) {
                 return next(err);
@@ -240,6 +305,34 @@ export class RouteUtils {
     }
 
     /**
+     * Persists a `@Protect` ACL declared on a route class or handler.
+     *
+     * Registration fails closed. If the ACL can't be saved (for example the `acl` datastore is unavailable at
+     * startup), the error is rethrown so the route is never registered. If it saves but `saveDefaultACL()`
+     * returns no user-editable ACL, an error is logged. The route is still registered with its permission check
+     * keyed on the declared uid, and `ACLUtils.checkRequestPerms()` denies every request until that ACL exists.
+     *
+     * @param aclUtils The ACL utilities to save with.
+     * @param acl The ACL declared by `@Protect`.
+     */
+    private async saveRouteACL(aclUtils: ACLUtils, acl: AccessControlList): Promise<void> {
+        let saved: AccessControlList | null;
+        try {
+            saved = await aclUtils.saveDefaultACL(acl);
+        } catch (err) {
+            this.logger?.error(`Failed to save default ACL for: ${acl.uid}. Refusing to register this route.`);
+            this.logger?.debug(err);
+            throw err;
+        }
+        if (!saved) {
+            this.logger?.error(
+                `The ACL for: ${acl.uid} could not be saved or loaded. Requests to routes protected by it will be ` +
+                    `denied until it exists.`,
+            );
+        }
+    }
+
+    /**
      * Registers the provided route object containing a set of decorated endpoints to the server.
      *
      * @param app The HTTP application/router to register the route to.
@@ -253,20 +346,12 @@ export class RouteUtils {
 
         // Check if this route defines a class level ACL. If so, we need to store it and then add middleware to validate
         // against it.
-        let defaultAcl: AccessControlList | null = Reflect.getMetadata("rrst:acl", route);
+        // Note that `defaultAcl` is deliberately never replaced with `saveDefaultACL()`'s return value: only its
+        // `uid` is used below, and that uid must come from the `@Protect` metadata. A `null` return (e.g. the
+        // user-editable ACL record was removed from the datastore) must never make the route look unprotected.
+        const defaultAcl: AccessControlList | null = Reflect.getMetadata("rrst:acl", route);
         if (this.aclUtils?.enabled && defaultAcl) {
-            try {
-                defaultAcl = await this.aclUtils.saveDefaultACL(defaultAcl);
-            } catch (err) {
-                // If the default ACL can't be persisted, `checkRequestPerms` will have nothing to find for this
-                // route's uid. Registration must not proceed in that case — continuing would silently register
-                // a `@Protect`-ed route with no permission enforcement at all.
-                this.logger?.error(
-                    `Failed to save default ACL for: ${defaultAcl?.uid}. Refusing to register this route.`,
-                );
-                this.logger?.debug(err);
-                throw err;
-            }
+            await this.saveRouteACL(this.aclUtils, defaultAcl);
         }
 
         // Each route definition will contain a set of functions that have been decorated to include route metadata.
@@ -294,15 +379,18 @@ export class RouteUtils {
                 // If no JWT strategies have been provided by default, always include JWT token support
                 if (!authStrategies) {
                     authStrategies = ["jwt"];
+                } else if (typeof authStrategies === "string") {
+                    // `@Auth()` accepts a single strategy name
+                    authStrategies = [authStrategies];
                 }
 
                 // Does this endpoint have an associated ACL?
-                let acl: AccessControlList | null = this.aclUtils?.enabled
+                const acl: AccessControlList | null = this.aclUtils?.enabled
                     ? Reflect.getMetadata("rrst:acl", route, key)
                     : null;
                 if (acl && this.aclUtils?.enabled) {
                     acl.parentUid = defaultAcl?.uid;
-                    acl = await this.aclUtils.saveDefaultACL(acl);
+                    await this.saveRouteACL(this.aclUtils, acl);
                 }
 
                 // Prepare the list of middleware to apply for the given endpoint.
@@ -334,6 +422,8 @@ export class RouteUtils {
                     middleware.push(this.checkRequiredScopes(requiredScopes));
                 }
                 if (this.aclUtils?.enabled) {
+                    // Keyed on the uid declared by `@Protect`, never on what the datastore returned, so the check
+                    // is always installed for a protected route. `checkRequestPerms()` denies when no ACL exists.
                     const aclUid: string | undefined = acl?.uid || defaultAcl?.uid;
                     if (aclUid) {
                         middleware.push(this.checkRequiredPerms(aclUid));
@@ -377,18 +467,15 @@ export class RouteUtils {
                                         if (result) {
                                             return result;
                                         }
-                                    } catch (err: any) {
-                                        // An invalid/expired token must only reject the connection when this
-                                        // route actually requires auth - otherwise it has to fall through
-                                        // anonymous, the same as no token being sent at all, matching the
-                                        // post-upgrade LOGIN-message path's (authWebSocket) equivalent handling.
-                                        if (authRequired) {
-                                            return { reject: true };
-                                        }
+                                    } catch {
+                                        // Never reject here. A strategy can throw because the token is invalid,
+                                        // but also because it only supports async auth (e.g. `oauth_bearer`), and
+                                        // the two can't be told apart. `authWebSocket()` re-runs the strategies
+                                        // asynchronously after the upgrade and closes the connection when this
+                                        // route requires auth. An optional route proceeds anonymously.
                                     }
                                 }
-                                // No token, or an optional auth failure — fall through to post-upgrade
-                                // message-based auth
+                                // No token, or sync auth failed: fall through to post-upgrade auth
                                 return {};
                             };
 
@@ -397,7 +484,7 @@ export class RouteUtils {
                             // registered, held by reference by the router), so mutating it in place here
                             // would corrupt other registrations sharing the same array.
                             const wsMiddleware: Array<RequestHandler> = this.authMiddleware
-                                ? [this.authMiddleware.authWebSocket(authRequired), ...middleware]
+                                ? [this.authMiddleware.authWebSocket(authRequired, authStrategies), ...middleware]
                                 : [...middleware];
 
                             // Register with the HttpRouter's ws() method; trailing slash handled internally

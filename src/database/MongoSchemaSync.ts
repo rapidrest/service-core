@@ -106,7 +106,13 @@ export class MongoSchemaSync {
         // collection (e.g. @ChildEntity subclasses) contribute their indexes to a single specification.
         const collections: Map<string, CollectionInfo> = new Map();
         for (const clazz of entities) {
-            const info: CollectionInfo = this.resolveCollectionInfo(clazz);
+            const resolved: CollectionInfo = this.resolveCollectionInfo(clazz);
+            // Merge into any info already built for this collection by an earlier class. Replacing it would drop the
+            // earlier classes, so only the last class's indexes would be created.
+            const info: CollectionInfo = collections.get(resolved.name) ?? resolved;
+            if (!info.options && resolved.options) {
+                info.options = resolved.options;
+            }
             info.classes.push(clazz);
             collections.set(info.name, info);
         }

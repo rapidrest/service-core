@@ -2,6 +2,17 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
+const { scheduleJobOverride } = vi.hoisted(() => ({ scheduleJobOverride: { fn: undefined as any } }));
+vi.mock("node-schedule", async (importOriginal) => {
+    const actual: any = await importOriginal();
+    return {
+        ...actual,
+        // Pass-through unless a test installs an override, so schedule failures can be simulated.
+        scheduleJob: (...args: any[]) =>
+            scheduleJobOverride.fn ? scheduleJobOverride.fn(...args) : actual.scheduleJob(...args),
+    };
+});
+
 import config from "./config";
 import { BackgroundServiceManager } from "../src/BackgroundServiceManager";
 import { ClassLoader, Logger } from "@rapidrest/core";
@@ -98,6 +109,33 @@ class FailingStartService extends BackgroundService {
 
     public async stop(): Promise<void> {
         // no-op
+    }
+}
+
+// Records start()/stop() calls, with a configurable schedule, for the schedule-failure cleanup tests.
+class TrackedScheduleService extends BackgroundService {
+    public static spec: string | undefined = "* * * * * *";
+    public static failStop = false;
+    public started = 0;
+    public stopped = 0;
+
+    public get schedule(): string | undefined {
+        return TrackedScheduleService.spec;
+    }
+
+    public async run(): Promise<void> {
+        // no-op
+    }
+
+    public async start(): Promise<void> {
+        this.started++;
+    }
+
+    public async stop(): Promise<void> {
+        this.stopped++;
+        if (TrackedScheduleService.failStop) {
+            throw new Error("stop() failed");
+        }
     }
 }
 
@@ -272,5 +310,68 @@ describe("BackgroundServiceManager Tests", () => {
         expect(errorSpy).toHaveBeenCalledWith("Failed to start service: test.FailingStartService");
 
         errorSpy.mockRestore();
+    });
+    describe("invalid schedules", () => {
+        afterEach(() => {
+            TrackedScheduleService.spec = "* * * * * *";
+            TrackedScheduleService.failStop = false;
+            scheduleJobOverride.fn = undefined;
+            vi.restoreAllMocks();
+        });
+
+        it("never starts a service whose cron schedule is invalid", async () => {
+            TrackedScheduleService.spec = "definitely not a cron";
+            const logger: any = Logger();
+            const errorSpy = vi.spyOn(logger, "error");
+            const destroyFactory = new ObjectFactory(config, logger);
+            const manager: BackgroundServiceManager = await destroyFactory.newInstance(BackgroundServiceManager, {
+                args: [destroyFactory, {}],
+            });
+            const instance = vi.spyOn(TrackedScheduleService.prototype, "start");
+
+            await expect(manager.start("test.InvalidCron", TrackedScheduleService)).resolves.toBeUndefined();
+
+            expect(instance).not.toHaveBeenCalled();
+            expect(errorSpy).toHaveBeenCalledWith("Failed to start service: test.InvalidCron");
+            expect(manager.getService("test.InvalidCron")).toBeUndefined();
+            expect((manager as any).jobs["test.InvalidCron"]).toBeUndefined();
+        });
+
+        it("stops an already started service when scheduling it fails, so it isn't leaked", async () => {
+            const manager: BackgroundServiceManager = await objectFactory.newInstance(BackgroundServiceManager, {
+                args: [objectFactory, {}],
+            });
+            scheduleJobOverride.fn = () => null;
+            const stopSpy = vi.spyOn(TrackedScheduleService.prototype, "stop");
+
+            await manager.start("test.NullJob", TrackedScheduleService);
+
+            expect(stopSpy).toHaveBeenCalledTimes(1);
+            expect(manager.getService("test.NullJob")).toBeUndefined();
+            expect((manager as any).jobs["test.NullJob"]).toBeUndefined();
+        });
+
+        it("cancels the job and logs when stopping the half-started service also fails", async () => {
+            TrackedScheduleService.failStop = true;
+            const manager: any = await objectFactory.newInstance(BackgroundServiceManager, {
+                args: [objectFactory, {}],
+            });
+            const cancel = vi.fn();
+            scheduleJobOverride.fn = () => {
+                // Simulates a failure after the job was registered, e.g. from a throwing job.on().
+                const job: any = { cancel, on: () => undefined };
+                manager.jobs["test.FailingStop"] = job;
+                job.on = () => {
+                    throw new Error("job.on failed");
+                };
+                return job;
+            };
+
+            await expect(manager.start("test.FailingStop", TrackedScheduleService)).resolves.toBeUndefined();
+
+            expect(cancel).toHaveBeenCalledWith(false);
+            expect(manager.jobs["test.FailingStop"]).toBeUndefined();
+            expect(manager.getService("test.FailingStop")).toBeUndefined();
+        });
     });
 });

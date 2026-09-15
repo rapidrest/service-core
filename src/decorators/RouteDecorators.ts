@@ -344,8 +344,10 @@ export interface RateLimitOptions extends RateLimitConfig {
  * endpoints in the class will have rate limiting applied.
  *
  * Optionally pass in options to control the identifier of the rate limit. Set `options.id` to set an explicit identifier.
- * By default, the method and path of the request (without the query portion) is used as the identifier. Set
- * the `options.perUser` option to `true` to have the limit scoped to each user individually.
+ * By default, the method and the percent-decoded, normalized path of the request (without the query portion) is used
+ * as the identifier. Set the `options.perUser` option to `true` to have the limit scoped to each user individually;
+ * anonymous callers are then scoped by client IP address (see `trusted_proxies`). Calling `@RateLimit()` with no
+ * options enables `perUser`. See `RouteUtils.checkRateLimiter()`.
  */
 export function RateLimit(options: RateLimitOptions = { perUser: true }) {
     return function (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) {

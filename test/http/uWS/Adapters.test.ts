@@ -75,6 +75,40 @@ describe("parseQueryString Tests", () => {
     it("falls back to raw key/value when decoding fails", () => {
         expect(parseQueryString("a=%")).toEqual({ a: "%" });
     });
+
+    it("drops __proto__ keys instead of replacing the result's prototype", () => {
+        for (const qs of ["__proto__=a&__proto__=b", "__proto__", "%5F%5Fproto%5F%5F=a&%5F%5Fproto%5F%5F=b&x=1"]) {
+            const result: any = parseQueryString(qs);
+            expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+            expect(Object.prototype.hasOwnProperty.call(result, "__proto__")).toBe(false);
+            expect(Object.assign({}, result).constructor).toBe(Object);
+        }
+        expect(parseQueryString("__proto__=a&x=1")).toEqual({ x: "1" });
+    });
+
+    it("treats keys named after inherited Object.prototype members as ordinary keys", () => {
+        const result: any = parseQueryString("constructor=x&toString=y&toString=z");
+        expect(result.constructor).toBe("x");
+        expect(result.toString).toEqual(["y", "z"]);
+        // The first occurrence must not be merged with the inherited function into an array.
+        expect(parseQueryString("valueOf=1")).toEqual({ valueOf: "1" });
+    });
+
+    it("returns a normal object that still supports spreading and prototype methods", () => {
+        const result: any = parseQueryString("a=1&b=2&b=3");
+        expect({ ...result }).toEqual({ a: "1", b: ["2", "3"] });
+        expect(result.hasOwnProperty("a")).toBe(true);
+        expect("a" in result).toBe(true);
+        expect(JSON.stringify(result)).toBe('{"a":"1","b":["2","3"]}');
+    });
+});
+
+describe("parseCookies prototype handling", () => {
+    it("ignores a __proto__ cookie", () => {
+        const result: any = parseCookies("__proto__=evil; a=1");
+        expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+        expect(result).toEqual({ a: "1" });
+    });
 });
 
 describe("parseBodyByContentType Tests", () => {

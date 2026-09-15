@@ -5,6 +5,7 @@
 import { ApiError, ObjectDecorators, UserUtils, type JWTUser } from "@rapidrest/core";
 import type { RedisClientType } from "redis";
 import { importRedis } from "../database/ConnectionKinds.js";
+import { attachRedisErrorHandler } from "../database/ConnectionManager.js";
 import Transport from "winston-transport";
 import {
     Auth,
@@ -119,9 +120,9 @@ export class BaseAdminRoute {
         if (this.cacheConnConfig) {
             const adminChannel: string = this.serviceName || "service_admin";
             const { createClient } = await importRedis();
-            this.redisClient = createClient({ url: this.cacheConnConfig.url });
+            this.redisClient = attachRedisErrorHandler(createClient({ url: this.cacheConnConfig.url }), this.logger, "admin");
             await this.redisClient.connect();
-            this.redisPublisher = this.redisClient.duplicate();
+            this.redisPublisher = attachRedisErrorHandler(this.redisClient.duplicate(), this.logger, "admin publisher");
             await this.redisPublisher.connect();
             await this.redisClient.subscribe(adminChannel, (message: string) => {
                 if (message === "RESTART") {
@@ -134,7 +135,7 @@ export class BaseAdminRoute {
         if (this.logsConnConfig) {
             const channelName: string = this.serviceName + "-logs";
             const { createClient } = await importRedis();
-            const logsRedis: RedisClientType = createClient({ url: this.logsConnConfig.url });
+            const logsRedis: RedisClientType = attachRedisErrorHandler(createClient({ url: this.logsConnConfig.url }), this.logger, "admin logs");
             await logsRedis.connect();
             this.logger.add(
                 new RedisTransport({
@@ -194,7 +195,7 @@ export class BaseAdminRoute {
 
         // Create a new redis connection for this client
         const { createClient } = await importRedis();
-        const redis: RedisClientType = createClient({ url: this.logsConnConfig.url });
+        const redis: RedisClientType = attachRedisErrorHandler(createClient({ url: this.logsConnConfig.url }), this.logger, "admin log stream");
         await redis.connect();
 
         const channelName: string = this.serviceName + "-logs";

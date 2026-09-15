@@ -3,7 +3,13 @@
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 /// <reference types="bun" />
-import type { IHttpRouter, NextFunction, RequestHandler } from "../types.js";
+import {
+    DEFAULT_WS_OPTIONS,
+    type IHttpRouter,
+    type NextFunction,
+    type RequestHandler,
+    type WebSocketOptions,
+} from "../types.js";
 import type { RequestWS } from "../uWS/WebSocket.js";
 import { DEFAULT_MAX_BODY_SIZE } from "../uWS/Adapters.js";
 import { BunRequest, BunResponse, readBunBody } from "./BunAdapters.js";
@@ -103,18 +109,32 @@ interface CompiledRoute {
     handlers: RequestHandler[];
     preLength: number;
     isHead: boolean;
+    /** The registered route pattern, exposed as `req.routePattern`. `undefined` for the router's own fallbacks. */
+    pattern?: string;
 }
+
+/** The WebSocket options a route resolved to (its own options over `DEFAULT_WS_OPTIONS`). */
+type ResolvedWsOptions = typeof DEFAULT_WS_OPTIONS;
 
 interface CompiledWsRoute {
     segments: string[];
     handlers: RequestHandler[];
     upgradeAuth?: WsUpgradeAuth;
+    pattern: string;
+    options: ResolvedWsOptions;
 }
 
 interface WsSocketData {
     req: RequestWS;
     handlers: RequestHandler[];
     shim?: BunWebSocketShim;
+    /** The route's maximum incoming message size, in bytes. */
+    maxPayloadLength?: number;
+}
+
+/** Returns the byte length of an incoming Bun WebSocket message. */
+function messageByteLength(message: string | Buffer | ArrayBuffer): number {
+    return typeof message === "string" ? Buffer.byteLength(message) : message.byteLength;
 }
 
 /**
@@ -138,6 +158,8 @@ export class BunRouter implements IHttpRouter {
      * global CORS middleware so a real app-defined `OPTIONS` handler gets a chance to run). */
     private readonly explicitOptionsPaths: Set<string> = new Set();
     private readonly maxBodySize: number;
+    /** The HTTP requests currently being handled. */
+    private inFlight: number = 0;
     private readonly sslConfig: any;
     private _bunServer: Bun.Server<any> | undefined;
     /** The port the server is currently listening on (set after a successful `listen()` call). */
@@ -177,7 +199,14 @@ export class BunRouter implements IHttpRouter {
         this.routesByMethod.set(method, list);
     }
 
-    private register(method: string, routePath: string, handlers: RequestHandler[], isHead: boolean = false): this {
+    private register(
+        method: string,
+        routePath: string,
+        handlers: RequestHandler[],
+        isHead: boolean = false,
+        // `null` (not `undefined`, which would select this default) marks the router's own fallback routes.
+        pattern: string | null = routePath,
+    ): this {
         const pre = this.capturePreRouteCount();
         const normalized = normalizePath(routePath);
         const isRootWildcard = normalized === "/*";
@@ -185,7 +214,15 @@ export class BunRouter implements IHttpRouter {
         const hasWildcardSuffix = isRootWildcard || normalized.endsWith("/*");
         // Strip the trailing "/*" (2 chars) to get the prefix; "/*" itself strips to "" -> segments [].
         const segments = hasWildcardSuffix ? splitPath(normalized.slice(0, -2)) : splitPath(normalized);
-        this.pushRoute(method, { segments, hasWildcardSuffix, isRootWildcard, handlers, preLength: pre, isHead });
+        this.pushRoute(method, {
+            segments,
+            hasWildcardSuffix,
+            isRootWildcard,
+            handlers,
+            preLength: pre,
+            isHead,
+            pattern: pattern ?? undefined,
+        });
         return this;
     }
 
@@ -243,11 +280,44 @@ export class BunRouter implements IHttpRouter {
      * is aborted. If it returns `{ user, ... }`, those credentials are attached to the request so
      * downstream middleware sees an authenticated user. If it returns `{}`, auth falls through to
      * the post-upgrade message-based LOGIN flow.
+     *
+     * `wsOptions` uses the uWS option names (`maxPayloadLength`, `idleTimeout`, `maxBackpressure`) over
+     * `DEFAULT_WS_OPTIONS`. `Bun.serve()` only accepts one WebSocket configuration for the whole server, so
+     * `maxPayloadLength` is additionally enforced per route (a larger message closes the socket with 1009), while
+     * `idleTimeout` and `maxBackpressure` are applied server-wide using the largest value any route registered.
      */
-    public ws(routePath: string, handlers: RequestHandler[], _wsOptions?: any, upgradeAuth?: WsUpgradeAuth): this {
+    public ws(
+        routePath: string,
+        handlers: RequestHandler[],
+        wsOptions?: WebSocketOptions,
+        upgradeAuth?: WsUpgradeAuth,
+    ): this {
         const normalized = normalizePath(routePath);
-        this.wsRoutes.push({ segments: splitPath(normalized), handlers, upgradeAuth });
+        const options: ResolvedWsOptions = {
+            maxPayloadLength: wsOptions?.maxPayloadLength ?? DEFAULT_WS_OPTIONS.maxPayloadLength,
+            idleTimeout: wsOptions?.idleTimeout ?? DEFAULT_WS_OPTIONS.idleTimeout,
+            maxBackpressure: wsOptions?.maxBackpressure ?? DEFAULT_WS_OPTIONS.maxBackpressure,
+        };
+        this.wsRoutes.push({ segments: splitPath(normalized), handlers, upgradeAuth, pattern: routePath, options });
         return this;
+    }
+
+    /**
+     * Builds the server-wide `Bun.serve()` WebSocket limits from every registered WebSocket route: the largest value
+     * of each option, or `DEFAULT_WS_OPTIONS` when no route is registered.
+     */
+    private buildWebSocketLimits(): { maxPayloadLength: number; idleTimeout: number; backpressureLimit: number } {
+        const all: ResolvedWsOptions[] =
+            this.wsRoutes.length > 0 ? this.wsRoutes.map((r) => r.options) : [DEFAULT_WS_OPTIONS];
+        // Bun treats an idleTimeout of 0 as "disabled", same as uWS, so a route that disabled it wins.
+        const idleTimeout: number = all.some((o) => o.idleTimeout === 0)
+            ? 0
+            : Math.max(...all.map((o) => o.idleTimeout));
+        return {
+            maxPayloadLength: Math.max(...all.map((o) => o.maxPayloadLength)),
+            idleTimeout,
+            backpressureLimit: Math.max(...all.map((o) => o.maxBackpressure)),
+        };
     }
 
     // -------------------------------------------------------------------------
@@ -330,6 +400,7 @@ export class BunRouter implements IHttpRouter {
             if (wsMatch) {
                 const req = new BunRequest(rawReq, server) as RequestWS;
                 req.params = extractParams(wsMatch.segments, reqSegments);
+                req.routePattern = wsMatch.pattern;
 
                 if (wsMatch.upgradeAuth) {
                     const authResult = wsMatch.upgradeAuth(req);
@@ -347,7 +418,11 @@ export class BunRouter implements IHttpRouter {
                     }
                 }
 
-                const socketData: WsSocketData = { req, handlers: wsMatch.handlers };
+                const socketData: WsSocketData = {
+                    req,
+                    handlers: wsMatch.handlers,
+                    maxPayloadLength: wsMatch.options.maxPayloadLength,
+                };
                 const upgraded = server.upgrade(rawReq, { data: socketData } as any);
                 if (upgraded) return undefined;
                 return new Response("WebSocket upgrade failed", { status: 400 });
@@ -365,6 +440,7 @@ export class BunRouter implements IHttpRouter {
         }
 
         const req = new BunRequest(rawReq, server);
+        req.routePattern = route.pattern;
         // For wildcard-suffixed routes, `route.segments` is only the prefix — slice reqSegments to
         // match so extractParams doesn't walk past it. For exact-length routes this is a no-op
         // (route.segments.length === reqSegments.length is guaranteed by matchSegments).
@@ -372,8 +448,18 @@ export class BunRouter implements IHttpRouter {
         const res = new BunResponse(rawReq);
         res.isHead = route.isHead;
 
-        const bodyResult = await readBunBody(req, rawReq, this.maxBodySize);
-        if (!bodyResult.ok) return bodyResult.response;
+        this.inFlight++;
+        let bodyResult: Awaited<ReturnType<typeof readBunBody>>;
+        try {
+            bodyResult = await readBunBody(req, rawReq, this.maxBodySize);
+        } catch (err) {
+            this.inFlight--;
+            throw err;
+        }
+        if (!bodyResult.ok) {
+            this.inFlight--;
+            return bodyResult.response;
+        }
 
         const allHandlers = [
             ...this.globalMiddleware.slice(0, route.preLength),
@@ -387,6 +473,9 @@ export class BunRouter implements IHttpRouter {
             })
             .catch((err) => {
                 res.abortStream(err);
+            })
+            .finally(() => {
+                this.inFlight--;
             });
 
         return res.responseReady;
@@ -424,6 +513,16 @@ export class BunRouter implements IHttpRouter {
 
         message: (ws: any, message: string | Buffer | ArrayBuffer) => {
             const data = ws.data as WsSocketData;
+            // Bun's own limit is server-wide (the largest of all routes), so enforce this route's own limit here,
+            // closing the socket like uWS does for an oversized message.
+            if (data.maxPayloadLength !== undefined && messageByteLength(message) > data.maxPayloadLength) {
+                try {
+                    ws.close(1009, "Message too big");
+                } catch {
+                    // Already closed
+                }
+                return;
+            }
             const isBinary = typeof message !== "string";
             data.shim?.emit("message", isBinary ? Buffer.from(message as any) : message, isBinary);
         },
@@ -451,6 +550,7 @@ export class BunRouter implements IHttpRouter {
             handlers: [],
             preLength: 0,
             isHead: false,
+            pattern: undefined,
         });
 
         // Register a JSON 404 fallback for any request that doesn't match a registered route,
@@ -469,7 +569,9 @@ export class BunRouter implements IHttpRouter {
         ];
         for (const verb of verbs) {
             if (!this.rootWildcardVerbs.has(verb)) {
-                this[verb]("/*", notFoundHandler);
+                // No route pattern: every unmatched path shares one "unmatched" identity instead of looking like an
+                // app-defined `/*` route.
+                this.register(verb.toUpperCase(), "/*", [notFoundHandler], verb === "head", null);
             }
         }
 
@@ -481,7 +583,7 @@ export class BunRouter implements IHttpRouter {
                     hostname: host,
                     port,
                     fetch: this.fetchHandler,
-                    websocket: this.websocketConfig,
+                    websocket: { ...this.websocketConfig, ...this.buildWebSocketLimits() },
                     tls,
                 } as any);
                 this.listenPort = this._bunServer.port ?? port;
@@ -497,6 +599,37 @@ export class BunRouter implements IHttpRouter {
         if (this._bunServer) {
             void this._bunServer.stop();
             this._bunServer = undefined;
+        }
+    }
+
+    /** The number of HTTP requests currently being handled. */
+    public get inFlightRequests(): number {
+        return this.inFlight;
+    }
+
+    /**
+     * Stops accepting new connections, waits up to `timeoutMs` for in-flight HTTP requests to finish, then closes
+     * every remaining connection (keep-alive and WebSocket connections included).
+     *
+     * @param timeoutMs The maximum time to wait for in-flight requests, in milliseconds.
+     */
+    public async shutdown(timeoutMs: number = 10000): Promise<void> {
+        const server: Bun.Server<any> | undefined = this._bunServer;
+        if (!server) {
+            return;
+        }
+        this._bunServer = undefined;
+
+        // stop(false) stops accepting new connections but lets existing ones finish.
+        void Promise.resolve(server.stop(false)).catch(() => undefined);
+        const deadline: number = Date.now() + Math.max(0, timeoutMs);
+        while (this.inFlight > 0 && Date.now() < deadline) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+        try {
+            await server.stop(true);
+        } catch {
+            // Already stopped
         }
     }
 

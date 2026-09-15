@@ -606,8 +606,12 @@ Ran alongside agent B (entry above). Touched `RepoUtils.ts`, `MongoRepository.ts
 6. **[MEDIUM] Date fields stored as strings.** `create()`/`update()` convert string/number values of Date-typed
    `@Column`s to `Date` (400 on an invalid or blank string), via `getColumnMetadata()`: explicit date-like
    `@Column({ type })` first, else `design:type === Date`. Limitation: `Date | null` reflects as `Object`, so those
-   fields are only converted when `@Column` sets `type`. SQLite already stored ISO strings correctly; the SQL gain is the
-   400. Nested/array dates are not handled.
+   fields are only converted when `@Column` sets `type`. Nested/array dates are not handled.
+   **Correction (F1, same day):** the claim "SQLite already stored ISO strings correctly; the SQL gain is the 400" was
+   wrong for date-only columns. `DATE_COLUMN_TYPES` included `"date"`, so `"2026-09-14"` became UTC midnight, and TypeORM
+   writes a `Date` into a `date` column with the server's *local* calendar date (`DateUtils.mixedDateToDateString`), i.e.
+   the 13th on any server west of UTC. SQL date-only columns are now validated as `YYYY-MM-DD` and kept as strings; see
+   the F1 entry below for the full input rules.
 
 Not done / noted: `update()`'s SQL trackChanges `repo.insert()` still turns a concurrent `(uid, version + 1)` PK
 conflict into a raw 500 (Mongo maps it to 409); SQL `create()` still uses TypeORM `save()`, which can become an UPDATE
@@ -625,3 +629,304 @@ read-back race, dates); new cases in `RepoUtils.unit.test.ts`, `security/ACLUtil
 `findOneAndUpdate` switch and replaced "logs instead of reverting when saveACL() modified an existing ACL" (that path no
 longer exists). Full run with `PORT=3777`: 68 files / 1356 tests passed, coverage 97.93 / 93.3 / 99.45 / 97.88
 (includes agent B's in-progress changes). `yarn lint` and `tsc --noEmit` clean.
+
+### 2026-09-14 — Auth, route registration and rate limiting fixes (fix agent F3)
+
+Ran at the same time as F1 (RepoUtils/ACLUtils/MongoRepository/ModelUtils) and F2 (Server/NetUtils/http/…). Only
+`RouteUtils.ts`, `auth/AuthMiddleware.ts`, `CRUDRoute.ts`, and doc comments in `RateLimiter.ts`/`RouteDecorators.ts` were
+touched. Every finding was re-checked against HEAD `6878bf8` first, and all six reproduced.
+
+1. **[CRITICAL] A `@Protect` route with a missing ACL registered with no permission check.** `registerRoute()` replaced
+   the declared ACL with `saveDefaultACL()`'s return value. That returns `null` when the user-editable `<uid>` record is
+   gone but `default_<uid>` exists, and then the `aclUid` guard skipped `checkRequiredPerms()`. Fixed in RouteUtils
+   regardless of F1's `saveDefaultACL()` change:
+   - The permission middleware is always keyed on the uid declared in `@Protect` metadata, never on the datastore result.
+   - A `null` result logs an error. `ACLUtils.checkRequestPerms()` already denies when no ACL is found.
+   - A save error at class or method level (e.g. a transient `acl` datastore failure) is logged and rethrown, so the
+     route is never registered. Before, only the class-level save was wrapped.
+   - `test/routes/RouteACLFailClosed.test.ts` runs this against real Mongo: register, `removeACL()`, re-register, then
+     an anonymous request gets 403 and the handler never runs. It also covers a forced `null` and a startup error.
+2. **[MEDIUM] `@RateLimit` keyed on the raw path.** The identifier is now `<method>|<path>` where the path comes from
+   `RouteUtils.getRateLimitPath()`. It uses F2's new `req.routePattern` with each `:param` replaced by the decoded
+   `req.params` value, re-encoded. A pattern containing `*`, or no pattern, falls back to `normalizeRateLimitPath()`,
+   which decodes and re-encodes each segment and drops empty ones. `%2F` inside a segment stays distinct from `/`.
+3. **[LOW] Anonymous callers shared one `perUser` bucket.** With `perUser`, which `@RateLimit()` enables by default, an
+   anonymous caller is keyed `ip:<client ip>|<method>|<path>` via `NetUtils.getClientIP(req, trusted_proxies)` (F2's
+   API; RouteUtils now reads `trusted_proxies` too). If no IP is available it falls back to the shared route key.
+   `@RateLimit({ ... })` without `perUser` is still global per route.
+   - Consumer impact in `@rapidrest/auth`: `discovery()`/`jwks()` are now per client IP instead of one global bucket.
+     Behind a proxy that isn't in `trusted_proxies`, that is still effectively global.
+   - `impersonate()` was already per user for authenticated callers (`uid|…`), so the 2026-09-08 note calling it
+     "deliberately global" was already inaccurate. It is unchanged.
+4. **[LOW] WS auth ignored the route's `@Auth` strategies.**
+   - `authWebSocket(required, strategies = ["jwt"])` now runs a `LOGIN` token through `authenticate(strategies, …)`
+     instead of `JWTUtils.decodeTokenSync(authConfig, …)`. The token goes to the strategies on a copy of the upgrade
+     request (`Object.create(req)`) with `Authorization: Bearer <token>` and empty `query`/`cookies`/`signedCookies`,
+     so only the supplied token can authenticate.
+   - It also first runs the strategies asynchronously against the upgrade request itself. That covers header
+     credentials for async-only strategies. Listeners and the timer are attached before this, so an early `LOGIN`
+     frame isn't missed.
+   - Pre-upgrade `upgradeAuth` never rejects now. A throwing `authenticateSync()` can't be told apart from an
+     async-only strategy (`OAuthBearerStrategy.authenticateSync` always throws), so it returns `{}`, and `authWebSocket`
+     closes with 1002/AUTH_FAILED when auth is required.
+   - Behaviour change: an invalid header token on a required-auth WS route is closed right after the upgrade
+     (1002 + AUTH_FAILED) instead of getting HTTP 401 before it.
+   - The optional-auth contract (2026-08-21) is kept. A malformed `LOGIN` token still closes with `api-003` when
+     required, and proceeds silently when optional (`PushRoute.test.ts` checks the close reason). A token that verifies
+     but has no uid still gets `LOGIN_RESPONSE success:false`.
+   - `@Auth("name")` with a single string is now normalised to an array. Before, `authenticate()` iterated its characters.
+5. **[LOW] Auth stopped at the first throwing strategy.** `authenticate()`/`authenticateSync()` try every strategy and
+   rethrow the first error only when none succeeds, whether or not auth is required, so the HTTP `authMw` still 401s a
+   required route and an optional route still goes anonymous. An unregistered strategy name still throws immediately.
+6. **[LOW] Bulk create validation error.** `validateCreateBulk()` throws a `BulkError` (`BULK_CREATE_FAILURE`) with one
+   entry per object: `null`, the validator's `ApiError`, or a generic `INVALID_REQUEST` `ApiError` for any non-`ApiError`
+   (so driver internals don't leak and F2's BulkError sanitisation keeps them). A single, non-array POST rethrows its own
+   (normalised) error instead of a bulk one. `validateUpdateBulk()` got the same per-object `BulkError` treatment.
+7. **Not done:** F2's possible JWTStrategy session-field change for cookie-less bearer clients was left alone as
+   instructed.
+
+Tests: `test/routes/RouteACLFailClosed.test.ts` (new, real Mongo); new and updated cases in
+`test/routes/RouteUtils.unit.test.ts`, `test/auth/AuthMiddleware.unit.test.ts` (LOGIN tests now register a real
+`JWTStrategy` and await verification) and `test/routes/ModelRoute.unit.test.ts`; plus an HTTP bulk-create validation case in
+`test/routes/ModelRoute.Mongo.test.ts`.
+
+Verification, with F1/F2 still editing:
+- The full `PORT=3777 yarn vitest run` had 9 failures, all outside this work: `CachedModelRoute.Mongo.test.ts` (6, F1's
+  RepoUtils cache rework), `Server.unit.test.ts` (2, F2) and `RepoUtils.unit.test.ts` (1, F1). No coverage report is
+  written when tests fail.
+- With those 3 files excluded: 68 files / 1419 tests passed. The global gate was missed (96.36 / 91.33 / 97.5 / 96.59),
+  driven by the in-progress `RepoUtils.ts`/`Server.ts`/`Router.ts`.
+- This work's files: `RouteUtils.ts` 98.89 / 93.98 / 100 / 98.88 (the uncovered lines are pre-existing), `src/auth`
+  100 / 93.22 / 100 / 100. `CRUDRoute.ts` is above every threshold.
+- `tsc --noEmit` is clean. `yarn lint` is clean for these files; its only errors are in F1/F2's `NetUtils.test.ts` and
+  `RepoUtils.CacheAndACL.test.ts`.
+- A final full run is still needed once F1/F2 land.
+
+### 2026-09-14 — Data layer and ACL fixes (fix agent F1)
+
+Ran at the same time as F2 and F3 (entry above). Touched `RepoUtils.ts`, `ACLUtils.ts`, a new
+`src/database/DatabaseErrors.ts`, and their tests (plus `test/routes/CachedModelRoute.Mongo.test.ts`, which asserted
+the old cache key scheme). `MongoRepository.ts` and `ModelUtils.ts` needed no change. Every finding reproduced against
+HEAD `6878bf8`: with HEAD's `RepoUtils.ts`/`ACLUtils.ts` swapped back in, 22 of the 23 tests in the new
+`test/RepoUtils.CacheAndACL.test.ts` fail (the passing one is the `allowExistingACL` positive case).
+
+1. **[CRITICAL] Record ACLs and class/route ACLs shared one uid namespace.** Kept one keyspace (a separate one would have
+   changed every stored class/route ACL uid) and reserved uids instead:
+   - `ACLUtils.isReservedUid(uid)`: any `default_*` uid, or a uid registered through `saveDefaultACL()` in this process
+     (class, route and endpoint ACLs plus their `default_` twins, tracked in an in-memory set).
+     `isProtectedACL(acl)` is also true when `acl.parentUid === "default_" + acl.uid`, which catches a default ACL
+     registered by a route/model this process doesn't load.
+   - `claimRecordACL()` refuses a reserved uid, or an existing protected ACL, with `IDENTIFIER_EXISTS`, even with
+     `allowExistingACL` or a `count > 0` new version.
+   - `delete()`/`truncate()` call `removeACL(uid, { unlessProtected: true })`/`removeACLs(uids, { unlessProtected: true })`.
+     On Mongo the parent condition is part of the atomic `findOneAndDelete` filter. Purging one version of a trackChanges
+     record (`version` given) leaves the ACL alone while other versions remain.
+   - `saveDefaultACL()` contract (F3 relies on it): with RBAC enabled and an `acl` given it resolves to the user-editable
+     ACL (uid `acl.uid`) or throws, never `null`. A missing user-editable ACL is recreated insert-only (`createOnly`),
+     with no records, under `default_<uid>`. An existing one with a different parent only logs a warning (it may be a
+     deliberate admin change). `null` only when RBAC is disabled or no ACL is given. Both lookups now skip the cache.
+2. **[HIGH] Planted ACL reuse.** An existing ACL at a new record's uid is reused only for a trackChanges new version
+   (`count > 0`) or with `allowExistingACL`. Removed both the trusted-role reuse and the "caller already holds every
+   creator action" reuse. The latter was removed outright rather than narrowed: two models sharing one ACL means
+   deleting either record removes the other's ACL.
+3. **[HIGH] ACL route writes never reached ACLUtils.** `RepoUtils` recognises the ACL model (`AccessControlListMongo`/
+   `SQL` or a subclass) and calls the new `ACLUtils.invalidateACLs(uids)` after create/update (so bulk and property
+   updates too)/delete/truncate. `findACL()` only writes the cache after a database read, never on a hit, and ignores a
+   cached entry whose `uid` isn't the one requested. Remaining gap: another instance's in-process copy lives until its
+   local TTL (no cross-instance invalidation channel exists).
+4. **[HIGH] `me` shared a cache key across users** and **15. [LOW] `$literal` forgery skipped on a warm cache.**
+   `find()` now builds the search query before the cache lookup (so every 400/403 the builder raises also applies on a
+   hit). The key is `q:` + md5 of `{ query: {...query, limit, page}, user }`, where `user` is the caller's uid whenever
+   the serialized raw query contains a whole-word `me`. Not keyed on the built query: a `RegExp` serializes to `{}` and
+   SQL `Raw()` parameter names change per build.
+5. **[HIGH] Cache key collision between uid keys and query hash keys.** Separate namespaces: `rec:latest:<uid>`,
+   `rec:v<version>:<uid>` and `q:<md5>`. A `findOne()` hit is used only if one of the model's id properties equals the
+   requested id (and `version` matches); a list hit only if each record's uid/version match the stored reference.
+6. **[MEDIUM] Cached objects mutated in place.** The cache gets a copy on create/update; `find()` strips shallow copies
+   (same prototype); `findOne()` already stripped a new instance. For `update()` copying `@ReadOnly` fields from a
+   stripped `existing`: a field that isn't an own property of `existing` is left out of the write (in-place update keeps
+   the stored value); for trackChanges it is read from the stored record (`loadStoredRecord()`), since the new version
+   is a whole document.
+7. **[MEDIUM] Stale list cache.** A list is stored as `[uid, version|null]` references. Non-trackChanges records are
+   referenced by `rec:latest:<uid>`, which `update()` refreshes and `delete()`/`truncate()` remove, so a cached list shows
+   updates and drops deleted records. trackChanges records are referenced by immutable `rec:v<n>:<uid>`; `delete()`/
+   `truncate()` first read every stored version (projection on uid/version, no aggregation) and remove those keys too. A
+   new version doesn't appear in an already-cached trackChanges list until it expires (same as a newly created record
+   in any cached list). A specific version of a non-trackChanges model is never cached (it's updated in place).
+   `truncate()` previously didn't touch the cache at all.
+8. **[MEDIUM] Push payloads carried the writer's scoped fields.** `publish()` sends a copy with *every*
+   `@RequiresScope` property removed (`deleteScopedProps(copy, undefined, model)`), for create and update; delete and
+   truncate payloads are unchanged (`{uid, version}`). Chosen over publishing only uid/version/action so existing
+   consumers keep getting the unscoped fields; one that needs a scoped value must fetch the record.
+9. **[HIGH] Unbounded record-ACL work in anonymous `DELETE /<model>` and `HEAD /<model>`.** This re-applies the accepted
+   approach (c) from 2026-08-15/16 now that transactions exist: `count()` and `truncate()` on a `recordACL` model (when
+   ACLs are checked, i.e. not `ignoreACL`) cap the uids at the built query's `take` (SQL: `findAllUids` sets `take`;
+   Mongo: plain `distinct()` + `.slice()`). Mongo has no `take` on the built query, so the cap comes from
+   `ModelUtils.resolvePagination(query).take`, the documented Mongo-side helper for the same rule (100 default, client
+   `limit` up to 1000), rather than (c)'s hard-coded 100, so a client `limit` behaves the same on both backends.
+   Behaviour change: such a count is at most one page, and such a truncate removes at most one page per request.
+   **Superseded for count() (JP, same day):** a count must never be limited - its purpose is the true total of matching
+   records - so only `truncate()` keeps the cap. `count()` on a recordACL model now uses `countPermittedUids()`: Mongo
+   streams uids from a `find()` cursor projected to `uid` (no `distinct`, so no 16MB reply limit), SQL selects the uid
+   column, and permissions are checked in batches of 100 as uids arrive, so memory stays bounded (trackChanges models
+   keep a seen-uid set to skip duplicate versions). The ACL work is still proportional to the matching set; do not
+   re-add a page cap to count().
+10. **[MEDIUM] SQL `date` columns a day off** (see the correction in agent A's item 6). SQL `@Column({ type: "date" })`
+    values must be `YYYY-MM-DD` strings (valid calendar dates) and are kept as strings. On Mongo they still become UTC
+    midnight. `timestamp`/`timestamptz`/`datetime` are unaffected: TypeORM round-trips a `Date` consistently there (UTC
+    for SQLite; local-time for Postgres `timestamp without time zone`/MySQL, which reads back identically on the same
+    server TZ).
+11. **[LOW] Ambiguous date inputs.** Accepted: ISO 8601 date or date-time (`T` or space; zone `Z`/`±HH`/`±HHmm`/`±HH:mm`;
+    no zone = UTC), with impossible calendar/clock values rejected; finite epoch-ms numbers in years 1–9999 with
+    magnitude ≥ `1e11` (smaller is ambiguous with epoch seconds; use ISO for 1966–1973); `Date`/`null`/`undefined` as is.
+    Everything else, including numeric strings and non-string/number values, is 400. Date columns are cached per class.
+12. **[LOW] Duplicate keys.** `src/database/DatabaseErrors.ts`: `isDuplicateKeyError()` (Mongo 11000/11001, Postgres
+    23505, MySQL `ER_DUP_ENTRY`/1062, SQLite `SQLITE_CONSTRAINT_UNIQUE`/`_PRIMARYKEY` or a generic `SQLITE_CONSTRAINT`
+    "UNIQUE constraint failed", also via TypeORM's `driverError`), `duplicateKeyFields()`, `isIdentityDuplicate()`.
+    create: 400 `IDENTIFIER_EXISTS`. update (every branch, both backends): 409 when the clash is on `_id`/`id`/`uid`/
+    `version`/primary key, 400 `IDENTIFIER_EXISTS` for any other unique column; when the driver doesn't name the
+    fields, 409 for a trackChanges version insert and 400 otherwise. Not exported from the package index (F2's file).
+13. **[LOW] SQL `create()` used `save()`.** Now `repo.insert()`. Behaviour change for SQL consumers: TypeORM cascades on
+    relations don't run on create (listeners still do).
+14. **[LOW] count leaked soft-deleted rows.** Decided from the built query (`queryIncludesDeleted()`): excluded only when
+    every OR branch pins `deleted` to exactly `false` (`false`, `Equal(false)`, an `And` containing it, `{$eq:false}`,
+    or a Mongo `$or`/`$and` that does). Without DELETE+UPDATE on a non-recordACL model the query is rebuilt with a
+    top-level `deleted: false`, which ANDs with any `$or` branch on both backends. On a recordACL model the restore bar
+    is applied per matched record (conservative: can undercount live records for a caller without DELETE+UPDATE when
+    the filter allows both).
+16. **[LOW, perf]** `findACL()` gained `skipParents`; `claimRecordACL()` uses `{ skipCache, skipParents }`. Date columns
+    are cached per class (above).
+
+Also assessed: create/update don't enforce column types (`quantity: "abc"` is stored). Not fixed: coercing or
+rejecting by `design:type` would change what every downstream consumer can currently store (numeric strings, union
+types that reflect as `Object`), and it belongs with validation (`ObjectUtils.validate`/`@Validator`) rather than in
+`RepoUtils`. Worth a separate, opt-in decision.
+
+Downstream (restapi/rapidmx):
+- `allowExistingACL` is now the *only* way to create a record at a uid that already has an ACL (besides a trackChanges
+  new version), and it never works for a reserved/protected uid. A trusted role no longer suffices.
+- Cache keys changed (`rec:`/`q:`), so existing Redis entries are simply never read again and expire.
+- Push payloads for create/update no longer contain any `@RequiresScope` field, even when the writer could see it.
+- `truncate()` on recordACL models is capped at one page per request. `count()` is never capped (see item 9).
+- Dates: numeric strings, epoch seconds and SQL date-only values other than `YYYY-MM-DD` are now 400.
+
+Tests: new `test/RepoUtils.CacheAndACL.test.ts` (real Mongo on 9999 + in-memory SQLite, 23 tests); new
+`test/database/DatabaseErrors.unit.test.ts`; new sections in `test/RepoUtils.unit.test.ts` and
+`test/security/ACLUtils.unit.test.ts`; updated `test/RepoUtils.WriteSafety.test.ts` (owner/trusted reuse now refused)
+and `test/routes/CachedModelRoute.Mongo.test.ts` (key scheme). SQLite can't run two transactions on one connection, so
+the SQL create race is reproduced by stubbing the existence check rather than with real concurrency.
+
+Verification: one full `PORT=3777 yarn vitest run` (with F2/F3's changes in the tree): 73 files / 1601 tests passed,
+coverage 98.29 / 94.44 / 99.64 / 98.4 (gate met). `RepoUtils.ts` 94.93 / 91.97 / 100 / 94.79, `ACLUtils.ts`
+98.8 / 96.37 / 100 / 98.78. `yarn lint` and `npx tsc --noEmit` clean. Nothing committed.
+
+### 2026-09-14 — Server, HTTP and infrastructure fixes (fix agent F2)
+
+Ran at the same time as F1 and F3 (entries above). Touched `Server.ts`, `NetUtils.ts`, `src/http/**`,
+`MongoSchemaSync.ts`, `ConnectionManager.ts`, `ObjectFactory.ts`, `EventListenerManager.ts`,
+`BackgroundServiceManager.ts`, `BasePushRoute.ts` and their tests. All 15 findings were re-checked against HEAD `6878bf8`
+and reproduced; none were skipped.
+
+1. **[HIGH] Prometheus label cardinality.** Both routers set `req.routePattern` (the registered pattern, e.g.
+   `/items/:id`) before any middleware runs. It is `undefined` for the routers' own not-found and `/*` CORS-preflight
+   fallbacks. An app-defined literal `/*` route keeps `/*`. `request_path`, `request_status` and
+   `request_time_milliseconds` use `req.routePattern ?? UNMATCHED_ROUTE_LABEL` (`"<unmatched>"`, exported from
+   `Server.ts`). The error and metrics middleware moved into `Server.handleError()`/`recordRequestMetrics()` so they are
+   unit-testable. Consumers with dashboards keyed on concrete paths will see pattern labels instead. F3's `@RateLimit`
+   keying uses `req.routePattern` too.
+2. **[HIGH] Redis `error` events crashed the process.** New `attachRedisErrorHandler(client, logger, name)` in
+   `ConnectionManager.ts` adds `error`/`reconnecting`/`ready` listeners. The first error of an outage is logged as an
+   error, repeats as debug, and it logs once the client is `ready` again. Calling it twice is a no-op, and a value without
+   `on()` is ignored. node-redis' default reconnect strategy (backoff, retries forever, resubscribes) is kept. It is applied
+   to ConnectionManager's clients, every `@Redis`/`@DataSource` `duplicate()` in ObjectFactory, EventListenerManager's
+   duplicate, and BasePushRoute's publisher and per-socket clients. **Not covered (not F2's file):**
+   `BaseAdminRoute.ts` creates three redis clients (lines ~122/124/137/197) with no error listener.
+3. **[MEDIUM] Forwarding headers.** `X-Original-Forwarded-For` is no longer read at all. See the NetUtils contract below.
+4. **[MEDIUM] `trusted_proxies` never matched uWS addresses.** Both sides are normalized, and entries can be CIDR ranges
+   (`net.BlockList`, cached per list). The uWS router also normalizes `req.socket.remoteAddress`, so audit logs get
+   `127.0.0.1` instead of `0000:…:ffff:7f00:0001`.
+5. **[MEDIUM] MongoSchemaSync.** `synchronize()` merges into `collections.get(name) ?? info`. The first class that declares
+   collection options (collation) wins.
+6. **[LOW/MEDIUM] BulkError leaks.** `Server.serializeError()`: an `ApiError` keeps its fields; anything else becomes
+   `{ code: INTERNAL_ERROR, status: 500, message }`. It is used for single errors and for every BulkError item (null
+   stays null). Raw items are still logged server-side. Stacks are never sent.
+   Side finding, not changed: `logger.debug(err)`/`error(err)` (winston) stamps `level` onto the logged error object,
+   so a 4xx `ApiError` body already carried `"level": "debug"` before this change.
+7. **[LOW] Sessions for bearer-token clients.** `createSessionMiddleware()`:
+   - A valid cookie with a stored session behaves as before: `req.sessionIsNew = false`, saved on finish when non-empty.
+   - Otherwise `req.session` is an empty object behind a Proxy and `req.sessionIsNew = true`. No cookie or store write
+     happens until a handler writes to it (set, defineProperty, delete, or assigning `req.session`). The first write
+     appends `Set-Cookie` with a freshly generated id, and the data is saved on finish.
+   - A stale or tampered cookie is never reused (no fixation). A first write after the headers were sent isn't saved.
+   - `HttpRequest.sessionIsNew` was added. **Required F3 change, still open:** `JWTStrategy.authenticate()` and
+     `authenticateSync()` must skip their bookkeeping for new sessions: `if (req.session && !req.sessionIsNew)`
+     (JWTStrategy.ts ~192 and ~228). Until then, each authenticated cookie-less request still creates a session through
+     those writes. Also suggested there: `NetUtils.getClientIP(req, trusted_proxies)` for `session.ip`.
+8. **[LOW] uWS `send()` result.** The callback gets an error only for status 2 (dropped). Status 0 (queued under
+   backpressure) is not an error.
+9. **[LOW] Binary WS use-after-free.** `Buffer.from(message.slice(0))`. The test detaches the ArrayBuffer with
+   `structuredClone(…, { transfer })` to prove the copy.
+10. **[LOW] Bun ignored WS options.**
+    - `DEFAULT_WS_OPTIONS` in `http/types.ts` (exported) holds the uWS defaults: 16 KiB payload, 120 s idle and 64 KiB
+      backpressure. uWS applies them explicitly under the route's options.
+    - Bun has one server-wide WebSocket config. `maxPayloadLength` is also enforced per route in `message` (close
+      1009). `idleTimeout` and `backpressureLimit` use the largest value any route registered, and `0` idle wins.
+    - `RouteUtils` still passes no options, so both runtimes now get the uWS defaults. This is a behaviour change for
+      Bun: 16 KiB instead of 16 MiB.
+11. **[LOW] Query-string prototype.** `parseQueryString()` (shared by Bun) still returns a plain object, so spread and
+    `hasOwnProperty` still work. It checks repeats with `Object.prototype.hasOwnProperty.call` and drops `__proto__`
+    keys, which `parseCookies()` now drops too. `?constructor=x`/`?toString=…` are ordinary own values.
+12. **[LOW] Invalid cron.**
+    - The schedule is validated before `start()` with a probe `new schedule.Job(name).schedule(spec)` and `cancel()`.
+    - A `null` job or any later failure cancels the job, calls `stop()` on a started service, and drops it from
+      `services`.
+    - Behaviour change: a one-time service whose `run()` throws now gets `stop()` called.
+13. **[LOW] Graceful shutdown.**
+    - `IHttpRouter.shutdown?(timeoutMs)` is optional. It stops accepting, waits for in-flight HTTP requests (counted
+      per router, `inFlightRequests`), then force-closes the rest: `uwsApp.close()` on uWS, `stop(true)` on Bun, which
+      is `stop(false)` first.
+    - `Server.stop()` order: services, then `app.shutdown(shutdown:drain_timeout)` (default 10000 ms, or `close()` for a
+      router without it), then `objectFactory.destroy(eventListenerManager)` (removed from the factory so `restart()`
+      builds a new one), then `connectionManager.disconnect()`. It is still under the 30 s watchdog.
+    - `EventListenerManager.destroy()` is idempotent and now closes its duplicate (`destroy()`, else `disconnect()`).
+    - Open WebSockets are closed by `stop()` now.
+14. **[MEDIUM] Push connect leak.**
+    - `connect()` registers `close` before any await. Cleanup is one idempotent function, run under the per-user lock.
+      A close during setup queues behind it and releases the redis client and the `activeSocks` slot.
+    - A socket already closed when `connect()` runs creates no client. One that closed during setup with no close event
+      is cleaned inline (`readyState >= 2`).
+    - A redis `connect()` failure now closes the socket with 1011 instead of rejecting.
+    - Unsubscribe/disconnect errors in cleanup are logged at debug.
+    - Rejected over-limit sockets don't touch the user's state.
+15. **[INFO] CORS** allow-methods now include `PATCH` (routers do register PATCH).
+
+**NetUtils client-IP contract** (consumed by F3's rate limiting):
+- `NetUtils.getClientIP(req, trustedProxies?)` returns the canonical client address.
+  - If `req.socket.remoteAddress` isn't an IP, it is returned verbatim (or `undefined` if empty) and headers are ignored.
+  - If the remote isn't a trusted proxy (or the list is empty), the normalized remote is returned.
+  - Otherwise `X-Forwarded-For` (all header values joined) is walked right to left. Trusted hops are skipped and the
+    first untrusted valid address is returned. An invalid entry stops the walk and returns the last trusted hop. If
+    every hop is trusted, the left-most one is returned.
+  - With no XFF, the last valid `X-Real-IP` entry is used, else the remote.
+- `getIPAddress(req, …)` delegates to it, so all existing callers get the fix. Its string/URL overload is unchanged.
+- `NetUtils.normalizeIP(value)`: strips a port, brackets and zone id; unmaps IPv4-mapped (either spelling); RFC 5952
+  IPv6; `undefined` when invalid.
+- `NetUtils.isTrustedProxy(addr, list)`: the list is an array or a comma-separated string of IPs/CIDRs; invalid entries
+  are ignored.
+- `TrustedProxies` type exported.
+- Not done: IPv6 clients are keyed per /128. A per-/64 rate-limit key would be a separate decision.
+
+Tests:
+- New: `test/database/RedisErrorHandler.unit.test.ts` (a real node-redis client throws on an unhandled `error` and
+  doesn't once attached) and `test/http/uWS/Router.shutdown.test.ts` (real uWS on port 37931: a drained in-flight
+  request, a closed WebSocket, refused new connections).
+- Extended: `NetUtils.test.ts`, `Server.unit.test.ts` (250 random unmatched paths give 1 series; BulkError with a
+  QueryFailedError-like item; stop order), `Server.test.ts` (end-to-end labels), `uWS/Router.test.ts`,
+  `bun/BunRouter.test.ts`, `uWS/Adapters.test.ts`, `uWS/WebSocket.test.ts`, `session/sessionMiddleware.test.ts`
+  (rewritten for lazy sessions), `MongoSchemaSync.unit.test.ts`, `ObjectFactory.test.ts`,
+  `EventListenerManager.test.ts`, `BackgroundServiceManager.test.ts` (mocks `node-schedule` with a pass-through;
+  namespace spying fails for this CJS module) and `routes/BasePushRoute.unit.test.ts`.
+- Tooling note: heredocs containing an apostrophe fail in this environment's Bash tool, so put scripted edits in a file.
+
+Verification: final full `PORT=3777 yarn vitest run` (F1/F3 changes in the tree): 73 files / 1601 tests passed,
+coverage 98.31 / 94.44 / 99.76 / 98.4 (gate met). `yarn lint` and `npx tsc --noEmit` clean. Nothing committed.

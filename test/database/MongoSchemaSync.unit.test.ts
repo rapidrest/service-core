@@ -45,6 +45,65 @@ describe("MongoSchemaSync Tests", () => {
         });
     });
 
+    describe("synchronize - classes sharing a collection", () => {
+        it("creates the indexes of every class stored in the same collection, not just the last one", async () => {
+            class SharedParent {
+                @Index("parent_idx")
+                parentField: string = "";
+            }
+            class SharedChildA {
+                @Index("child_a_idx")
+                childA: string = "";
+            }
+            class SharedChildB {
+                @Index("child_b_idx")
+                childB: string = "";
+            }
+            Reflect.defineMetadata("rrst:entityOptions", { name: "shared_things" }, SharedParent);
+            Reflect.defineMetadata("rrst:entityOptions", { name: "shared_things" }, SharedChildA);
+            Reflect.defineMetadata(
+                "rrst:entityOptions",
+                { name: "shared_things", collation: { locale: "en", strength: 2 } },
+                SharedChildB,
+            );
+
+            const collection = makeCollection({ indexes: [] });
+            const db = makeDb({ existing: [], collection });
+
+            const sync = new MongoSchemaSync(db as any);
+            await sync.synchronize([SharedParent, SharedChildA, SharedChildB]);
+
+            expect(db.createCollection).toHaveBeenCalledTimes(1);
+            expect(db.createCollection).toHaveBeenCalledWith("shared_things", {
+                collation: { locale: "en", strength: 2 },
+            });
+            const created = collection.createIndex.mock.calls.map((call: any[]) => call[1].name).sort();
+            expect(created).toEqual(["child_a_idx", "child_b_idx", "parent_idx"]);
+        });
+
+        it("keeps the options of the first class that declared them", async () => {
+            class FirstCollated {}
+            class SecondCollated {}
+            Reflect.defineMetadata(
+                "rrst:entityOptions",
+                { name: "collated", collation: { locale: "fr" } },
+                FirstCollated,
+            );
+            Reflect.defineMetadata(
+                "rrst:entityOptions",
+                { name: "collated", collation: { locale: "de" } },
+                SecondCollated,
+            );
+
+            const collection = makeCollection({ indexes: [] });
+            const db = makeDb({ existing: [], collection });
+
+            await new MongoSchemaSync(db as any).synchronize([FirstCollated, SecondCollated]);
+
+            expect(db.createCollection).toHaveBeenCalledWith("collated", { collation: { locale: "fr" } });
+        });
+    });
+
     describe("syncCollection - collection creation races", () => {
         it("tolerates a NamespaceExists error raised by a concurrent collection creation", async () => {
             class ToleratedModel {}

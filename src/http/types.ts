@@ -25,6 +25,12 @@ export interface HttpRequest {
      * session middleware is registered (i.e. the `session` config block is absent).
      */
     session?: Record<string, any>;
+    /**
+     * Set by the session middleware. `true` when `session` is not backed by a stored session yet (the request carried
+     * no valid session cookie): nothing is stored and no cookie is sent unless a handler writes to `session`.
+     * Bookkeeping-only writes (last access time, IP address, ...) should be skipped while this is `true`.
+     */
+    sessionIsNew?: boolean;
     /** Minimal socket interface; populated with remote address for IP extraction. */
     socket: { remoteAddress?: string };
     /** Set by JWT auth middleware after successful token verification. */
@@ -33,6 +39,13 @@ export interface HttpRequest {
     authPayload?: any;
     /** Raw JWT token string, set by JWT auth middleware. */
     authToken?: string;
+    /**
+     * The registered route pattern that matched this request (e.g. `/items/:id`), set by the router before any
+     * middleware runs. `undefined` when no application route matched, i.e. the request is handled by the router's
+     * own not-found or CORS preflight fallback. Unlike `path`, the set of possible values is bounded by the
+     * application's routes, so it is safe to use as a metrics label.
+     */
+    routePattern?: string;
     /** Allow arbitrary per-request properties (e.g. req.websocket, req.wsHandled). */
     [key: string]: any;
 }
@@ -100,8 +113,43 @@ export interface IHttpRouter {
     hasExplicitOptionsRoute(path: string): boolean;
     ws(path: string, handlers: RequestHandler[], wsOptions?: any, upgradeAuth?: any): this;
     listen(host: string, port: number): Promise<void>;
+    /** Stops accepting new connections. Connections that are already open (including keep-alive and WebSocket
+     * connections) are left alone. */
     close(): void;
+    /**
+     * Gracefully shuts the server down: stops accepting new connections, waits up to `timeoutMs` milliseconds for
+     * HTTP requests that are still being handled to finish, then force-closes every remaining connection
+     * (keep-alive and WebSocket connections included). Optional, so custom routers without it keep working;
+     * `Server.stop()` falls back to `close()` for those.
+     */
+    shutdown?(timeoutMs: number): Promise<void>;
     readonly isListening: boolean;
     listenPort: number;
     [key: string]: any;
 }
+
+/**
+ * WebSocket options shared by every router implementation. Names follow uWebSockets.js' `WebSocketBehavior`.
+ */
+export interface WebSocketOptions {
+    /** Maximum size of a single incoming message, in bytes. A larger message closes the connection. */
+    maxPayloadLength?: number;
+    /** Seconds without any received data after which the connection is closed. `0` disables the timeout. */
+    idleTimeout?: number;
+    /** Maximum number of bytes that may be queued for sending before further messages are dropped. */
+    maxBackpressure?: number;
+    [key: string]: any;
+}
+
+/**
+ * The WebSocket defaults used by both the uWS and Bun routers when a route doesn't override them. These match
+ * uWebSockets.js' own defaults, so a route behaves the same on both runtimes (Bun's own defaults are far larger,
+ * e.g. a 16 MiB payload limit).
+ */
+export const DEFAULT_WS_OPTIONS: Readonly<
+    Required<Pick<WebSocketOptions, "maxPayloadLength" | "idleTimeout" | "maxBackpressure">>
+> = Object.freeze({
+    maxPayloadLength: 16 * 1024,
+    idleTimeout: 120,
+    maxBackpressure: 64 * 1024,
+});

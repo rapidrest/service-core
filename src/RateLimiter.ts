@@ -44,9 +44,10 @@ export interface IPRateLimitConfig {
 export interface RateLimitConfig {
     /**
      * The maximum number of attempts allowed within `windowSeconds` before being rejected. Default is `100`.
-     * Note that when driven by the `@RateLimit` decorator this counts attempts against the identifier
-     * `<method> <path>` (see `RouteUtils.checkRateLimiter()`), i.e. combined across *every* caller of that
-     * route, not per-caller - the default is set well above the per-IP default below for that reason.
+     * Note that when driven by the `@RateLimit` decorator without `perUser`, this counts attempts against the
+     * identifier `<method>|<path>` (see `RouteUtils.checkRateLimiter()`), i.e. combined across *every* caller of that
+     * route, not per-caller - the default is set well above the per-IP default below for that reason. With
+     * `perUser` the identifier is scoped to the user's uid, or to the client IP for anonymous callers.
      */
     maxAttempts?: number;
     /** The length of the sliding window, in seconds, that `maxAttempts` applies to. Default is `60`. */

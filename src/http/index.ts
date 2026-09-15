@@ -2,7 +2,16 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-export type { ErrorHandler, HttpRequest, HttpResponse, IHttpRouter, NextFunction, RequestHandler } from "./types.js";
+export type {
+    ErrorHandler,
+    HttpRequest,
+    HttpResponse,
+    IHttpRouter,
+    NextFunction,
+    RequestHandler,
+    WebSocketOptions,
+} from "./types.js";
+export { DEFAULT_WS_OPTIONS } from "./types.js";
 export { isBunRuntime } from "./RuntimeDetect.js";
 export type { IWebSocketShim } from "./IWebSocketShim.js";
 export { extractParamNames, makeWsStubResponse, runChain } from "./MiddlewareChain.js";

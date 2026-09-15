@@ -189,7 +189,9 @@ export class JWTStrategy {
             authPayload = payload;
             if (user) {
                 // If sessions are enabled, update the stored information about the authenticated user
-                if (req.session) {
+                // Only a session the client already holds: a cookie-less bearer client would otherwise get a new
+                // session persisted on every request (see sessionMiddleware's `sessionIsNew`).
+                if (req.session && !req.sessionIsNew) {
                     const now = Date.now();
                     req.session.ip = NetUtils.getIPAddress(req);
                     req.session.lastAccess = now;
@@ -225,7 +227,9 @@ export class JWTStrategy {
             authPayload = payload;
             if (user) {
                 // If sessions are enabled, update the stored information about the authenticated user
-                if (req.session) {
+                // Only a session the client already holds: a cookie-less bearer client would otherwise get a new
+                // session persisted on every request (see sessionMiddleware's `sessionIsNew`).
+                if (req.session && !req.sessionIsNew) {
                     const now = Date.now();
                     req.session.ip = NetUtils.getIPAddress(req);
                     req.session.lastAccess = now;

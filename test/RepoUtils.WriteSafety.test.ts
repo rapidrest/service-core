@@ -223,21 +223,30 @@ describe("RepoUtils write-path safety [MongoDB + SQL]", () => {
             expect(classAcl.records.some((r: any) => r.userOrRoleId === "mallory")).toBe(false);
         });
 
-        it("lets the owner, who already holds every right on it, reuse the ACL unchanged", async () => {
+        it("refuses even the owner's create of another model at their own record's uid, leaving the ACL untouched", async () => {
             const note: WsNote = await notes.create({ text: "alice's" }, { user: alice });
             const aclBefore: any = await aclOf(note.uid);
 
-            const other: WsOther = await others.create({ uid: note.uid, text: "same owner" }, { user: alice });
+            await expectApiError(
+                others.create({ uid: note.uid, text: "same owner" }, { user: alice }),
+                ApiErrors.IDENTIFIER_EXISTS,
+                400,
+            );
 
-            expect(other.uid).toBe(note.uid);
             const aclAfter: any = await aclOf(note.uid);
             expect(aclAfter.version).toBe(aclBefore.version);
             expect(aclAfter.records).toEqual(aclBefore.records);
+            expect(await otherRepo.count({ uid: note.uid } as any)).toBe(0);
         });
 
-        it("lets a trusted caller reuse the ACL unchanged", async () => {
+        it("refuses a trusted caller too, and reuses the ACL unchanged only when trusted code passes allowExistingACL", async () => {
             const note: WsNote = await notes.create({ text: "alice's" }, { user: alice });
-            await others.create({ uid: note.uid, text: "admin" }, { user: admin });
+            await expectApiError(
+                others.create({ uid: note.uid, text: "admin" }, { user: admin }),
+                ApiErrors.IDENTIFIER_EXISTS,
+                400,
+            );
+            await others.create({ uid: note.uid, text: "admin" }, { user: admin, allowExistingACL: true });
             expect((await aclOf(note.uid)).records.some((r: any) => r.userOrRoleId === "root")).toBe(false);
         });
 

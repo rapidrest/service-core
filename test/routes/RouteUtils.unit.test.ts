@@ -14,6 +14,7 @@ import {
     Header,
     Protect,
     Query,
+    RateLimit,
     RequiresElevation,
     RequiresRole,
     RequiresScope,
@@ -210,7 +211,7 @@ describe("RouteUtils.checkRateLimiter", () => {
         expect(checkAndIncrement).toHaveBeenCalledWith("u1|GET|/widgets", { perUser: true }, req);
     });
 
-    it("falls back to `<method>|<path>` when perUser is true but the request has no authenticated user", async () => {
+    it("falls back to `<method>|<path>` when perUser is true but the request has no user or client IP", async () => {
         const routeUtils: any = new RouteUtils();
         const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
         routeUtils.rateLimiter = { checkAndIncrement };
@@ -221,6 +222,114 @@ describe("RouteUtils.checkRateLimiter", () => {
         await handler(req, makeRes(), next);
 
         expect(checkAndIncrement).toHaveBeenCalledWith("GET|/widgets", { perUser: true }, req);
+    });
+
+    it("scopes an anonymous caller by client IP when options.perUser is true", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({ perUser: true });
+        const reqA = makeReq({ method: "GET", path: "/widgets", socket: { remoteAddress: "203.0.113.7" } });
+        const reqB = makeReq({ method: "GET", path: "/widgets", socket: { remoteAddress: "203.0.113.8" } });
+
+        await handler(reqA, makeRes(), vi.fn());
+        await handler(reqB, makeRes(), vi.fn());
+
+        expect(checkAndIncrement).toHaveBeenNthCalledWith(1, "ip:203.0.113.7|GET|/widgets", { perUser: true }, reqA);
+        expect(checkAndIncrement).toHaveBeenNthCalledWith(2, "ip:203.0.113.8|GET|/widgets", { perUser: true }, reqB);
+    });
+
+    it("gives the default @RateLimit() options a per-IP bucket for anonymous callers", async () => {
+        @Route("/public")
+        class PublicRoute {
+            @RateLimit()
+            @Get()
+            public find() {
+                return {};
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new PublicRoute());
+        const [rateLimitMw] = app._registered["get /public"];
+
+        await rateLimitMw(
+            makeReq({ method: "GET", path: "/public", socket: { remoteAddress: "198.51.100.1" } }),
+            makeRes(),
+            vi.fn(),
+        );
+
+        expect(checkAndIncrement.mock.calls[0][0]).toBe("ip:198.51.100.1|GET|/public");
+    });
+
+    it("keys percent-encoded variants of the same path on one bucket", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({});
+
+        for (const path of [
+            "/clients/abc/regenerate-secret",
+            "/clients/%61bc/regenerate-secret",
+            "/clients/%61%62%63/regenerate-secret/",
+            "//clients/abc//regenerate-secret",
+        ]) {
+            await handler(makeReq({ method: "POST", path }), makeRes(), vi.fn());
+        }
+
+        const ids = checkAndIncrement.mock.calls.map((call: any[]) => call[0]);
+        expect(new Set(ids)).toEqual(new Set(["POST|/clients/abc/regenerate-secret"]));
+    });
+
+    it("keys on the matched route pattern and decoded params when the router provides req.routePattern", async () => {
+        const routeUtils: any = new RouteUtils();
+        const checkAndIncrement = vi.fn().mockResolvedValue(undefined);
+        routeUtils.rateLimiter = { checkAndIncrement };
+        const handler = routeUtils.checkRateLimiter({});
+
+        for (const path of ["/clients/abc/regenerate-secret", "/clients/%61bc/regenerate-secret"]) {
+            const req = makeReq({
+                method: "POST",
+                path,
+                routePattern: "/clients/:id/regenerate-secret",
+                params: { id: "abc" },
+            });
+            await handler(req, makeRes(), vi.fn());
+        }
+
+        const ids = checkAndIncrement.mock.calls.map((call: any[]) => call[0]);
+        expect(ids).toEqual(["POST|/clients/abc/regenerate-secret", "POST|/clients/abc/regenerate-secret"]);
+    });
+
+    it("re-encodes decoded params and falls back to the request path for wildcard patterns", () => {
+        expect(
+            RouteUtils.getRateLimitPath(
+                makeReq({ path: "/users/a%2Fb", routePattern: "/users/:uid/", params: { uid: "a/b" } }),
+            ),
+        ).toBe("/users/a%2Fb");
+        expect(
+            RouteUtils.getRateLimitPath(makeReq({ path: "/users/x", routePattern: "/users/:uid", params: {} })),
+        ).toBe("/users/");
+        expect(
+            RouteUtils.getRateLimitPath({ method: "GET", path: "/users/x", routePattern: "/users/:uid" } as any),
+        ).toBe("/users/");
+        expect(RouteUtils.getRateLimitPath(makeReq({ path: "/static/%61/b.css", routePattern: "/static/*" }))).toBe(
+            "/static/a/b.css",
+        );
+    });
+
+    it("does not merge an encoded slash inside a segment with a real path separator", () => {
+        expect(RouteUtils.normalizeRateLimitPath("/files/a%2Fb")).toBe("/files/a%2Fb");
+        expect(RouteUtils.normalizeRateLimitPath("/files/a/b")).toBe("/files/a/b");
+        expect(RouteUtils.normalizeRateLimitPath("/files/a%2fb")).toBe("/files/a%2Fb");
+    });
+
+    it("keeps a malformed percent-encoded segment as is", () => {
+        expect(RouteUtils.normalizeRateLimitPath("/files/%E0%A4%A")).toBe("/files/%25E0%25A4%25A");
+        expect(RouteUtils.normalizeRateLimitPath("/")).toBe("/");
     });
 
     it("does not scope per-user when options.perUser is left unset, even for an authenticated request", async () => {
@@ -454,6 +563,75 @@ describe("RouteUtils.registerRoute", () => {
         expect(routeUtils.logger.error).toHaveBeenCalled();
     });
 
+    it("still installs a denying permission check when saveDefaultACL() returns null for the class ACL", async () => {
+        // Regression: a missing user-editable ACL (e.g. deleted through a record uid collision) made
+        // saveDefaultACL() return null, and the route then registered with no permission check at all.
+        @Route("/victim")
+        @Protect()
+        class VictimRoute {
+            @Get("secret")
+            public secret() {
+                return { secret: true };
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        const checkRequestPerms = vi.fn().mockResolvedValue(false);
+        routeUtils.aclUtils = { enabled: true, saveDefaultACL: vi.fn().mockResolvedValue(null), checkRequestPerms };
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new VictimRoute());
+
+        expect(routeUtils.logger.error).toHaveBeenCalledWith(expect.stringContaining("VictimRoute"));
+        const handlers = app._registered["get /victim/secret"];
+        expect(handlers).toHaveLength(2);
+        const next = vi.fn();
+        await handlers[0](makeReq({ method: "GET" }), makeRes(), next);
+        expect(checkRequestPerms).toHaveBeenCalledWith("VictimRoute", undefined, expect.anything());
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
+    });
+
+    it("keys the permission check on the declared method ACL uid when saveDefaultACL() returns null for it", async () => {
+        @Route("/victim2")
+        @Protect({ uid: "victim-class", records: [] })
+        class VictimRoute2 {
+            @Protect({ uid: "victim-method", records: [] })
+            @Get()
+            public find() {
+                return {};
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        const saveDefaultACL = vi.fn(async (acl: any) => (acl.uid === "victim-method" ? null : acl));
+        const checkRequestPerms = vi.fn().mockResolvedValue(false);
+        routeUtils.aclUtils = { enabled: true, saveDefaultACL, checkRequestPerms };
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new VictimRoute2());
+
+        const next = vi.fn();
+        await app._registered["get /victim2"][0](makeReq({ method: "GET" }), makeRes(), next);
+        expect(checkRequestPerms).toHaveBeenCalledWith("victim-method", undefined, expect.anything());
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
+    });
+
+    it("refuses to register a route when saving its method-level ACL fails", async () => {
+        @Route("/victim3")
+        class VictimRoute3 {
+            @Protect({ uid: "victim3-method", records: [] })
+            @Get()
+            public find() {
+                return {};
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        routeUtils.aclUtils = { enabled: true, saveDefaultACL: vi.fn().mockRejectedValue(new Error("acl down")) };
+        const app = makeApp();
+        await expect(routeUtils.registerRoute(app, new VictimRoute3())).rejects.toThrow("acl down");
+        expect(app._registered["get /victim3"]).toBeUndefined();
+        expect(routeUtils.logger.error).toHaveBeenCalledWith(expect.stringContaining("victim3-method"));
+    });
+
     it("saves a per-route ACL parented to the class-level default ACL", async () => {
         @Route("/protected2")
         @Protect({ uid: "class-acl", records: [] })
@@ -530,7 +708,9 @@ describe("RouteUtils.registerRoute", () => {
         expect(result).toEqual({});
     });
 
-    it("rejects the pre-upgrade auth when authenticateSync throws and auth is required", async () => {
+    it("defers to post-upgrade auth (does not reject) when authenticateSync throws and auth is required", async () => {
+        // A strategy may throw only because it is async-only (e.g. oauth_bearer), so rejecting here would refuse
+        // every connection. authWebSocket() re-runs the strategies asynchronously and closes the socket instead.
         @Route("/ws-route3")
         class WsRoute3 {
             @Auth(["jwt"], true)
@@ -551,7 +731,35 @@ describe("RouteUtils.registerRoute", () => {
         await routeUtils.registerRoute(app, new WsRoute3());
         const registered = app._registered["ws /ws-route3/connect"];
         const result = registered.upgradeAuth(makeReq());
-        expect(result).toEqual({ reject: true });
+        expect(result).toEqual({});
+        expect(routeUtils.authMiddleware.authWebSocket).toHaveBeenCalledWith(true, ["jwt"]);
+    });
+
+    it("passes the route's @Auth strategies to the WebSocket LOGIN handler, accepting a single strategy name", async () => {
+        @Route("/ws-route4")
+        class WsRoute4 {
+            @Auth("oauth_bearer", false)
+            @WebSocket("/connect")
+            public connect() {
+                return undefined;
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        routeUtils.authMiddleware = {
+            authenticateSync: vi.fn().mockReturnValue(undefined),
+            authWebSocket: vi.fn().mockReturnValue(vi.fn()),
+        };
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new WsRoute4());
+        expect(routeUtils.authMiddleware.authWebSocket).toHaveBeenCalledWith(false, ["oauth_bearer"]);
+        expect(app._registered["ws /ws-route4/connect"].upgradeAuth(makeReq())).toEqual({});
+        expect(routeUtils.authMiddleware.authenticateSync).toHaveBeenCalledWith(
+            ["oauth_bearer"],
+            expect.anything(),
+            undefined,
+            false,
+        );
     });
 
     it("registers required-scope middleware when @RequiresScope is present", async () => {

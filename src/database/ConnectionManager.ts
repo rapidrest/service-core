@@ -10,6 +10,54 @@ import { MongoSchemaSync } from "./MongoSchemaSync.js";
 import type { RedisClientType } from "redis";
 const { Destroy, Logger } = ObjectDecorators;
 
+/** Marks a redis client that already has the listeners from `attachRedisErrorHandler()`. */
+const REDIS_ERROR_HANDLER: unique symbol = Symbol("rrst:redisErrorHandler");
+
+/**
+ * Attaches `error`, `reconnecting` and `ready` listeners that log a redis client's connection problems.
+ *
+ * A node-redis client emits `error` whenever its socket fails (e.g. the server restarts or the network drops). An
+ * `EventEmitter` with no `error` listener throws on that event, which crashes the whole process. With a listener,
+ * the client's own reconnect strategy (exponential backoff, retried indefinitely by default) takes over and pending
+ * subscriptions are restored once it reconnects.
+ *
+ * To avoid flooding the log while a server is unreachable, the first error of an outage is logged as an error and
+ * the following ones as debug messages, until the client is `ready` again. Every client this library creates, and
+ * every `duplicate()` of one, must be passed through this function. Calling it again on the same client does nothing.
+ *
+ * @param client The redis client to attach the listeners to. Clients without an `on()` method are ignored.
+ * @param logger The logger to report errors to.
+ * @param name A name for the client, used in log messages.
+ * @returns The given client.
+ */
+export function attachRedisErrorHandler<T>(client: T, logger: any, name: string): T {
+    const emitter: any = client;
+    if (!emitter || typeof emitter.on !== "function" || emitter[REDIS_ERROR_HANDLER]) {
+        return client;
+    }
+    Object.defineProperty(emitter, REDIS_ERROR_HANDLER, { value: true });
+
+    let failing: boolean = false;
+    emitter.on("error", (err: any) => {
+        if (!failing) {
+            failing = true;
+            logger?.error(`Redis connection '${name}' failed: ${err?.message ?? err}`);
+        } else {
+            logger?.debug(`Redis connection '${name}' is still failing: ${err?.message ?? err}`);
+        }
+    });
+    emitter.on("reconnecting", () => {
+        logger?.debug(`Redis connection '${name}' is reconnecting...`);
+    });
+    emitter.on("ready", () => {
+        if (failing) {
+            failing = false;
+            logger?.info(`Redis connection '${name}' re-established.`);
+        }
+    });
+    return client;
+}
+
 /**
  * Provides database connection management.
  *
@@ -157,7 +205,11 @@ export class ConnectionManager {
                 // generic importOptionalDependency(pkg, ...) helper, whose variable specifier bundler/test
                 // tooling (e.g. Vitest's module mocking) can't always statically analyze and intercept.
                 const { createClient } = await importRedis();
-                const redisConn: RedisClientType = createClient({ url });
+                const redisConn: RedisClientType = attachRedisErrorHandler(
+                    createClient({ url }) as RedisClientType,
+                    this.logger,
+                    name,
+                );
                 await redisConn.connect();
                 connection = redisConn;
             } else {

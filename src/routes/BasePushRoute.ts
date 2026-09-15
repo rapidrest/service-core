@@ -8,6 +8,7 @@ import { ACLUtils } from "../security/ACLUtils.js";
 import ws from "ws";
 import type { RedisClientType } from "redis";
 import { importRedis } from "../database/ConnectionKinds.js";
+import { attachRedisErrorHandler } from "../database/ConnectionManager.js";
 import { Description, Summary } from "../decorators/DocDecorators.js";
 import { ACLAction } from "../security/AccessControlList.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
@@ -71,7 +72,11 @@ export class BasePushRoute {
     private async init(): Promise<void> {
         if (this.redisConfig) {
             const { createClient } = await importRedis();
-            this.redisPub = createClient({ url: this.redisConfig.url });
+            this.redisPub = attachRedisErrorHandler(
+                createClient({ url: this.redisConfig.url }) as RedisClientType,
+                this.logger,
+                "events (push publisher)",
+            );
             await this.redisPub.connect();
         } else {
             this.logger.warn(
@@ -103,6 +108,14 @@ export class BasePushRoute {
         return run;
     }
 
+    /**
+     * Returns `true` if the given socket is closing or closed. Works for the `ws` library's sockets as well as the
+     * uWS and Bun shims, which all use the WebSocket `readyState` values (2 = CLOSING, 3 = CLOSED).
+     */
+    private isSocketClosed(sock: ws): boolean {
+        return typeof sock?.readyState === "number" && sock.readyState >= 2;
+    }
+
     @Summary("Push connect")
     @Description("Establishes a connection to the push notification system.")
     @Auth(["jwt"])
@@ -117,25 +130,104 @@ export class BasePushRoute {
             });
         };
 
+        // The redis client created for this socket, once setup has created it.
+        let redis: RedisClientType | undefined = undefined;
+        let cleanedUp: boolean = false;
+
+        // Releases everything this socket holds. Must only be called while holding the user's `runExclusive` lock.
+        const cleanup = async (): Promise<void> => {
+            if (cleanedUp) {
+                return;
+            }
+            cleanedUp = true;
+
+            // Remove the socket from our tracked list
+            const socks: ws[] = this.activeSocks.get(user.uid) || [];
+            const idx: number = socks.indexOf(sock);
+            if (idx !== -1) {
+                socks.splice(idx, 1);
+            }
+
+            if (redis) {
+                const conn: RedisClientType = redis;
+                try {
+                    // Unsubscribe from all redis pub/sub channels
+                    const subs: string[] | undefined = this.activeSubs.get(user.uid);
+                    if (subs && subs.length > 0 && conn.isOpen !== false) {
+                        await conn.unsubscribe(subs);
+                    }
+                } catch (err) {
+                    this.logger.debug(`Failed to unsubscribe push channels for user ${user.uid}: ${err}`);
+                }
+                try {
+                    // Disconnect the redis client
+                    await conn.disconnect();
+                } catch (err) {
+                    this.logger.debug(`Failed to disconnect push redis client for user ${user.uid}: ${err}`);
+                }
+            }
+
+            // Only touch the user's shared state when this socket was actually tracked. Once the user has no other
+            // open connections, drop their tracked state entirely rather than leaving a stale (activeSocks) or
+            // permanently-growing (activeSubs) entry behind — otherwise every distinct uid that ever connects, even
+            // once, leaks a map entry for the life of the process.
+            if (idx !== -1) {
+                if (socks.length === 0) {
+                    this.activeSocks.delete(user.uid);
+                    this.activeSubs.delete(user.uid);
+                } else {
+                    this.activeSocks.set(user.uid, socks);
+                }
+            }
+        };
+
+        // Registered before any await, so a socket that closes while setup is still connecting to redis is still
+        // cleaned up. Serialized per user, same as SUBSCRIBE/UNSUBSCRIBE below: a close racing a concurrent
+        // connect()/SUBSCRIBE for the same user (a second open socket) must not interleave its read-modify-write of
+        // activeSocks/activeSubs with theirs, or one of the two updates is lost. Because it is queued behind this
+        // connect()'s own setup, it always sees the redis client and the tracked socket that setup created.
+        sock.on("close", async () => {
+            await this.runExclusive(user.uid, cleanup);
+        });
+
         // The socket cap check, the subscribe, and the activeSocks/activeSubs bookkeeping below must all happen
         // atomically with respect to any other concurrent connect()/SUBSCRIBE/UNSUBSCRIBE for this same user
         // (e.g. a burst of connections opened milliseconds apart), or two calls could both read the same
         // pre-commit state: bypassing the per-user socket cap, or clobbering each other's committed
         // subscription list the same way the message handlers below already guard against via `runExclusive`.
-        const redis: RedisClientType | undefined = await this.runExclusive(user.uid, async () => {
+        const status: "ok" | "limit" | "closed" | "error" = await this.runExclusive(user.uid, async () => {
+            // The socket may already have closed before this connect() ran (e.g. while authentication was
+            // pending), in which case its close event has already fired and will never reach the listener above.
+            if (this.isSocketClosed(sock)) {
+                cleanedUp = true;
+                return "closed";
+            }
+
             // Cap the number of concurrent connections a single user may hold, to prevent an authenticated user
             // from exhausting server resources by opening unbounded sockets.
             if ((this.activeSocks.get(user.uid)?.length ?? 0) >= this.maxSocketsPerUser) {
                 this.logger.debug(
                     `User ${user.uid} exceeded the maximum of ${this.maxSocketsPerUser} concurrent push connections.`,
                 );
-                return undefined;
+                return "limit";
             }
 
             // Establish a new redis pub/sub client for this connection
             const { createClient } = await importRedis();
-            const conn: RedisClientType = createClient({ url: this.redisConfig.url });
-            await conn.connect();
+            const conn: RedisClientType = attachRedisErrorHandler(
+                createClient({ url: this.redisConfig.url }) as RedisClientType,
+                this.logger,
+                `events (push socket of ${user.uid})`,
+            );
+            redis = conn;
+            try {
+                await conn.connect();
+            } catch (err) {
+                this.logger.error(`Failed to connect the push redis client for user ${user.uid}.`);
+                this.logger.debug(err);
+                await cleanup();
+                return "error";
+            }
 
             // On a first-ever connection there's nothing stored yet, so just the user's own identity channel
             // (always implicitly permitted, same as the SUBSCRIBE message handler below never ACL-checks it).
@@ -165,13 +257,27 @@ export class BasePushRoute {
             }
             this.activeSocks.get(user.uid)!.push(sock);
 
-            return conn;
+            // The socket closed while we were connecting/subscribing. If its close event already fired, the
+            // cleanup it queued runs right after this; if it closed before connect() ran, nothing else will
+            // release the redis client and the activeSocks entry, so do it now.
+            if (this.isSocketClosed(sock)) {
+                await cleanup();
+                return "closed";
+            }
+
+            return "ok";
         });
 
-        if (!redis) {
+        if (status === "limit") {
             sock.close(1008, "Too many concurrent connections.");
             return;
+        } else if (status === "error") {
+            sock.close(1011, "Push notifications are unavailable.");
+            return;
+        } else if (status === "closed") {
+            return;
         }
+        const conn: RedisClientType = redis!;
 
         // Set up the incoming message handler from the client
         sock.on("message", async (data: any, isBinary: boolean) => {
@@ -205,7 +311,7 @@ export class BasePushRoute {
 
                             // Subscribe to all approved channels
                             if (subd.length > 0) {
-                                await redis.subscribe(subd, onMessage);
+                                await conn.subscribe(subd, onMessage);
                             }
                             this.activeSubs.set(user.uid, origSubs.concat(subd));
                             sock.send(
@@ -219,7 +325,7 @@ export class BasePushRoute {
                             // An empty channel list means "unsubscribe from everything" per the Redis protocol,
                             // which is not what an empty UNSUBSCRIBE request from the client should do.
                             if (subs.length > 0) {
-                                await redis.unsubscribe(subs);
+                                await conn.unsubscribe(subs);
                             }
                             for (const channel of subs) {
                                 const idx: number = origSubs.indexOf(channel);
@@ -239,40 +345,6 @@ export class BasePushRoute {
                     this.logger.debug(`Received invalid message from user ${user.uid}.`);
                 }
             }
-        });
-
-        // Set up the close connection handler
-        sock.on("close", async (code: number, reason: string) => {
-            // Serialized per user, same as SUBSCRIBE/UNSUBSCRIBE above: a close racing a concurrent
-            // connect()/SUBSCRIBE for the same user (a second open socket) must not interleave its
-            // read-modify-write of activeSocks/activeSubs with theirs, or one of the two updates is lost.
-            await this.runExclusive(user.uid, async () => {
-                // Unsubscribe from all redis pub/sub channels
-                const subs: string[] | undefined = this.activeSubs.get(user.uid);
-                if (subs && subs.length > 0) {
-                    await redis.unsubscribe(subs);
-                }
-
-                // Disconnect the redis client
-                await redis.disconnect();
-
-                // Remove the socket from our tracked list
-                const socks: ws[] = this.activeSocks.get(user.uid) || [];
-                const idx: number = socks.indexOf(sock);
-                if (idx !== -1) {
-                    socks.splice(idx, 1);
-                }
-
-                // Once the user has no other open connections, drop their tracked state entirely rather than
-                // leaving a stale (activeSocks) or permanently-growing (activeSubs) entry behind — otherwise
-                // every distinct uid that ever connects, even once, leaks a map entry for the life of the process.
-                if (socks.length === 0) {
-                    this.activeSocks.delete(user.uid);
-                    this.activeSubs.delete(user.uid);
-                } else {
-                    this.activeSocks.set(user.uid, socks);
-                }
-            });
         });
     }
 

@@ -7,6 +7,8 @@ process.env[`cors__origins`] = JSON.stringify(corsOrigins);
 
 import { default as config } from "./config";
 import { Server, ObjectFactory, ApiErrors } from "../src";
+import { UNMATCHED_ROUTE_LABEL } from "../src/Server";
+import * as prom from "prom-client";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { request } from "../src/test/request.js";
 import * as uuid from "uuid";
@@ -163,6 +165,20 @@ describe("Server Tests", () => {
         expect(result.type).toBe("application/json");
         expect(result.body.status).toBe(404);
         expect(result.body.code).toBe(ApiErrors.NOT_FOUND);
+    });
+
+    it("Labels request metrics by route pattern, so random unmatched paths don't create new time series.", async () => {
+        const metric: any = prom.register.getSingleMetric("request_path");
+        const random: string[] = Array.from({ length: 25 }, () => `/random-${uuid.v4()}`);
+        for (const path of random) {
+            expect((await request(server).get(path)).status).toBe(404);
+        }
+        expect((await request(server).get("/hello")).status).toBe(200);
+
+        const paths: string[] = (await metric.get()).values.map((v: any) => v.labels.path);
+        expect(paths).toContain(UNMATCHED_ROUTE_LABEL);
+        expect(paths.some((p) => p.startsWith("/random-"))).toBe(false);
+        expect(paths.some((p) => p.includes("hello"))).toBe(true);
     });
 
     it("Returns a JSON 404 for an unbound path regardless of HTTP method.", async () => {

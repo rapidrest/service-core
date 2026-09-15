@@ -26,6 +26,12 @@ import { isBunRuntime } from "./http/RuntimeDetect.js";
 import { SessionManager } from "./http/session/SessionManager.js";
 import { createSessionMiddleware } from "./http/session/sessionMiddleware.js";
 
+/** The metrics label used for every request that didn't match a registered application route. */
+export const UNMATCHED_ROUTE_LABEL = "<unmatched>";
+
+/** Default time `Server.stop()` waits for in-flight requests to finish, in milliseconds (`shutdown:drain_timeout`). */
+export const DEFAULT_DRAIN_TIMEOUT_MS = 10000;
+
 /**
  * The configuration options to use when constructing a new Server instance.
  */
@@ -177,19 +183,22 @@ export class Server {
     ///////////////////////////////////////////////////////////////////////////
     // METRICS VARIABLES
     ///////////////////////////////////////////////////////////////////////////
+    // The `path` label of the request metrics is the matched route pattern (e.g. `/items/:id`), or
+    // `UNMATCHED_ROUTE_LABEL` for a request no route matched - never the raw request path, which a client controls and
+    // which would create a new, never-released time series per distinct URL.
     protected metricRequestPath: prom.Counter<string> = new prom.Counter({
         name: "request_path",
-        help: "A acount of the number of handled requests by the requested path.",
+        help: "A count of the number of handled requests by the matched route pattern.",
         labelNames: ["path"],
     });
     protected metricRequestStatus: prom.Counter<string> = new prom.Counter({
         name: "request_status",
-        help: "A count of the resulting status code of handled requests by the requested method and path.",
+        help: "A count of the resulting status code of handled requests by the requested method and matched route pattern.",
         labelNames: ["method", "path", "statusCode"],
     });
     protected metricRequestTime: prom.Histogram<string> = new prom.Histogram({
         name: "request_time_milliseconds",
-        help: "A histogram of the response time of handled requests by the requested method, path and code.",
+        help: "A histogram of the response time of handled requests by the requested method, matched route pattern and code.",
         labelNames: ["method", "path", "statusCode"],
         buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 5000],
     });
@@ -367,7 +376,7 @@ export class Server {
                         if (allowCredentials) {
                             res.setHeader("access-control-allow-credentials", "true");
                         }
-                        res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS,PUT,POST,DELETE");
+                        res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS,PUT,PATCH,POST,DELETE");
                         res.setHeader("access-control-allow-headers", corsAllowedHeaders);
                     }
                     // A real, app-registered `OPTIONS` route (e.g. an EAS route's `MS-ASProtocolVersions`
@@ -468,87 +477,10 @@ export class Server {
 
                 // Error handling. NOTE: Must be defined last.
                 // 4-param signature signals error handler to runChain
-                this.app.use(((err: any, _req: HttpRequest, res: HttpResponse, next: NextFunction) => {
-                    if (err) {
-                        // Only log 500-level errors. 400-level errors are the client's fault and
-                        // we don't need to spam the logs because of that.
-                        if (!(err instanceof ApiError) || err.status >= 500) {
-                            this.logger.error(err);
-                        } else {
-                            this.logger.debug(err);
-                        }
+                this.app.use(((err: any, req: HttpRequest, res: HttpResponse, next: NextFunction) =>
+                    this.handleError(err, req, res, next)) as any);
 
-                        if (typeof err === "string") {
-                            if (!res.headersSent) {
-                                res.status(500);
-                            }
-                            res.json({ message: "Internal Server Error", status: 500 });
-                        } else if (err instanceof BulkError) {
-                            const errs: (Error | null)[] = err.errors;
-                            if (err.stack && process.env.NODE_ENV !== "development") {
-                                for (const err of errs) {
-                                    if (err) {
-                                        delete err.stack;
-                                    }
-                                }
-                            }
-
-                            if (!res.headersSent) {
-                                res.status(err.status);
-                            }
-
-                            // `Error.message` (and `ApiError`'s own `message`) is non-enumerable, so
-                            // `JSON.stringify` silently drops it unless each error is reconstructed with it
-                            // as an explicit own property first — the same fix the single-error branch below
-                            // already applies.
-                            res.json(errs.map((e) => (e ? { ...e, message: e.message } : e)));
-                        } else {
-                            if (!(err instanceof ApiError)) {
-                                const tmp: ApiError = new ApiError(
-                                    ApiErrors.INTERNAL_ERROR,
-                                    500,
-                                    ApiErrorMessages.INTERNAL_ERROR,
-                                );
-                                tmp.stack = err.stack;
-                                err = tmp;
-                            }
-                            // leverage NODE_ENV or another config?
-                            if (err.stack && process.env.NODE_ENV !== "development") {
-                                delete err.stack;
-                            }
-                            if (!res.headersSent) {
-                                res.status(err.status);
-                            }
-                            const formattedError = {
-                                ...err,
-                                // https://stackoverflow.com/a/25245824
-                                level: err.level ? err.level.replace(/\[.*?m/g, "") : undefined, // eslint-disable-line no-control-regex
-                                message: err.message,
-                            };
-                            res.json(formattedError);
-                        }
-
-                        this.metricFailedRequests.inc(1);
-                    }
-
-                    return next();
-                }) as any);
-
-                this.app.use((req: HttpRequest, res: HttpResponse) => {
-                    const start: number | undefined = (req as any)._metricsStart;
-                    if (start !== undefined) {
-                        this.metricRequestTime
-                            .labels(req.method, req.path, String(res.statusCode))
-                            .observe(Date.now() - start);
-                    }
-                    this.metricRequestPath.labels(req.path).inc();
-                    this.metricRequestStatus.labels(req.method, req.path, String(res.statusCode)).inc();
-                    this.metricTotalRequests.inc(1);
-                    this.metricCompletedRequests.inc(1);
-                    if (!res.writableEnded) {
-                        res.send();
-                    }
-                });
+                this.app.use((req: HttpRequest, res: HttpResponse) => this.recordRequestMetrics(req, res));
 
                 await this.postStart();
 
@@ -565,7 +497,102 @@ export class Server {
     }
 
     /**
-     * Stops the HTTP listen server.
+     * Serializes one error for a client response. An `ApiError` keeps its own fields (`code`, `status`, `message`,
+     * ...). Anything else, such as a raw database driver error carrying the failed SQL `query` and its `parameters`,
+     * is replaced by the generic internal error so none of its details reach the client. Stack traces are never
+     * included.
+     *
+     * @param err The error to serialize.
+     */
+    protected serializeError(err: any): any {
+        if (!(err instanceof ApiError)) {
+            return { code: ApiErrors.INTERNAL_ERROR, status: 500, message: ApiErrorMessages.INTERNAL_ERROR };
+        }
+        const result: any = {
+            ...err,
+            // https://stackoverflow.com/a/25245824
+            level: (err as any).level ? (err as any).level.replace(/\[.*?m/g, "") : undefined,
+            // `Error.message` (and `ApiError`'s own `message`) is non-enumerable, so `JSON.stringify` silently drops
+            // it unless it is copied as an explicit own property.
+            message: err.message,
+        };
+        delete result.stack;
+        return result;
+    }
+
+    /**
+     * The final error handling middleware. Logs the error and sends it to the client as JSON (see `serializeError()`).
+     */
+    protected handleError(err: any, _req: HttpRequest, res: HttpResponse, next: NextFunction): void {
+        if (err) {
+            // Only log 500-level errors. 400-level errors are the client's fault and
+            // we don't need to spam the logs because of that.
+            if (!(err instanceof ApiError) || err.status >= 500) {
+                this.logger.error(err);
+            } else {
+                this.logger.debug(err);
+            }
+
+            if (typeof err === "string") {
+                if (!res.headersSent) {
+                    res.status(500);
+                }
+                res.json({ message: "Internal Server Error", status: 500 });
+            } else if (err instanceof BulkError) {
+                // Log the individual non-ApiError failures, since only a generic error is sent for them.
+                for (const item of err.errors) {
+                    if (item && !(item instanceof ApiError)) {
+                        this.logger.error(item);
+                    }
+                }
+                if (!res.headersSent) {
+                    res.status(err.status);
+                }
+                res.json(err.errors.map((e) => (e ? this.serializeError(e) : e)));
+            } else {
+                if (!res.headersSent) {
+                    res.status(err instanceof ApiError ? err.status : 500);
+                }
+                res.json(this.serializeError(err));
+            }
+
+            this.metricFailedRequests.inc(1);
+        }
+
+        return next();
+    }
+
+    /**
+     * The final middleware of every request: records the request metrics and ends the response if nothing else did.
+     * Metrics are labeled with `req.routePattern` rather than the raw path, so their cardinality is bounded by the
+     * application's routes.
+     */
+    protected recordRequestMetrics(req: HttpRequest, res: HttpResponse): void {
+        const route: string = req.routePattern ?? UNMATCHED_ROUTE_LABEL;
+        const statusCode: string = String(res.statusCode);
+        const start: number | undefined = (req as any)._metricsStart;
+        if (start !== undefined) {
+            this.metricRequestTime.labels(req.method, route, statusCode).observe(Date.now() - start);
+        }
+        this.metricRequestPath.labels(route).inc();
+        this.metricRequestStatus.labels(req.method, route, statusCode).inc();
+        this.metricTotalRequests.inc(1);
+        this.metricCompletedRequests.inc(1);
+        if (!res.writableEnded) {
+            res.send();
+        }
+    }
+
+    /**
+     * Stops the server gracefully:
+     *
+     * 1. Stops all background services.
+     * 2. Stops accepting new connections and waits up to `shutdown:drain_timeout` milliseconds (default 10000) for
+     * in-flight requests to finish, then closes the remaining keep-alive and WebSocket connections.
+     * 3. Destroys the event listener manager, closing its redis subscription.
+     * 4. Closes all database connections.
+     *
+     * The whole sequence is bounded by a 30 second watchdog.
      */
     public stop(): Promise<void> {
         return new Promise(async (resolve, reject) => {
@@ -583,7 +610,25 @@ export class Server {
             this.logger.info("Stopping server...");
             try {
                 if (this.app?.isListening) {
-                    this.app.close();
+                    if (typeof this.app.shutdown === "function") {
+                        const drainTimeout: number = Number(
+                            this.config?.get("shutdown:drain_timeout") ?? DEFAULT_DRAIN_TIMEOUT_MS,
+                        );
+                        this.logger.info("Waiting for in-flight requests to finish...");
+                        await this.app.shutdown(
+                            Number.isFinite(drainTimeout) ? drainTimeout : DEFAULT_DRAIN_TIMEOUT_MS,
+                        );
+                    } else {
+                        this.app.close();
+                    }
+                }
+
+                if (this.eventListenerManager) {
+                    this.logger.info("Stopping event manager...");
+                    // Through the object factory, so the destroyed instance is also dropped from it and a restart
+                    // creates a new one instead of reusing this one's closed redis client.
+                    await this.objectFactory.destroy(this.eventListenerManager);
+                    this.eventListenerManager = undefined;
                 }
 
                 this.logger.info("Closing database connections...");

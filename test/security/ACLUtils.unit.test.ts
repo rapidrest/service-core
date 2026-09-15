@@ -578,3 +578,122 @@ describe("ACLUtils Tests (unit)", () => {
         });
     });
 });
+
+// Reserved code-defined ACL uids, ACL cache invalidation and saveDefaultACL()'s never-null contract.
+describe("ACLUtils ACL ownership and caching (unit)", () => {
+    const withRepo = (fakeRepo: any, cache?: any): any => {
+        const aclUtils = makeAclUtils({
+            enabled: true,
+            connMgr: { connections: new Map([["acl", { getRepository: vi.fn().mockReturnValue(fakeRepo) }]]) },
+        });
+        aclUtils.cache = cache;
+        return aclUtils;
+    };
+
+    it("reserves default_ uids and every uid registered through saveDefaultACL()", async () => {
+        const aclUtils = makeAclUtils({ enabled: true });
+        vi.spyOn(aclUtils, "findACL").mockResolvedValue(undefined);
+        vi.spyOn(aclUtils, "saveACL").mockImplementation(async (acl: any) => acl);
+
+        expect(aclUtils.isReservedUid("MyRoute")).toBe(false);
+        await aclUtils.saveDefaultACL({ uid: "MyRoute", records: [] });
+
+        expect(aclUtils.isReservedUid("MyRoute")).toBe(true);
+        expect(aclUtils.isReservedUid("default_MyRoute")).toBe(true);
+        expect(aclUtils.isReservedUid("default_Unregistered")).toBe(true);
+        expect(aclUtils.isReservedUid("record-1")).toBe(false);
+        expect(aclUtils.isReservedUid(undefined)).toBe(false);
+
+        expect(aclUtils.isProtectedACL({ uid: "X", parentUid: "default_X", records: [] })).toBe(true);
+        expect(aclUtils.isProtectedACL({ uid: "MyRoute", records: [] })).toBe(true);
+        expect(aclUtils.isProtectedACL({ uid: "rec", parentUid: "MyRoute", records: [] })).toBe(false);
+        expect(aclUtils.isProtectedACL(null)).toBe(false);
+    });
+
+    it("saveDefaultACL() recreates a missing user-editable ACL insert-only, and warns about a foreign parent", async () => {
+        const aclUtils = makeAclUtils({ enabled: true });
+        const stored: Record<string, any> = { default_R: { uid: "default_R", version: 2, records: [] } };
+        vi.spyOn(aclUtils, "findACL").mockImplementation(async (uid: string) => stored[uid]);
+        const saveACL = vi.spyOn(aclUtils, "saveACL").mockImplementation(async (acl: any) => acl);
+
+        const result = await aclUtils.saveDefaultACL({ uid: "R", records: [{ userOrRoleId: "a", actions: [] }] });
+        expect(result).toEqual({ uid: "R", parentUid: "default_R", records: [] });
+        expect(saveACL).toHaveBeenCalledWith({ uid: "R", parentUid: "default_R", records: [] }, { createOnly: true });
+        expect(saveACL).toHaveBeenCalledWith(expect.objectContaining({ uid: "default_R", version: 2 }));
+        expect(aclUtils.findACL).toHaveBeenCalledWith("default_R", [], { skipCache: true, skipParents: true });
+
+        stored.R = { uid: "R", parentUid: "SomethingElse", records: [] };
+        saveACL.mockClear();
+        await expect(aclUtils.saveDefaultACL({ uid: "R", records: [] })).resolves.toBe(stored.R);
+        expect(saveACL).not.toHaveBeenCalledWith(expect.objectContaining({ uid: "R" }), { createOnly: true });
+        expect(aclUtils.logger.warn).toHaveBeenCalled();
+    });
+
+    it("invalidateACLs() drops the cached ACLs, and is a no-op without a cache or uids", async () => {
+        const cache = { deleteMany: vi.fn().mockResolvedValue(undefined) };
+        const aclUtils = makeAclUtils({ enabled: true });
+        await aclUtils.invalidateACLs(["a"]);
+        aclUtils.cache = cache;
+        await aclUtils.invalidateACLs([]);
+        expect(cache.deleteMany).not.toHaveBeenCalled();
+        await aclUtils.invalidateACLs(["a", "b"]);
+        expect(cache.deleteMany).toHaveBeenCalledWith(["a", "b"]);
+    });
+
+    it("findACL() ignores a cached entry for another uid, doesn't re-save a hit, and can skip the parent chain", async () => {
+        const fakeRepo: any = {
+            findOne: vi.fn(async (q: any) => ({ uid: q.where.uid, parentUid: "parent", records: [] })),
+        };
+        const cache: any = {
+            load: vi.fn().mockResolvedValue({ uid: "someone-else", records: [] }),
+            save: vi.fn().mockResolvedValue(undefined),
+        };
+        const aclUtils = withRepo(fakeRepo, cache);
+
+        const acl = await aclUtils.findACL("wanted", [], { skipParents: true });
+        expect(acl.uid).toBe("wanted");
+        expect(acl.parent).toBeUndefined();
+        expect(fakeRepo.findOne).toHaveBeenCalledTimes(1);
+        expect(cache.save).toHaveBeenCalledTimes(1);
+
+        cache.load = vi.fn(async (uid: string) => ({ uid, records: [] }));
+        cache.save.mockClear();
+        await aclUtils.findACL("wanted");
+        expect(cache.save).not.toHaveBeenCalled();
+    });
+
+    it("removeACL() with unlessProtected leaves a reserved or default-shaped ACL in place", async () => {
+        const fakeRepo: any = {
+            findOne: vi.fn().mockResolvedValue({ uid: "R2", parentUid: "default_R2", records: [] }),
+            delete: vi.fn(),
+        };
+        const aclUtils = withRepo(fakeRepo);
+
+        await expect(aclUtils.removeACL("default_R2", { unlessProtected: true })).resolves.toBeUndefined();
+        expect(fakeRepo.findOne).not.toHaveBeenCalled();
+
+        await expect(aclUtils.removeACL("R2", { unlessProtected: true })).resolves.toBeUndefined();
+        expect(fakeRepo.delete).not.toHaveBeenCalled();
+
+        await expect(aclUtils.removeACL("R2")).resolves.toMatchObject({ uid: "R2" });
+        expect(fakeRepo.delete).toHaveBeenCalledWith({ uid: "R2" });
+
+        const removeACL = vi.spyOn(aclUtils, "removeACL").mockResolvedValue(undefined);
+        await aclUtils.removeACLs(["a"], { unlessProtected: true });
+        expect(removeACL).toHaveBeenCalledWith("a", { unlessProtected: true });
+    });
+
+    it("removeACL() with unlessProtected makes the parent condition part of the atomic MongoDB delete", async () => {
+        const fakeRepo: any = Object.create(MongoRepository.prototype);
+        fakeRepo.findOneAndDelete = vi.fn().mockResolvedValue(null);
+        const conn: any = Object.create(MongoConnection.prototype);
+        conn.getRepository = vi.fn().mockReturnValue(fakeRepo);
+        const aclUtils = makeAclUtils({ enabled: true, connMgr: { connections: new Map([["acl", conn]]) } });
+
+        await aclUtils.removeACL("rec-1", { unlessProtected: true });
+        expect(fakeRepo.findOneAndDelete.mock.calls[0][0]).toEqual({
+            uid: "rec-1",
+            parentUid: { $ne: "default_rec-1" },
+        });
+    });
+});

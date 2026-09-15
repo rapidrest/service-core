@@ -6,7 +6,7 @@ import { createWebSocketStream, UWSWebSocketShim } from "../../../src/http/uWS/W
 
 function makeFakeWs(overrides: Partial<{ send: any; end: any }> = {}) {
     return {
-        send: vi.fn().mockReturnValue(true),
+        send: vi.fn().mockReturnValue(1),
         end: vi.fn(),
         ...overrides,
     };
@@ -30,12 +30,20 @@ describe("UWSWebSocketShim Tests", () => {
             expect(ws.send).toHaveBeenCalledWith(Buffer.from(new Uint8Array([1, 2, 3])), true);
         });
 
-        it("invokes cb with an error when the underlying send reports backpressure failure", () => {
-            const ws = makeFakeWs({ send: vi.fn().mockReturnValue(false) });
+        it("invokes cb with an error only when uWS reports the message as dropped (2)", () => {
+            const ws = makeFakeWs({ send: vi.fn().mockReturnValue(2) });
             const shim = new UWSWebSocketShim(ws as any);
             const cb = vi.fn();
             shim.send("hello", cb);
             expect(cb).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("does not report an error when uWS queued the message under backpressure (0)", () => {
+            const ws = makeFakeWs({ send: vi.fn().mockReturnValue(0) });
+            const shim = new UWSWebSocketShim(ws as any);
+            const cb = vi.fn();
+            shim.send("hello", cb);
+            expect(cb).toHaveBeenCalledWith(undefined);
         });
 
         it("does not throw when no cb is provided and send succeeds", () => {

@@ -6,7 +6,7 @@ import { ApiErrorMessages, ApiErrors } from "../../../src/ApiErrors";
 import { DEFAULT_MAX_BODY_SIZE } from "../../../src/http/uWS/Adapters";
 import { BunRouter } from "../../../src/http/bun/BunRouter";
 import { BunResponse } from "../../../src/http/bun/BunAdapters";
-import type { RequestHandler } from "../../../src/http/types";
+import { DEFAULT_WS_OPTIONS, type RequestHandler } from "../../../src/http/types";
 
 function makeServer(overrides: Partial<{ requestIP: any; upgrade: any }> = {}) {
     return {
@@ -758,5 +758,205 @@ describe("BunRouter.listen / close / SSL mapping (globalThis.Bun stubbed)", () =
         const router = new BunRouter();
         expect(() => router.close()).not.toThrow();
         expect(router.isListening).toBe(false);
+    });
+});
+
+describe("BunRouter route patterns, WebSocket options and shutdown", () => {
+    it("routes PUT, DELETE and PATCH requests to their registered handlers with the route pattern", async () => {
+        const router = new BunRouter();
+        const seen: string[] = [];
+        const handler: RequestHandler = (req, res) => {
+            seen.push(`${req.method} ${req.routePattern}`);
+            res.json({});
+        };
+        router.put("/things/:id", handler);
+        router.delete("/things/:id", handler);
+        router.patch("/things/:id", handler);
+        for (const method of ["PUT", "DELETE", "PATCH"]) {
+            const res = await dispatch(router, new Request("http://localhost/things/1", { method }));
+            expect(res!.status).toBe(200);
+        }
+        expect(seen).toEqual(["PUT /things/:id", "DELETE /things/:id", "PATCH /things/:id"]);
+    });
+
+    let originalBun: any;
+
+    beforeEach(() => {
+        originalBun = (globalThis as any).Bun;
+    });
+
+    afterEach(() => {
+        (globalThis as any).Bun = originalBun;
+    });
+
+    function stubBun(server: any = { port: 1, stop: vi.fn() }) {
+        const serveSpy = vi.fn().mockReturnValue(server);
+        (globalThis as any).Bun = { serve: serveSpy, file: vi.fn() };
+        return serveSpy;
+    }
+
+    it("exposes the registered route pattern as req.routePattern, and none for the not-found fallback", async () => {
+        stubBun();
+        const router = new BunRouter();
+        const patterns: any[] = [];
+        router.get("/items/:id", (req, res) => {
+            patterns.push(req.routePattern);
+            res.json({});
+        });
+        router.use(((err: any, req: any, res: any, _next: any) => {
+            patterns.push(req.routePattern);
+            res.status(err.status).json({});
+        }) as any);
+        await router.listen("127.0.0.1", 0);
+
+        await dispatch(router, new Request("http://localhost/items/abc"));
+        const notFound = await dispatch(router, new Request("http://localhost/random-path-1234"));
+        const headNotFound = await dispatch(router, new Request("http://localhost/random", { method: "HEAD" }));
+
+        expect(notFound!.status).toBe(404);
+        expect(headNotFound!.status).toBe(404);
+        expect(patterns).toEqual(["/items/:id", undefined, undefined]);
+    });
+
+    it("sets req.routePattern and the route's payload limit on an upgraded WebSocket", async () => {
+        const router = new BunRouter();
+        router.ws("/push/:channel", [(_req, _res, next) => next()], { maxPayloadLength: 99 });
+        const server = makeServer();
+        await dispatch(router, new Request("http://localhost/push/abc", { headers: { upgrade: "websocket" } }), server);
+
+        const data = server.upgrade.mock.calls[0][1].data;
+        expect(data.req.routePattern).toBe("/push/:channel");
+        expect(data.maxPayloadLength).toBe(99);
+    });
+
+    it("configures Bun.serve() with the uWS defaults when no WebSocket route overrides them", async () => {
+        const serveSpy = stubBun();
+        const router = new BunRouter();
+        router.ws("/chat", []);
+        await router.listen("127.0.0.1", 0);
+
+        const websocket = serveSpy.mock.calls[0][0].websocket;
+        expect(websocket.maxPayloadLength).toBe(DEFAULT_WS_OPTIONS.maxPayloadLength);
+        expect(websocket.idleTimeout).toBe(DEFAULT_WS_OPTIONS.idleTimeout);
+        expect(websocket.backpressureLimit).toBe(DEFAULT_WS_OPTIONS.maxBackpressure);
+        expect(typeof websocket.open).toBe("function");
+    });
+
+    it("uses the defaults without any WebSocket route, and the largest limits across routes otherwise", async () => {
+        let serveSpy = stubBun();
+        await new BunRouter().listen("127.0.0.1", 0);
+        expect(serveSpy.mock.calls[0][0].websocket.maxPayloadLength).toBe(DEFAULT_WS_OPTIONS.maxPayloadLength);
+
+        serveSpy = stubBun();
+        const router = new BunRouter();
+        router.ws("/small", [], { maxPayloadLength: 10, idleTimeout: 30, maxBackpressure: 100 });
+        router.ws("/large", [], { maxPayloadLength: 1_000_000, idleTimeout: 200, maxBackpressure: 5_000 });
+        await router.listen("127.0.0.1", 0);
+        let websocket = serveSpy.mock.calls[0][0].websocket;
+        expect(websocket.maxPayloadLength).toBe(1_000_000);
+        expect(websocket.idleTimeout).toBe(200);
+        expect(websocket.backpressureLimit).toBe(5_000);
+
+        serveSpy = stubBun();
+        const disabled = new BunRouter();
+        disabled.ws("/a", [], { idleTimeout: 60 });
+        disabled.ws("/b", [], { idleTimeout: 0 });
+        await disabled.listen("127.0.0.1", 0);
+        websocket = serveSpy.mock.calls[0][0].websocket;
+        expect(websocket.idleTimeout).toBe(0);
+    });
+
+    it("closes a socket with 1009 when a message exceeds its route's maxPayloadLength", () => {
+        const router = new BunRouter();
+        const shim = { emit: vi.fn() };
+        const ws: any = { data: { req: {}, handlers: [], shim, maxPayloadLength: 4 }, close: vi.fn() };
+
+        (router as any).websocketConfig.message(ws, "12345");
+        (router as any).websocketConfig.message(ws, Buffer.from("123456"));
+        expect(ws.close).toHaveBeenCalledTimes(2);
+        expect(ws.close).toHaveBeenCalledWith(1009, "Message too big");
+        expect(shim.emit).not.toHaveBeenCalled();
+
+        (router as any).websocketConfig.message(ws, "1234");
+        expect(shim.emit).toHaveBeenCalledWith("message", "1234", false);
+
+        ws.close = vi.fn(() => {
+            throw new Error("already closed");
+        });
+        expect(() => (router as any).websocketConfig.message(ws, new ArrayBuffer(8))).not.toThrow();
+    });
+
+    it("shutdown() stops accepting, waits for in-flight requests, then force-closes the rest", async () => {
+        const stop = vi.fn().mockResolvedValue(undefined);
+        stubBun({ port: 1, stop });
+        const router = new BunRouter();
+        let release!: () => void;
+        router.get("/slow", async (_req, res) => {
+            await new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            res.json({ done: true });
+        });
+        await router.listen("127.0.0.1", 0);
+
+        const pending = dispatch(router, new Request("http://localhost/slow"));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(router.inFlightRequests).toBe(1);
+
+        let finished = false;
+        const shutdown = router.shutdown(5000).then(() => {
+            finished = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(stop).toHaveBeenCalledWith(false);
+        expect(stop).not.toHaveBeenCalledWith(true);
+        expect(finished).toBe(false);
+        expect(router.isListening).toBe(false);
+
+        release();
+        const res = await pending;
+        await shutdown;
+        expect(await res!.json()).toEqual({ done: true });
+        expect(router.inFlightRequests).toBe(0);
+        expect(stop).toHaveBeenCalledWith(true);
+    });
+
+    it("shutdown() gives up waiting after the timeout, tolerates stop() failures, and is a no-op when not listening", async () => {
+        const stop = vi.fn((_force: boolean) => Promise.reject(new Error("boom")));
+        stubBun({ port: 1, stop });
+        const router = new BunRouter();
+        router.get("/hang", () => new Promise<void>(() => undefined));
+        await router.listen("127.0.0.1", 0);
+        void dispatch(router, new Request("http://localhost/hang"));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        await expect(router.shutdown(20)).resolves.toBeUndefined();
+        expect(stop).toHaveBeenCalledWith(true);
+        await expect(router.shutdown(20)).resolves.toBeUndefined();
+        expect(stop).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not count a request rejected for an oversized body or a failing body read as in flight", async () => {
+        const router = new BunRouter(4);
+        router.post("/upload", (_req, res) => res.json({}));
+
+        const tooLarge = await dispatch(
+            router,
+            new Request("http://localhost/upload", { method: "POST", body: "0123456789" }),
+        );
+        expect(tooLarge!.status).toBe(413);
+        expect(router.inFlightRequests).toBe(0);
+
+        const broken = new Request("http://localhost/upload", {
+            method: "POST",
+            body: new ReadableStream({
+                pull(controller) {
+                    controller.error(new Error("socket reset"));
+                },
+            }),
+            duplex: "half",
+        } as any);
+        await expect(dispatch(router, broken)).rejects.toThrow("socket reset");
+        expect(router.inFlightRequests).toBe(0);
     });
 });

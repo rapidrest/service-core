@@ -4,7 +4,15 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { default as config } from "../config";
 import { request } from "../../src/test/request.js";
-import { Server, ConnectionManager, ObjectFactory, MongoConnection, MongoRepository, isSqlDataSource } from "../../src";
+import {
+    ApiErrors,
+    Server,
+    ConnectionManager,
+    ObjectFactory,
+    MongoConnection,
+    MongoRepository,
+    isSqlDataSource,
+} from "../../src";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import User from "../server/models/User";
 import { Logger } from "@rapidrest/core";
@@ -545,6 +553,33 @@ describe("ModelRoute Tests [MongoDB]", () => {
                     }
                 }
             }
+        });
+
+        it("Rejects a bulk create that fails validation with per-object reasons. [MongoDB]", async () => {
+            const valid: User = new User({
+                name: "bulkvalid",
+                firstName: "David",
+                lastName: "Tennant",
+                age: 47,
+                password: "password",
+            });
+            const invalid: User = new User({
+                name: "not a valid name!",
+                firstName: "Bad",
+                lastName: "Name",
+                age: 1,
+                password: "password",
+            });
+            const result = await request(server).post("/users").send([valid, invalid]);
+            expect(result.status).toBe(400);
+            expect(result.body).toHaveLength(2);
+            expect(result.body[0]).toBeNull();
+            expect(result.body[1].status).toBe(400);
+            expect(result.body[1].code).toBe(ApiErrors.INVALID_REQUEST);
+            expect(result.body[1].message).toContain("Value is not a name");
+
+            const stored: User[] = await repo.find({ uid: { $in: [valid.uid, invalid.uid] } } as any).toArray();
+            expect(stored).toHaveLength(0);
         });
 
         it("Cannot create documents in bulk with same name. [MongoDB]", async () => {

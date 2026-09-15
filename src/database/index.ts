@@ -1,5 +1,6 @@
 export * from "./ConnectionKinds.js";
 export * from "./ConnectionManager.js";
+export * from "./DatabaseErrors.js";
 export * from "./MongoConnection.js";
 export * from "./MongoRepository.js";
 export * from "./MongoSchemaSync.js";

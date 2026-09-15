@@ -187,6 +187,19 @@ describe("JWTStrategy session updates", () => {
         expect(req.session.lastLogin).toBe(req.session.lastAccess);
     });
 
+    it("leaves a new, cookie-less session untouched so it is never persisted (async and sync)", async () => {
+        const strategy = makeStrategy();
+        const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });
+        const asyncReq = makeReq({ headers: { authorization: `jwt ${token}` }, session: {}, sessionIsNew: true });
+        const syncReq = makeReq({ headers: { authorization: `jwt ${token}` }, session: {}, sessionIsNew: true });
+
+        expect((await strategy.authenticate(asyncReq, {} as any))?.user?.uid).toBe("u1");
+        expect(strategy.authenticateSync(syncReq, {} as any)?.user?.uid).toBe("u1");
+
+        expect(asyncReq.session).toEqual({});
+        expect(syncReq.session).toEqual({});
+    });
+
     it("populates ip, lastAccess and userUid on the session (sync)", () => {
         const strategy = makeStrategy();
         const token = JWTUtils.createTokenSync(authConfig, { uid: "u1" });

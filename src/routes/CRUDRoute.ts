@@ -24,6 +24,7 @@ import {
 import { ModelRoute, type UpdateObject } from "./ModelRoute.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { Transactional } from "../decorators/DatabaseDecorators.js";
+import { BulkError } from "../BulkError.js";
 
 /**
  * The `CRUDRoute` provides a base implementation of all CRUD endpoint behaviors that `ModelRoute` offers for a given
@@ -79,17 +80,43 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     }
 
     private async validateCreateBulk(objs: Partial<T> | Partial<T>[], @User user?: JWTUser) {
-        objs = Array.isArray(objs) ? objs : [objs];
-
-        const promises: Promise<void>[] = [];
-        for (const obj of objs) {
-            promises.push(this.validateCreate(obj, user));
+        if (!Array.isArray(objs)) {
+            try {
+                await this.validateCreate(objs, user);
+            } catch (err) {
+                throw CRUDRoute.toValidationError(err);
+            }
+            return;
         }
 
-        const result = await Promise.allSettled(promises);
-        const errors = result.filter((p) => p.status === "rejected").map((r) => r.reason);
-        if (errors.length > 0) {
-            throw new ApiError(ApiErrors.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
+        const result = await Promise.allSettled(objs.map((obj) => this.validateCreate(obj, user)));
+        CRUDRoute.throwBulkValidationErrors(
+            result,
+            ApiErrors.BULK_CREATE_FAILURE,
+            ApiErrorMessages.BULK_CREATE_FAILURE,
+        );
+    }
+
+    /**
+     * Returns `err` if it is an `ApiError`, otherwise a generic `INVALID_REQUEST` error. A validator's `ApiError` is
+     * meant for the client, but any other error (e.g. a driver error from a custom validator) may expose internals.
+     */
+    private static toValidationError(err: unknown): ApiError {
+        return err instanceof ApiError
+            ? err
+            : new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+    }
+
+    /**
+     * Throws a `BulkError` when at least one object in a bulk request failed validation. The `BulkError` holds one
+     * entry per object, in request order: `null` for an object that passed, otherwise the reason it failed.
+     */
+    private static throwBulkValidationErrors(results: PromiseSettledResult<void>[], code: string, message: string) {
+        if (results.some((r) => r.status === "rejected")) {
+            const errors: (ApiError | null)[] = results.map((r) =>
+                r.status === "rejected" ? CRUDRoute.toValidationError(r.reason) : null,
+            );
+            throw new BulkError(errors, code, 400, message);
         }
     }
 
@@ -183,16 +210,12 @@ export abstract class CRUDRoute<T extends BaseEntity | SimpleEntity> extends Mod
     }
 
     private async validateUpdateBulk(objs: UpdateObject<T>[], @User user?: JWTUser) {
-        const promises: Promise<void>[] = [];
-        for (const obj of objs) {
-            promises.push(this.validateUpdate(obj.uid, obj, user));
-        }
-
-        const result = await Promise.allSettled(promises);
-        const errors = result.filter((p) => p.status === "rejected").map((r) => r.reason);
-        if (errors.length > 0) {
-            throw new ApiError(ApiErrors.BULK_UPDATE_FAILURE, 400, ApiErrorMessages.BULK_UPDATE_FAILURE);
-        }
+        const result = await Promise.allSettled(objs.map((obj) => this.validateUpdate(obj.uid, obj, user)));
+        CRUDRoute.throwBulkValidationErrors(
+            result,
+            ApiErrors.BULK_UPDATE_FAILURE,
+            ApiErrorMessages.BULK_UPDATE_FAILURE,
+        );
     }
 
     @Summary("Update {{model}}s in bulk")

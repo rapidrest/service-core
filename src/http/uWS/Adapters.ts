@@ -15,6 +15,7 @@ export function parseCookies(cookieHeader: string): Record<string, string> {
         if (idx < 0) continue;
         const key = part.slice(0, idx).trim();
         const val = part.slice(idx + 1).trim();
+        if (key === "__proto__") continue;
         try {
             result[key] = decodeURIComponent(val);
         } catch {
@@ -28,32 +29,46 @@ export function parseCookies(cookieHeader: string): Record<string, string> {
     return result;
 }
 
-/** Parses a URL query string (without leading `?`) into a key/value map. */
+/**
+ * Parses a URL query string (without leading `?`) into a key/value map. A key given more than once becomes an array
+ * of its values.
+ *
+ * The result is a plain object, so spreading it and calling `Object.prototype` methods through it behave as usual.
+ * Only own properties are considered when detecting a repeated key, so a key like `hasOwnProperty` or `constructor`
+ * is stored as a normal value instead of being merged with the inherited function. `__proto__` keys are dropped:
+ * assigning one would replace the object's prototype, and even as an own property it would do so again when the
+ * object is later copied with `Object.assign()` or a deep merge.
+ */
 export function parseQueryString(qs: string): Record<string, string | string[]> {
     const result: Record<string, string | string[]> = {};
     if (!qs) return result;
     for (const part of qs.split("&")) {
         const idx = part.indexOf("=");
+        let key: string;
+        let val: string;
         if (idx < 0) {
-            let key: string;
             try {
                 key = decodeURIComponent(part);
             } catch {
                 key = part;
             }
-            result[key] = "";
+            val = "";
+        } else {
+            try {
+                key = decodeURIComponent(part.slice(0, idx));
+                val = decodeURIComponent(part.slice(idx + 1));
+            } catch {
+                key = part.slice(0, idx);
+                val = part.slice(idx + 1);
+            }
+        }
+        if (key === "__proto__") {
             continue;
         }
-        let key: string;
-        let val: string;
-        try {
-            key = decodeURIComponent(part.slice(0, idx));
-            val = decodeURIComponent(part.slice(idx + 1));
-        } catch {
-            key = part.slice(0, idx);
-            val = part.slice(idx + 1);
-        }
-        if (key in result) {
+        if (idx < 0) {
+            // A bare key (no `=`) sets an empty value, replacing any previous value.
+            result[key] = val;
+        } else if (Object.prototype.hasOwnProperty.call(result, key)) {
             const existing = result[key];
             result[key] = Array.isArray(existing) ? [...existing, val] : [existing, val];
         } else {

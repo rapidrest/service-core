@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import jwt from "jsonwebtoken";
 import { AuthMiddleware } from "../../src/auth/AuthMiddleware";
+import { JWTStrategy } from "../../src/auth/JWTStrategy";
 import type { AuthResult, AuthStrategy } from "../../src/auth/AuthStrategy";
 import { JWTUtils } from "@rapidrest/core";
 import config from "../config";
@@ -15,6 +16,23 @@ import config from "../config";
 function makeNoUidToken(): string {
     const authConfig = config.get("auth");
     return jwt.sign({ profile: JSON.stringify({ name: "no-uid" }) }, authConfig.secret, authConfig.options);
+}
+
+/** Creates an AuthMiddleware with a real JWTStrategy registered under `jwt`, like `Server` does from config. */
+function makeJwtMiddleware(): AuthMiddleware {
+    const mw = new AuthMiddleware();
+    (mw as any).authConfig = config.get("auth");
+    const jwtStrategy: any = new JWTStrategy();
+    jwtStrategy.config = config.get("auth");
+    mw.register("jwt", jwtStrategy);
+    return mw;
+}
+
+/** Lets pending promise callbacks (async strategy verification) run. */
+async function flush(): Promise<void> {
+    for (let i = 0; i < 10; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+    }
 }
 
 function makeStrategy(overrides: Partial<AuthStrategy> = {}): AuthStrategy {
@@ -108,6 +126,31 @@ describe("AuthMiddleware.authenticate (async)", () => {
             "Authentication failed.",
         );
     });
+
+    it("tries the next strategy when an earlier one throws, e.g. jwt rejecting an OAuth bearer token", async () => {
+        const mw = makeJwtMiddleware();
+        const result: AuthResult = { method: "oauth_bearer", user: { uid: "u2" } as any };
+        mw.register("oauth_bearer", makeStrategy({ authenticate: vi.fn().mockResolvedValue(result) }));
+        const req: any = { headers: { authorization: "Bearer opaque-oauth-access-token" }, query: {}, cookies: {} };
+        await expect(mw.authenticate(["jwt", "oauth_bearer"], req, undefined, true)).resolves.toBe(result);
+    });
+
+    it("rethrows the first strategy error when every strategy fails, even when not required", async () => {
+        const mw = new AuthMiddleware();
+        const first = new Error("first");
+        mw.register("first", makeStrategy({ authenticate: vi.fn().mockRejectedValue(first) }));
+        mw.register("second", makeStrategy({ authenticate: vi.fn().mockRejectedValue(new Error("second")) }));
+        mw.register("third", makeStrategy());
+        await expect(mw.authenticate(["first", "second", "third"], {} as any)).rejects.toBe(first);
+        await expect(mw.authenticate(["first", "third"], {} as any, undefined, true)).rejects.toBe(first);
+    });
+
+    it("still rejects a genuinely invalid bearer token when every strategy fails", async () => {
+        const mw = makeJwtMiddleware();
+        mw.register("oauth_bearer", makeStrategy());
+        const req: any = { headers: { authorization: "Bearer not-a-valid-token" }, query: {}, cookies: {} };
+        await expect(mw.authenticate(["jwt", "oauth_bearer"], req, undefined, true)).rejects.toThrow();
+    });
 });
 
 describe("AuthMiddleware.authenticateSync", () => {
@@ -138,6 +181,35 @@ describe("AuthMiddleware.authenticateSync", () => {
         expect(() => mw.authenticateSync(["first", "second"], {} as any, undefined, true)).toThrow(
             "Authentication failed.",
         );
+    });
+
+    it("tries the next strategy when an earlier one throws", () => {
+        const mw = new AuthMiddleware();
+        const result: AuthResult = { method: "second", user: { uid: "u2" } as any };
+        mw.register(
+            "first",
+            makeStrategy({
+                authenticateSync: vi.fn(() => {
+                    throw new Error("first");
+                }),
+            }),
+        );
+        mw.register("second", makeStrategy({ authenticateSync: vi.fn().mockReturnValue(result) }));
+        expect(mw.authenticateSync(["first", "second"], {} as any, undefined, true)).toBe(result);
+    });
+
+    it("rethrows the first strategy error when every strategy fails", () => {
+        const mw = new AuthMiddleware();
+        mw.register(
+            "first",
+            makeStrategy({
+                authenticateSync: vi.fn(() => {
+                    throw new Error("first");
+                }),
+            }),
+        );
+        mw.register("second", makeStrategy());
+        expect(() => mw.authenticateSync(["first", "second"], {} as any)).toThrow("first");
     });
 });
 
@@ -183,9 +255,8 @@ describe("AuthMiddleware.authWebSocket", () => {
         expect(next).toHaveBeenCalledWith();
     });
 
-    it("completes the LOGIN handshake successfully", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+    it("completes the LOGIN handshake successfully", async () => {
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(true);
         const next = vi.fn();
         const sock = makeSocket();
@@ -194,15 +265,15 @@ describe("AuthMiddleware.authWebSocket", () => {
 
         const token = JWTUtils.createTokenSync(config.get("auth"), { uid: "u1" });
         sock.emit("message", JSON.stringify({ id: 0, type: "LOGIN", data: token }), false);
+        await flush();
 
         expect(sock.send).toHaveBeenCalledWith(JSON.stringify({ id: 0, type: "LOGIN_RESPONSE", success: true }));
         expect(req.user.uid).toBe("u1");
         expect(next).toHaveBeenCalledWith();
     });
 
-    it("rejects an invalid LOGIN token when required", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+    it("rejects an invalid LOGIN token when required", async () => {
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(true);
         const next = vi.fn();
         const sock = makeSocket();
@@ -210,14 +281,14 @@ describe("AuthMiddleware.authWebSocket", () => {
         handler(req, {} as any, next);
 
         sock.emit("message", JSON.stringify({ id: 0, type: "LOGIN", data: "not-a-real-token" }), false);
+        await flush();
 
         expect(sock.close).toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
 
-    it("rejects a LOGIN token that decodes but has no uid, when auth is required", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+    it("rejects a LOGIN token that decodes but has no uid, when auth is required", async () => {
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(true);
         const next = vi.fn();
         const sock = makeSocket();
@@ -225,15 +296,15 @@ describe("AuthMiddleware.authWebSocket", () => {
         handler(req, {} as any, next);
 
         sock.emit("message", JSON.stringify({ id: 0, type: "LOGIN", data: makeNoUidToken() }), false);
+        await flush();
 
         expect(sock.close).toHaveBeenCalled();
         expect(sock.send).toHaveBeenCalledWith(expect.stringContaining('"type":"LOGIN_RESPONSE"'));
         expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
 
-    it("responds without closing when a LOGIN token decodes but has no uid, and auth is not required", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+    it("responds without closing when a LOGIN token decodes but has no uid, and auth is not required", async () => {
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(false);
         const next = vi.fn();
         const sock = makeSocket();
@@ -241,6 +312,7 @@ describe("AuthMiddleware.authWebSocket", () => {
         handler(req, {} as any, next);
 
         sock.emit("message", JSON.stringify({ id: 0, type: "LOGIN", data: makeNoUidToken() }), false);
+        await flush();
 
         expect(sock.close).not.toHaveBeenCalled();
         expect(sock.send).toHaveBeenCalledWith(
@@ -255,8 +327,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     });
 
     it("closes the socket for a non-LOGIN message when required", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(true);
         const next = vi.fn();
         const sock = makeSocket();
@@ -270,8 +341,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     });
 
     it("calls next() for a non-LOGIN message when not required", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(false);
         const next = vi.fn();
         const sock = makeSocket();
@@ -285,8 +355,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     });
 
     it("closes the socket when the incoming message is not valid JSON and auth is required", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(true);
         const next = vi.fn();
         const sock = makeSocket();
@@ -300,8 +369,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     });
 
     it("calls next() when the incoming message is not valid JSON and auth is not required", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(false);
         const next = vi.fn();
         const sock = makeSocket();
@@ -315,8 +383,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     });
 
     it("resolves via next() when the socket closes before authentication completes", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(true);
         const next = vi.fn();
         const sock = makeSocket();
@@ -329,8 +396,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     });
 
     it("ignores a second settle trigger after the first one (e.g. close after message)", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(false);
         const next = vi.fn();
         const sock = makeSocket();
@@ -347,8 +413,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     });
 
     it("falls back to req.socket when req.websocket is not set", () => {
-        const mw = new AuthMiddleware();
-        (mw as any).authConfig = config.get("auth");
+        const mw = makeJwtMiddleware();
         const handler = mw.authWebSocket(false);
         const next = vi.fn();
         const sock = makeSocket();
@@ -363,8 +428,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     it("times out and calls next() with an error when required and no message arrives", async () => {
         vi.useFakeTimers();
         try {
-            const mw = new AuthMiddleware();
-            (mw as any).authConfig = config.get("auth");
+            const mw = makeJwtMiddleware();
             (mw as any).authSocketTimeout = 10;
             const handler = mw.authWebSocket(true);
             const next = vi.fn();
@@ -384,8 +448,7 @@ describe("AuthMiddleware.authWebSocket", () => {
     it("times out and calls next() with no error when not required", async () => {
         vi.useFakeTimers();
         try {
-            const mw = new AuthMiddleware();
-            (mw as any).authConfig = config.get("auth");
+            const mw = makeJwtMiddleware();
             (mw as any).authSocketTimeout = 10;
             const handler = mw.authWebSocket(false);
             const next = vi.fn();
@@ -400,6 +463,211 @@ describe("AuthMiddleware.authWebSocket", () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    describe("route strategies", () => {
+        /** An async-only strategy like `@rapidrest/auth`'s OAuthBearerStrategy. */
+        function makeBearerStrategy(validTokens: string[]): AuthStrategy {
+            return {
+                name: "oauth_bearer",
+                authenticate: vi.fn(async (req: any) => {
+                    const header: string | undefined = req.headers?.authorization;
+                    const token = header?.startsWith("Bearer ") ? header.substring(7) : undefined;
+                    return token && validTokens.includes(token)
+                        ? { method: "oauth_bearer", data: token, user: { uid: "bearer-user" } as any }
+                        : undefined;
+                }),
+                authenticateSync: vi.fn(() => {
+                    throw new Error("Not supported. This auth strategy must be used asynchronously.");
+                }),
+            };
+        }
+
+        it("verifies a LOGIN token through the route's async-only strategy", async () => {
+            const mw = makeJwtMiddleware();
+            mw.register("oauth_bearer", makeBearerStrategy(["good-token"]));
+            const handler = mw.authWebSocket(true, ["oauth_bearer"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock });
+            handler(req, {} as any, next);
+            await flush();
+
+            sock.emit("message", JSON.stringify({ id: 1, type: "LOGIN", data: "good-token" }), false);
+            await flush();
+
+            expect(sock.send).toHaveBeenCalledWith(JSON.stringify({ id: 1, type: "LOGIN_RESPONSE", success: true }));
+            expect(req.user.uid).toBe("bearer-user");
+            expect(req.auth.method).toBe("oauth_bearer");
+            expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+        });
+
+        it("does not accept a token that is only valid for the raw auth config on an oauth_bearer route", async () => {
+            // The old LOGIN path decoded the token with the `auth` config directly, bypassing the route's
+            // strategy (and so e.g. its revocation denylist) whenever auth was optional.
+            const mw = makeJwtMiddleware();
+            mw.register("oauth_bearer", makeBearerStrategy([]));
+            const handler = mw.authWebSocket(false, ["oauth_bearer"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock });
+            handler(req, {} as any, next);
+
+            const token = JWTUtils.createTokenSync(config.get("auth"), { uid: "u1" });
+            sock.emit("message", JSON.stringify({ id: 2, type: "LOGIN", data: token }), false);
+            await flush();
+
+            expect(req.user).toBeUndefined();
+            expect(sock.close).not.toHaveBeenCalled();
+            expect(sock.send).toHaveBeenCalledWith(expect.stringContaining('"success":false'));
+            expect(next).toHaveBeenCalledWith();
+        });
+
+        it("authenticates the upgrade request's own header with an async-only strategy, without a LOGIN", async () => {
+            const mw = new AuthMiddleware();
+            mw.register("oauth_bearer", makeBearerStrategy(["header-token"]));
+            const handler = mw.authWebSocket(true, ["oauth_bearer"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock, headers: { authorization: "Bearer header-token" } });
+            handler(req, {} as any, next);
+            await flush();
+
+            expect(req.user.uid).toBe("bearer-user");
+            expect(sock.close).not.toHaveBeenCalled();
+            expect(next).toHaveBeenCalledWith();
+        });
+
+        it("closes the connection when the upgrade request's credential is invalid and auth is required", async () => {
+            const mw = makeJwtMiddleware();
+            const handler = mw.authWebSocket(true, ["jwt"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock, headers: { authorization: "Bearer not-a-real-token" } });
+            handler(req, {} as any, next);
+            await flush();
+
+            expect(sock.close).toHaveBeenCalledWith(1002, expect.any(String));
+            expect(next).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("keeps waiting for a message when the upgrade request's credential is invalid and auth is optional", async () => {
+            const mw = makeJwtMiddleware();
+            const handler = mw.authWebSocket(false, ["jwt"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock, headers: { authorization: "Bearer not-a-real-token" } });
+            handler(req, {} as any, next);
+            await flush();
+            expect(next).not.toHaveBeenCalled();
+
+            sock.emit("message", JSON.stringify({ id: 0, type: "PING" }), false);
+            expect(sock.close).not.toHaveBeenCalled();
+            expect(next).toHaveBeenCalledWith();
+        });
+
+        it("verifies only the LOGIN token, not a query token from the upgrade request", async () => {
+            const mw = makeJwtMiddleware();
+            const handler = mw.authWebSocket(true, ["jwt"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock, cookies: {}, query: {} });
+            handler(req, {} as any, next);
+            await flush();
+
+            // The test config sets `allowQueryParam`, and a query token takes precedence over the Authorization
+            // header in JWTStrategy. It must not be used in place of the LOGIN message's token.
+            req.query = { auth_token: JWTUtils.createTokenSync(config.get("auth"), { uid: "query-user" }) };
+            sock.emit("message", JSON.stringify({ id: 3, type: "LOGIN", data: "not-a-real-token" }), false);
+            await flush();
+
+            expect(req.user).toBeUndefined();
+            expect(sock.close).toHaveBeenCalled();
+            expect(next).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("proceeds anonymously without closing when a LOGIN token is malformed and auth is optional", async () => {
+            const mw = makeJwtMiddleware();
+            const handler = mw.authWebSocket(false, ["jwt"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock });
+            handler(req, {} as any, next);
+
+            sock.emit("message", JSON.stringify({ id: 6, type: "LOGIN", data: "not-a-real-token" }), false);
+            await flush();
+
+            expect(req.user).toBeUndefined();
+            expect(sock.close).not.toHaveBeenCalled();
+            expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+        });
+
+        it("closes with INVALID_REQUEST when a LOGIN token is malformed and auth is required", async () => {
+            const mw = makeJwtMiddleware();
+            const handler = mw.authWebSocket(true, ["jwt"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock });
+            handler(req, {} as any, next);
+
+            sock.emit("message", JSON.stringify({ id: 7, type: "LOGIN", data: "not-a-real-token" }), false);
+            await flush();
+
+            expect(sock.close).toHaveBeenCalledWith(1002, "api-003");
+            expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 400 }));
+        });
+
+        it("rejects a LOGIN message whose data is not a string when auth is required", async () => {
+            const mw = makeJwtMiddleware();
+            const handler = mw.authWebSocket(true);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock });
+            handler(req, {} as any, next);
+
+            sock.emit("message", JSON.stringify({ id: 4, type: "LOGIN", data: { uid: "forged" } }), false);
+            await flush();
+
+            expect(req.user).toBeUndefined();
+            expect(sock.close).toHaveBeenCalled();
+            expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("ignores a LOGIN verification that finishes after the socket already closed", async () => {
+            const mw = new AuthMiddleware();
+            let resolveAuth: (value: any) => void = () => undefined;
+            mw.register(
+                "slow",
+                makeStrategy({
+                    authenticate: vi.fn((req: any) =>
+                        req.headers?.authorization
+                            ? new Promise<any>((resolve) => {
+                                  resolveAuth = resolve;
+                              })
+                            : Promise.resolve(undefined),
+                    ),
+                }),
+            );
+            const handler = mw.authWebSocket(true, ["slow"]);
+            const next = vi.fn();
+            const sock = makeSocket();
+            const req: any = makeReq({ websocket: sock });
+            handler(req, {} as any, next);
+            await flush();
+
+            sock.emit("message", JSON.stringify({ id: 5, type: "LOGIN", data: "token" }), false);
+            await flush();
+            sock.emit("close");
+            resolveAuth({ method: "slow", user: { uid: "late" } });
+            await flush();
+
+            expect(req.user).toBeUndefined();
+            expect(sock.send).not.toHaveBeenCalled();
+            expect(next).toHaveBeenCalledTimes(1);
+        });
     });
 });
 
