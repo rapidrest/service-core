@@ -6,7 +6,7 @@
 // runtime. It is loaded dynamically by `ConnectionManager` if (and only if) a SQL datasource is configured.
 import * as typeorm from "typeorm";
 import { pendingTypeOrmColumns } from "../decorators/ModelDecorators.js";
-import { ColumnInfo, IndexInfo } from "../decorators/PersistenceDecorators.js";
+import { ColumnInfo, FORWARDED_SQL_COLUMN_OPTIONS, IndexInfo } from "../decorators/PersistenceDecorators.js";
 import { ModelUtils } from "../models/ModelUtils.js";
 
 /**
@@ -96,16 +96,20 @@ export function registerFrameworkMetadata(entities: any[]): void {
                 if (exists || !resolvedType) {
                     continue;
                 }
+                const options: any = { type: resolvedType };
+                for (const key of FORWARDED_SQL_COLUMN_OPTIONS) {
+                    if (column.options[key] !== undefined) {
+                        options[key] = column.options[key];
+                    }
+                }
+                if (column.options.primary) {
+                    options.primary = true;
+                }
                 storage.columns.push({
                     target,
                     propertyName: column.propertyName,
                     mode: "regular",
-                    options: {
-                        type: resolvedType,
-                        ...(column.options.name !== undefined ? { name: column.options.name } : {}),
-                        ...(column.options.nullable !== undefined ? { nullable: column.options.nullable } : {}),
-                        ...(column.options.primary ? { primary: true } : {}),
-                    },
+                    options,
                 });
             }
 

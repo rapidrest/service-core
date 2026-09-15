@@ -280,6 +280,111 @@ describe("ACLUtils Tests (unit)", () => {
                 expect(fakeRepo.save).not.toHaveBeenCalled();
             });
         });
+
+        // `createOnly` is how RepoUtils.create() claims a brand new per-record ACL: it must never merge into, or
+        // overwrite, an ACL that already exists at that uid (which may guard some other record).
+        describe("createOnly (claiming a brand new ACL)", () => {
+            const makeMongo = (fakeRepo: any) => {
+                const fakeConnection: any = Object.create(MongoConnection.prototype);
+                fakeConnection.getRepository = vi.fn().mockReturnValue(fakeRepo);
+                return makeAclUtils({ enabled: true, connMgr: { connections: new Map([["acl", fakeConnection]]) } });
+            };
+            const makeSql = (fakeRepo: any) =>
+                makeAclUtils({
+                    enabled: true,
+                    connMgr: { connections: new Map([["acl", { getRepository: vi.fn().mockReturnValue(fakeRepo) }]]) },
+                });
+            const acl = { uid: "x", version: 7, records: [{ userOrRoleId: "u1", actions: ["*"] }] };
+
+            it("inserts (never merges) a version 0 ACL when none exists (Mongo)", async () => {
+                const fakeRepo: any = Object.create(MongoRepository.prototype);
+                fakeRepo.findOne = vi.fn().mockResolvedValue(null);
+                fakeRepo.save = vi.fn().mockImplementation(async (x: any) => x);
+                const aclUtils = makeMongo(fakeRepo);
+
+                const result = await aclUtils.saveACL({ ...acl, _id: "0123456789abcdef01234567" } as any, {
+                    createOnly: true,
+                });
+
+                expect(result?.version).toBe(0);
+                const [savedDoc, options] = fakeRepo.save.mock.calls[0];
+                expect(savedDoc._id).toBeUndefined();
+                expect(options.insertOnly).toBe(true);
+                expect(options.mergeByUid).toBeUndefined();
+            });
+
+            it("refuses with IDENTIFIER_EXISTS when an ACL already exists at the uid (Mongo)", async () => {
+                const fakeRepo: any = Object.create(MongoRepository.prototype);
+                fakeRepo.findOne = vi.fn().mockResolvedValue({ uid: "x", version: 0, records: [] });
+                fakeRepo.save = vi.fn();
+                const aclUtils = makeMongo(fakeRepo);
+
+                await expect(aclUtils.saveACL(acl as any, { createOnly: true })).rejects.toMatchObject({
+                    code: "api-011",
+                    status: 400,
+                });
+                expect(fakeRepo.save).not.toHaveBeenCalled();
+            });
+
+            it("maps a duplicate-key error from a concurrent claim to IDENTIFIER_EXISTS, rethrowing anything else (Mongo)", async () => {
+                const fakeRepo: any = Object.create(MongoRepository.prototype);
+                fakeRepo.findOne = vi.fn().mockResolvedValue(null);
+                fakeRepo.save = vi.fn().mockRejectedValueOnce(Object.assign(new Error("E11000"), { code: 11000 }));
+                const aclUtils = makeMongo(fakeRepo);
+                await expect(aclUtils.saveACL(acl as any, { createOnly: true })).rejects.toMatchObject({
+                    code: "api-011",
+                });
+
+                fakeRepo.save = vi.fn().mockRejectedValueOnce(new Error("network down"));
+                await expect(aclUtils.saveACL(acl as any, { createOnly: true })).rejects.toThrow("network down");
+            });
+
+            it("inserts (never saves/upserts) a version 0 ACL when none exists (SQL)", async () => {
+                const fakeRepo = {
+                    findOne: vi.fn().mockResolvedValue(null),
+                    insert: vi.fn().mockResolvedValue(undefined),
+                    save: vi.fn(),
+                };
+                const aclUtils = makeSql(fakeRepo);
+
+                const result = await aclUtils.saveACL(acl as any, { createOnly: true });
+
+                expect(result?.version).toBe(0);
+                expect(fakeRepo.insert).toHaveBeenCalledTimes(1);
+                expect(fakeRepo.save).not.toHaveBeenCalled();
+            });
+
+            it("refuses with IDENTIFIER_EXISTS when an ACL already exists at the uid (SQL)", async () => {
+                const fakeRepo = {
+                    findOne: vi.fn().mockResolvedValue({ uid: "x", version: 0, records: [] }),
+                    insert: vi.fn(),
+                };
+                const aclUtils = makeSql(fakeRepo);
+
+                await expect(aclUtils.saveACL(acl as any, { createOnly: true })).rejects.toMatchObject({
+                    code: "api-011",
+                });
+                expect(fakeRepo.insert).not.toHaveBeenCalled();
+            });
+
+            it("reports a failed insert as IDENTIFIER_EXISTS only when a concurrent claim actually won (SQL)", async () => {
+                const fakeRepo = {
+                    findOne: vi
+                        .fn()
+                        .mockResolvedValueOnce(null)
+                        .mockResolvedValueOnce({ uid: "x", version: 0, records: [] }),
+                    insert: vi.fn().mockRejectedValueOnce(new Error("UNIQUE constraint failed")),
+                };
+                const aclUtils = makeSql(fakeRepo);
+                await expect(aclUtils.saveACL(acl as any, { createOnly: true })).rejects.toMatchObject({
+                    code: "api-011",
+                });
+
+                fakeRepo.findOne = vi.fn().mockResolvedValue(null);
+                fakeRepo.insert = vi.fn().mockRejectedValueOnce(new Error("disk full"));
+                await expect(aclUtils.saveACL(acl as any, { createOnly: true })).rejects.toThrow("disk full");
+            });
+        });
     });
 
     describe("saveDefaultACL", () => {

@@ -84,4 +84,54 @@ describe("TypeOrmSupport Tests (unit)", () => {
         const nameColumn = storage.columns.find((c) => c.target === ObjectIdTestClass && c.propertyName === "name");
         expect(nameColumn).toBeDefined();
     });
+
+    it("forwards the SQL column options that are set, and registers `unique` as a unique index", () => {
+        const kind = () => "CURRENT_TIMESTAMP";
+        @Entity({ name: "column_options_unit_test_class" })
+        class ColumnOptionsTestClass {
+            @Column({ primary: true })
+            public uid: string = "";
+            @Column({
+                name: "display_name",
+                nullable: false,
+                default: "anon",
+                length: 64,
+                comment: "shown to users",
+                unique: true,
+            })
+            public name: string = "";
+            @Column({ type: "decimal", precision: 12, scale: 4, unsigned: true, default: 0 })
+            public price: number = 0;
+            @Column({ type: "text", array: true, nullable: true })
+            public tags?: string[];
+            @Column({ type: "simple-enum", enum: ["a", "b"], default: "a" })
+            public choice: string = "a";
+            @Column({ type: "datetime", default: kind })
+            public createdAt: Date = new Date();
+            @Column({ primary: true, unique: true })
+            public other: string = "";
+        }
+
+        registerFrameworkMetadata([ColumnOptionsTestClass]);
+
+        const storage = typeorm.getMetadataArgsStorage();
+        const optionsOf = (prop: string) =>
+            storage.columns.find((c) => c.target === ColumnOptionsTestClass && c.propertyName === prop)?.options;
+        expect(optionsOf("uid")).toEqual({ type: String, primary: true });
+        expect(optionsOf("name")).toEqual({
+            type: String,
+            name: "display_name",
+            nullable: false,
+            default: "anon",
+            length: 64,
+            comment: "shown to users",
+        });
+        expect(optionsOf("price")).toEqual({ type: "decimal", precision: 12, scale: 4, unsigned: true, default: 0 });
+        expect(optionsOf("tags")).toEqual({ type: "text", array: true, nullable: true });
+        expect(optionsOf("choice")).toEqual({ type: "simple-enum", enum: ["a", "b"], default: "a" });
+        expect(optionsOf("createdAt")).toEqual({ type: "datetime", default: kind });
+
+        const indexes = storage.indices.filter((i: any) => i.target === ColumnOptionsTestClass);
+        expect(indexes.map((i: any) => [i.columns, i.unique])).toEqual([[["name"], true]]);
+    });
 });

@@ -122,6 +122,70 @@ describe("Security Fixes Tests [MongoDB]", () => {
         });
     });
 
+    describe("Write-path input that must not select or reshape stored documents", () => {
+        it("A POST body carrying another document's _id creates a new document instead of replacing it.", async () => {
+            const victimToken = tokenFor(uuid.v4());
+            const victim = await request(server)
+                .post(basePath)
+                .set("Authorization", `jwt ${victimToken}`)
+                .send({ name: uuid.v4(), content: "victim" });
+            expect(victim.status).toBeLessThan(300);
+            const route: any = objectFactory.getInstance("routes.SecureDocRoute");
+            const victimRow: any = await route.repoUtils.repo.findOne({ uid: victim.body.uid });
+
+            const attackerToken = tokenFor(uuid.v4());
+            for (const body of [
+                { _id: String(victimRow._id), name: uuid.v4(), content: "pwned" },
+                [{ _id: String(victimRow._id), name: uuid.v4(), content: "pwned-bulk" }],
+            ]) {
+                const attack = await request(server)
+                    .post(basePath)
+                    .set("Authorization", `jwt ${attackerToken}`)
+                    .send(body);
+                expect(attack.status).toBeLessThan(300);
+            }
+
+            const after = await request(server)
+                .get(`${basePath}/${victim.body.uid}`)
+                .set("Authorization", `jwt ${victimToken}`);
+            expect(after.status).toBe(200);
+            expect(after.body.content).toBe("victim");
+        });
+
+        it("Rejects a dotted or $-prefixed key in a PUT body or :property path with a 400.", async () => {
+            const token = tokenFor(uuid.v4());
+            const created = await request(server)
+                .post(basePath)
+                .set("Authorization", `jwt ${token}`)
+                .send({ name: uuid.v4(), content: "hello" });
+            expect(created.status).toBeLessThan(300);
+
+            const dotted = await request(server)
+                .put(`${basePath}/${created.body.uid}`)
+                .set("Authorization", `jwt ${token}`)
+                .send({ ...created.body, "content.x": "nested" });
+            expect(dotted.status).toBe(400);
+
+            const operator = await request(server)
+                .put(`${basePath}/${created.body.uid}`)
+                .set("Authorization", `jwt ${token}`)
+                .send({ ...created.body, $unset: { content: "" } });
+            expect(operator.status).toBe(400);
+
+            const property = await request(server)
+                .put(`${basePath}/${created.body.uid}/content.x`)
+                .set("Authorization", `jwt ${token}`)
+                .send('"nested"');
+            expect(property.status).toBe(400);
+
+            const after = await request(server)
+                .get(`${basePath}/${created.body.uid}`)
+                .set("Authorization", `jwt ${token}`);
+            expect(after.body.content).toBe("hello");
+            expect(after.body.version).toBe(created.body.version);
+        });
+    });
+
     describe("Type confusion via _type/_fqn", () => {
         it("Ignores a _type pointing at an unrelated registered model.", async () => {
             const token = tokenFor(uuid.v4());

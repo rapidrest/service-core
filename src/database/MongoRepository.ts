@@ -17,6 +17,7 @@ import type {
     FindCursor,
     FindOneAndDeleteOptions,
     FindOneAndReplaceOptions,
+    FindOneAndUpdateOptions,
     FindOptions,
     InsertOneOptions,
     ReplaceOptions,
@@ -158,12 +159,21 @@ export class MongoRepository<T extends Document = any> {
      * a plain object) without preserving `_id`, where the default `_id`-only behavior would insert a *second*,
      * duplicate document instead of updating the existing one (see `ACLUtils.saveACL()`).
      *
+     * Pass `insertOnly: true` to always insert, even when `doc` carries an `_id`: the document is inserted with
+     * that `_id`, and the driver's duplicate-key error (code `11000`) is thrown if a document with it already
+     * exists. Use it for any create-style write whose `_id` may have come from untrusted input, where the default
+     * `_id`-present behavior would silently replace whichever existing document owns that `_id` (see
+     * `RepoUtils.create()`). Takes precedence over `mergeByUid`.
+     *
      * @param doc The document to save.
-     * @param options Driver options, plus optionally `mergeByUid` (see above).
+     * @param options Driver options, plus optionally `mergeByUid` or `insertOnly` (see above).
      * @returns The saved document.
      */
-    public async save(doc: any, options?: (InsertOneOptions | ReplaceOptions) & { mergeByUid?: boolean }): Promise<T> {
-        const { mergeByUid, ...driverOptions } = options ?? {};
+    public async save(
+        doc: any,
+        options?: (InsertOneOptions | ReplaceOptions) & { mergeByUid?: boolean; insertOnly?: boolean },
+    ): Promise<T> {
+        const { mergeByUid, insertOnly, ...driverOptions } = options ?? {};
         const copy: any = { ...doc };
         // Strip any undefined properties so they are omitted from the stored document
         for (const key of Object.keys(copy)) {
@@ -172,7 +182,10 @@ export class MongoRepository<T extends Document = any> {
             }
         }
 
-        if (mergeByUid && doc.uid !== undefined && doc.uid !== null) {
+        if (insertOnly) {
+            const result = await this.collection.insertOne(copy, driverOptions);
+            doc._id = result.insertedId;
+        } else if (mergeByUid && doc.uid !== undefined && doc.uid !== null) {
             // MongoDB rejects a replacement document that tries to change an existing document's immutable
             // `_id` — when matching by `uid` instead, drop whatever `_id` `doc` happened to carry and let the
             // matched document keep its own (or let Mongo assign a fresh one on insert, captured below).
@@ -198,6 +211,25 @@ export class MongoRepository<T extends Document = any> {
         }
 
         return doc;
+    }
+
+    /**
+     * Atomically finds the first document matching the given filter, applies the given update operations to it and
+     * returns the resulting document (or `null` if none matched). By default the document is returned as it was
+     * *after* the update; pass `returnDocument: "before"` to get the original. A single round trip, so a caller that
+     * needs the exact document its own update produced isn't racing a separate follow-up read against a concurrent
+     * write to the same document (see `RepoUtils.update()`).
+     *
+     * @param filter The query filter to match documents against.
+     * @param update The update operations (e.g. `$set`) to apply.
+     * @param options - Optional settings for the command
+     */
+    public async findOneAndUpdate(filter: any, update: any, options?: FindOneAndUpdateOptions): Promise<T | null> {
+        return (await this.collection.findOneAndUpdate(filter, update, {
+            returnDocument: "after",
+            ...options,
+            includeResultMetadata: false,
+        })) as T | null;
     }
 
     /**

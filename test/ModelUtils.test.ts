@@ -4,7 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import "reflect-metadata";
 
-import { ModelUtils, GroupNode, PredicateNode, QueryNode } from "../src";
+import { ModelUtils, GroupNode, PredicateNode, QueryNode, QueryLiteral } from "../src";
 import { Identifier } from "../src/decorators/ModelDecorators";
 import { RecoverableBaseEntity } from "../src/models/RecoverableBaseEntity";
 import { RecoverableBaseMongoEntity } from "../src/models/RecoverableBaseMongoEntity";
@@ -12,6 +12,7 @@ import { Column as RrstColumn } from "../src/decorators/PersistenceDecorators";
 import { MongoRepository } from "../src/database/MongoRepository";
 import * as typeorm from "typeorm";
 import {
+    And,
     Not,
     ILike,
     Equal,
@@ -1639,15 +1640,15 @@ describe("ModelUtils Tests", () => {
             const request: any = { query: { myParam: "regex(^abc$)" } };
             const query = ModelUtils.buildSearchQuerySQL(undefined, request.query, true, request.user, "postgres");
             const operator = query.where[0].myParam;
-            expect(operator.getSql("myParam")).toBe("myParam ~* :pattern");
-            expect(operator.objectLiteralParameters).toEqual({ pattern: "^abc$" });
+            expect(operator.getSql("myParam")).toMatch(/^myParam ~\* :rrst_regex_\d+$/);
+            expect(Object.values(operator.objectLiteralParameters)).toEqual(["^abc$"]);
         });
 
         it("Compiles regex() to a `REGEXP` Raw expression for a mysql driver.", () => {
             const request: any = { query: { myParam: "regex(^abc$)" } };
             const query = ModelUtils.buildSearchQuerySQL(undefined, request.query, true, request.user, "mysql");
             const operator = query.where[0].myParam;
-            expect(operator.getSql("myParam")).toBe("myParam REGEXP :pattern");
+            expect(operator.getSql("myParam")).toMatch(/^myParam REGEXP :rrst_regex_\d+$/);
         });
 
         it("Compiles regex() to a `REGEXP` Raw expression for a better-sqlite3 driver.", () => {
@@ -1660,7 +1661,7 @@ describe("ModelUtils Tests", () => {
                 "better-sqlite3",
             );
             const operator = query.where[0].myParam;
-            expect(operator.getSql("myParam")).toBe("myParam REGEXP :pattern");
+            expect(operator.getSql("myParam")).toMatch(/^myParam REGEXP :rrst_regex_\d+$/);
         });
 
         it("Rejects regex() outright for an unsupported/unknown driver rather than guessing.", () => {
@@ -1970,7 +1971,7 @@ describe("ModelUtils Tests", () => {
                 $match: { name: { $regex: "^abc$", $options: "i" } },
             });
             const sqlQuery = ModelUtils.buildQueryFromNode(undefined, sqliteRepo, node);
-            expect(sqlQuery.where[0].name.getSql("name")).toBe("name REGEXP :pattern");
+            expect(sqlQuery.where[0].name.getSql("name")).toMatch(/^name REGEXP :rrst_regex_\d+$/);
 
             const unsafe: PredicateNode = { kind: "predicate", field: "name", op: "regex", value: "(a+)+$" };
             expect(() => ModelUtils.buildQueryFromNode(undefined, FAKE_MONGO_REPO, unsafe)).toThrow();
@@ -2092,6 +2093,289 @@ describe("ModelUtils Tests", () => {
 
         it("Normalizes a $match-only object to a single-stage pipeline.", () => {
             expect(ModelUtils.toFindQuery({ $match: { a: 1 } })).toEqual([{ $match: { a: 1 } }]);
+        });
+    });
+
+    describe("$or/$and AND semantics (SQL parity with Mongo) Tests", () => {
+        beforeAll(() => {
+            ModelUtils.setTypeOrm(typeorm);
+        });
+
+        it("Keeps a top-level key when a $or branch uses the same key, instead of letting the branch replace it.", () => {
+            const query = ModelUtils.buildSearchQuerySQL(
+                undefined,
+                { folderUid: "mine", $or: [{ folderUid: "x" }, { name: "n" }] },
+                true,
+            );
+            expect(query.where).toEqual([
+                { folderUid: And(Equal("mine"), Equal("x")) },
+                { folderUid: Equal("mine"), name: Equal("n") },
+            ]);
+        });
+
+        it("ANDs colliding keys that use different operators, flattening repeated And()s.", () => {
+            const query = ModelUtils.buildSearchQuerySQL(
+                undefined,
+                { age: "gt(1)", $and: [{ age: "lt(10)" }, { age: "ne(5)" }] },
+                true,
+            );
+            expect(query.where).toEqual([{ age: And(MoreThan(1), LessThan(10), Not(5)) }]);
+        });
+
+        it("ANDs a raw non-string or null value with an operator on the same key.", () => {
+            const query = ModelUtils.buildSearchQuerySQL(undefined, { a: 5, $or: [{ a: null }] }, true);
+            expect(query.where).toEqual([{ a: And(Equal(5), IsNull()) }]);
+        });
+
+        it("Merges colliding nested plain objects (embedded/relation where) key by key.", () => {
+            const query = ModelUtils.buildSearchQuerySQL(
+                undefined,
+                { owner: { id: 1 }, $or: [{ owner: { id: 2, name: "n" } }] },
+                true,
+            );
+            expect(query.where).toEqual([{ owner: { id: And(Equal(1), Equal(2)), name: "n" } }]);
+            const withNull = ModelUtils.buildSearchQuerySQL(
+                undefined,
+                { owner: { id: null }, $or: [{ owner: { id: 2 } }] },
+                true,
+            );
+            expect(withNull.where).toEqual([{ owner: { id: And(IsNull(), Equal(2)) } }]);
+        });
+
+        it("Keeps the scope through nested $or inside $or and $and.", () => {
+            const query = ModelUtils.buildSearchQuerySQL(
+                undefined,
+                { s: "mine", $and: [{ $or: [{ s: "x" }, { t: "1" }] }], $or: [{ u: "2" }] },
+                true,
+            );
+            for (const branch of query.where) {
+                const s = branch.s;
+                // Every branch still requires s = mine.
+                expect(s.type === "and" ? s.value[0] : s).toEqual(Equal("mine"));
+            }
+            expect(query.where).toHaveLength(2);
+        });
+
+        it("Supports $and on MongoDB, alongside $or and other keys.", () => {
+            const query = ModelUtils.buildSearchQueryMongo(
+                undefined,
+                { s: "mine", $and: [{ s: "x" }], $or: [{ t: "y" }] },
+                true,
+            );
+            expect(query).toEqual({ $match: { s: "mine", $and: [{ s: "x" }], $or: [{ t: "y" }] } });
+        });
+
+        it("Rejects an empty $or/$and on both backends instead of dropping every other condition on SQL.", () => {
+            for (const key of ["$or", "$and"]) {
+                expect(() => ModelUtils.buildSearchQuerySQL(undefined, { s: "mine", [key]: [] }, true)).toThrow(
+                    expect.objectContaining({ status: 400 }),
+                );
+                expect(() => ModelUtils.buildSearchQueryMongo(undefined, { s: "mine", [key]: [] }, true)).toThrow(
+                    expect.objectContaining({ status: 400 }),
+                );
+            }
+        });
+
+        it("Rejects a non-array $or, or a $or of non-objects (e.g. a repeated `$or=` query string), on both backends.", () => {
+            for (const bad of ["x", ["a", "b"], [null], [[{ a: "1" }]], [ModelUtils.literal("x")], { a: "1" }]) {
+                expect(() => ModelUtils.buildSearchQuerySQL(undefined, { $or: bad }, true)).toThrow(
+                    expect.objectContaining({ status: 400 }),
+                );
+                expect(() => ModelUtils.buildSearchQueryMongo(undefined, { $or: bad }, true)).toThrow(
+                    expect.objectContaining({ status: 400 }),
+                );
+            }
+        });
+
+        it("Rejects $or/$and arrays longer than the node bound on MongoDB too.", () => {
+            const branches = Array.from({ length: 300 }, (_, i) => ({ x: String(i) }));
+            expect(() => ModelUtils.buildSearchQueryMongo(undefined, { $or: branches }, true)).toThrow();
+        });
+
+        it("Rejects a $-prefixed field key on SQL with a 400, like MongoDB does.", () => {
+            for (const key of ["$where", "a.$gt", "$nor"]) {
+                expect(() => ModelUtils.buildSearchQuerySQL(undefined, { [key]: "1" }, true)).toThrow(
+                    expect.objectContaining({ status: 400 }),
+                );
+            }
+        });
+
+        it("Treats a literal query-string key like `$or[0][x]` as a rejected $ key rather than a group.", () => {
+            expect(() => ModelUtils.buildSearchQuerySQL(undefined, { "$or[0][x]": "1" }, true)).toThrow(
+                expect.objectContaining({ status: 400 }),
+            );
+            expect(() => ModelUtils.buildSearchQueryMongo(undefined, { "$or[0][x]": "1" }, true)).toThrow(
+                expect.objectContaining({ status: 400 }),
+            );
+        });
+
+        it("Checks the cross-product bound before building it.", () => {
+            const branches = Array.from({ length: 20 }, (_, i) => ({ x: String(i) }));
+            expect(() =>
+                ModelUtils.buildSearchQuerySQL(undefined, { $and: [{ $or: branches }, { $or: branches }] }, true),
+            ).toThrow(expect.objectContaining({ status: 400 }));
+        });
+
+        it("Gives every regex() Raw expression its own parameter name so two in one query don't collide.", () => {
+            const query = ModelUtils.buildSearchQuerySQL(
+                undefined,
+                { a: "regex(^x)", $or: [{ a: "regex(y$)" }] },
+                true,
+                undefined,
+                "postgres",
+            );
+            const [first, second] = query.where[0].a.value;
+            const names = [
+                ...Object.keys(first.objectLiteralParameters),
+                ...Object.keys(second.objectLiteralParameters),
+            ];
+            expect(new Set(names).size).toBe(2);
+        });
+
+        it("ANDs a QueryNode AND group with colliding fields instead of overwriting.", () => {
+            const node: GroupNode = {
+                kind: "group",
+                op: "and",
+                children: [
+                    { kind: "predicate", field: "s", op: "eq", value: "mine" },
+                    { kind: "predicate", field: "s", op: "eq", value: "x" },
+                ],
+            };
+            expect(ModelUtils.buildQueryFromNode(undefined, undefined, node).where).toEqual([
+                { s: And(Equal("mine"), Equal("x")) },
+            ]);
+        });
+    });
+
+    describe("Literal operands and escaping Tests", () => {
+        beforeAll(() => {
+            ModelUtils.setTypeOrm(typeorm);
+        });
+
+        const user = { uid: "user-1" };
+
+        it("Takes an eq()/ne() operand verbatim: parens, commas, spaces, newlines and nested operators.", () => {
+            for (const raw of ["Support(EU)", "a,b", " padded ", "line1\nline2", "eq(x)", "ne(x)", "(", ")", ""]) {
+                expect(ModelUtils.buildSearchQuerySQL(TypedTestClass, { name: `eq(${raw})` }, true).where).toEqual([
+                    { name: Equal(raw) },
+                ]);
+                expect(ModelUtils.buildSearchQueryMongo(TypedTestClass, { name: `eq(${raw})` }, true)).toEqual({
+                    $match: { name: raw },
+                });
+                expect(ModelUtils.buildSearchQuerySQL(TypedTestClass, { name: `ne(${raw})` }, true).where).toEqual([
+                    { name: Not(raw) },
+                ]);
+                expect(ModelUtils.buildSearchQueryMongo(TypedTestClass, { name: `ne(${raw})` }, true)).toEqual({
+                    $match: { name: { $ne: raw } },
+                });
+            }
+        });
+
+        it("Splits in()/nin()/range() on unescaped commas only, honoring `\\,` and `\\\\`.", () => {
+            const q = { name: "in(a\\,b,c\\\\,d\\x,e\\)" };
+            const expected = ["a,b", "c\\", "d\\x", "e\\"];
+            expect(ModelUtils.buildSearchQuerySQL(TypedTestClass, q, true).where).toEqual([{ name: In(expected) }]);
+            expect(ModelUtils.buildSearchQueryMongo(TypedTestClass, q, true)).toEqual({
+                $match: { name: { $in: expected } },
+            });
+            expect(ModelUtils.buildSearchQueryMongo(TypedTestClass, { name: "nin(a\\,b)" }, true)).toEqual({
+                $match: { name: { $nin: ["a,b"] } },
+            });
+            expect(ModelUtils.buildSearchQuerySQL(TypedTestClass, { name: "range(a\\,1,b)" }, true).where).toEqual([
+                { name: Between("a,1", "b") },
+            ]);
+        });
+
+        it("Compiles ModelUtils.literal() values exactly as given, with no operator parsing, `me` or null substitution.", () => {
+            for (const raw of ["ne(x)", "Support(EU)", "me", "null", "123", "true", "Mar 5", "a,b"]) {
+                const q = { name: ModelUtils.literal(raw) };
+                expect(ModelUtils.buildSearchQuerySQL(undefined, q, true, user).where).toEqual([{ name: Equal(raw) }]);
+                expect(ModelUtils.buildSearchQueryMongo(undefined, q, true, user)).toEqual({ $match: { name: raw } });
+                // Even with exactMatch false, a literal is never turned into a contains search.
+                expect(ModelUtils.buildSearchQuerySQL(undefined, q, false, user).where).toEqual([{ name: Equal(raw) }]);
+            }
+        });
+
+        it("Supports every literal operator on both backends.", () => {
+            const cases: [any, any, any][] = [
+                [ModelUtils.literal("me", "ne"), Not("me"), { $ne: "me" }],
+                [ModelUtils.literal(null), IsNull(), null],
+                [ModelUtils.literal(null, "ne"), Not(IsNull()), { $ne: null }],
+                [ModelUtils.literal("a", "gt"), MoreThan("a"), { $gt: "a" }],
+                [ModelUtils.literal("a", "gte"), MoreThanOrEqual("a"), { $gte: "a" }],
+                [ModelUtils.literal("a", "lt"), LessThan("a"), { $lt: "a" }],
+                [ModelUtils.literal("a", "lte"), LessThanOrEqual("a"), { $lte: "a" }],
+                [ModelUtils.literal(["a,b", "me"], "in"), In(["a,b", "me"]), { $in: ["a,b", "me"] }],
+                [ModelUtils.literal(["a,b"], "nin"), Not(In(["a,b"])), { $nin: ["a,b"] }],
+                [ModelUtils.literal(["1", "2"], "range"), Between("1", "2"), { $gte: "1", $lte: "2" }],
+            ];
+            for (const [literal, sql, mongo] of cases) {
+                expect(ModelUtils.buildSearchQuerySQL(TypedTestClass, { name: literal }, true).where).toEqual([
+                    { name: sql },
+                ]);
+                expect(ModelUtils.buildSearchQueryMongo(TypedTestClass, { name: literal }, true)).toEqual({
+                    $match: { name: mongo },
+                });
+            }
+        });
+
+        it("Works inside zipped arrays and $or branches.", () => {
+            const q = {
+                uid: [ModelUtils.literal("a,b"), ModelUtils.literal("ne(x)")],
+                $or: [{ n: ModelUtils.literal("me") }],
+            };
+            expect(ModelUtils.buildSearchQueryMongo(undefined, q, true, user)).toEqual({
+                $match: {
+                    $or: [
+                        { uid: "a,b", $or: [{ n: "me" }] },
+                        { uid: "ne(x)", $or: [{ n: "me" }] },
+                    ],
+                },
+            });
+            expect(ModelUtils.buildSearchQuerySQL(undefined, q, true, user).where).toEqual([
+                { uid: Equal("a,b"), n: Equal("me") },
+                { uid: Equal("ne(x)"), n: Equal("me") },
+            ]);
+        });
+
+        it("Still rejects a hidden Mongo operator inside a literal object value.", () => {
+            const q = { name: ModelUtils.literal({ $ne: null }) };
+            expect(() => ModelUtils.buildSearchQuerySQL(undefined, q, true)).toThrow();
+            expect(() => ModelUtils.buildSearchQueryMongo(undefined, q, true)).toThrow();
+        });
+
+        it("Rejects a literal range without exactly two values.", () => {
+            const q = { name: ModelUtils.literal(["1"], "range") };
+            expect(() => ModelUtils.buildSearchQuerySQL(undefined, q, true)).toThrow();
+            expect(() => ModelUtils.buildSearchQueryMongo(undefined, q, true)).toThrow();
+        });
+
+        it("Serializes a literal under a $-key, so a client echoing that JSON is rejected, not treated as a literal.", () => {
+            const literal = ModelUtils.literal("x", "ne");
+            expect(literal).toBeInstanceOf(QueryLiteral);
+            expect(Object.isFrozen(literal)).toBe(true);
+            const json = JSON.parse(JSON.stringify({ name: literal }));
+            expect(json).toEqual({ name: { $literal: { op: "ne", value: "x" } } });
+            expect(() => ModelUtils.buildSearchQuerySQL(undefined, json, true)).toThrow();
+            expect(() => ModelUtils.buildSearchQueryMongo(undefined, json, true)).toThrow();
+        });
+
+        it("Honors PredicateNode.literal in buildQueryFromNode.", () => {
+            const node: PredicateNode = { kind: "predicate", field: "name", op: "eq", value: "me", literal: true };
+            expect(ModelUtils.buildQueryFromNode(undefined, undefined, node, user).where).toEqual([
+                { name: Equal("me") },
+            ]);
+            expect(ModelUtils.buildQueryFromNode(undefined, FAKE_MONGO_REPO, node, user)).toEqual({
+                $match: { name: "me" },
+            });
+            const coerced: PredicateNode = { kind: "predicate", field: "name", op: "eq", value: "me" };
+            expect(ModelUtils.buildQueryFromNode(undefined, FAKE_MONGO_REPO, coerced, user)).toEqual({
+                $match: { name: "user-1" },
+            });
+        });
+
+        it("Compiles a programmatic bare null to IsNull() on SQL instead of leaving TypeORM to throw.", () => {
+            expect(ModelUtils.buildSearchQuerySQL(undefined, { name: null }, true).where).toEqual([{ name: IsNull() }]);
         });
     });
 

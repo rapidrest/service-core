@@ -21,10 +21,37 @@ import { ACLAction, type AccessControlList } from "../security/index.js";
 import type { ACLUtils } from "../security/ACLUtils.js";
 import { ConnectionManager, RedisCache } from "../database/index.js";
 import { registerRollbackHook, Transactional, transactionContext } from "../decorators/DatabaseDecorators.js";
+import { getColumnMetadata } from "../decorators/PersistenceDecorators.js";
 import type { ClientSession } from "mongodb";
 const { Config, Init, Inject, Logger } = ObjectDecorators;
 
 const _hashCache = new Map();
+
+/** The actions `RepoUtils.create()` grants a record's creator on a freshly created per-record ACL. */
+const CREATOR_ACTIONS: string[] = [
+    ACLAction.COUNT,
+    ACLAction.CREATE,
+    ACLAction.DELETE,
+    ACLAction.EXISTS,
+    ACLAction.READ,
+    ACLAction.LIST,
+    ACLAction.TRUNCATE,
+    ACLAction.UPDATE,
+];
+
+/** The explicit `@Column({ type })` values that store a date/time (compared lower-cased). */
+const DATE_COLUMN_TYPES: Set<string> = new Set([
+    "date",
+    "datetime",
+    "datetime2",
+    "datetimeoffset",
+    "smalldatetime",
+    "timestamp",
+    "timestamptz",
+    "timestamp with time zone",
+    "timestamp without time zone",
+    "timestamp with local time zone",
+]);
 
 export interface TransactionInfo {
     entityManager?: EntityManager;
@@ -55,6 +82,25 @@ export interface RepoOperationOptions {
 export interface RepoCreateOptions extends RepoOperationOptions {
     /** The AccessControlList to use when creating a new object. */
     acl?: AccessControlList;
+    /**
+     * Set to `true` to let a record-level-ACL create adopt an ACL that already exists at the new record's uid even
+     * though no record of this model exists there yet and the caller doesn't already hold every creator right on
+     * it. The existing ACL is used as-is (the creator is not added to it). Defaults to `false`, in which case such
+     * a create is refused with `IDENTIFIER_EXISTS` - see `create()`.
+     *
+     * For trusted server-side code only (e.g. code that deliberately saves a record's ACL before the record
+     * itself) - this must never be derived from a client request.
+     */
+    allowExistingACL?: boolean;
+    /**
+     * Set to `true` to keep the `_id` carried by the object being created instead of discarding it. The object is
+     * still always inserted, never merged into an existing document: a create whose `_id` is already taken fails
+     * with `IDENTIFIER_EXISTS`. Defaults to `false`.
+     *
+     * For trusted server-side code only (e.g. restoring or migrating documents with their original `_id`) - this
+     * must never be derived from a client request.
+     */
+    preserveId?: boolean;
 }
 
 /**
@@ -483,6 +529,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         const newObj: T = obj instanceof clazz ? (obj as T) : this.instantiateObject(obj, clazz);
         const repo: Repository<T> | MongoRepository<T> = this.repo;
 
+        // A create must never let its input pick an existing document. A caller-supplied `_id` would otherwise make
+        // `MongoRepository.save()` replace (upsert) whichever document owns that `_id` - any record, of any owner.
+        if (!options?.preserveId && (newObj as any)._id !== undefined) {
+            delete (newObj as any)._id;
+        }
+
+        // JSON has no date type - store Date-typed properties as real dates, not strings.
+        this.coerceDateProperties(newObj, clazz);
+
         // Make sure an existing object doesn't already exist with the same identifiers
         const ids: any[] = [];
         const idProps: string[] = ModelUtils.getIdPropertyNames(clazz);
@@ -520,7 +575,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
         }
 
-        // Override the date and version fields with their defaults
+        // Override the date and version fields with their defaults. Whatever the caller supplied for these is
+        // discarded, so a create can't forge a record's history or optimistic-lock state.
         if (newObj instanceof BaseEntity) {
             newObj.dateCreated = new Date();
             newObj.dateModified = new Date();
@@ -532,80 +588,60 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             (newObj as any).version = 0;
         }
 
+        // Resolve the record-level ACL *before* the record is written, so that a create which isn't entitled to its
+        // uid's ACL never writes a record at all (not even one that a transaction rollback would have to undo).
+        const freshAclUid: string | undefined =
+            this.aclUtils?.enabled && this.modelClass.recordACL
+                ? await this.claimRecordACL((newObj as any).uid, count, options)
+                : undefined;
+
         // HAX We shouldn't be casting obj to any here but this is the only way to get it to compile
         // since T extends BaseEntity.
         let saved: any;
-        if (this.repo instanceof MongoRepository) {
-            saved = await this.repo.save(newObj, { session: txInfo?.session });
-        } else {
-            const repo: any = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
-            saved = await repo.save(newObj);
+        try {
+            if (this.repo instanceof MongoRepository) {
+                // `insertOnly`: a create always inserts, even when trusted code preserved an `_id` (`preserveId`).
+                saved = await this.repo.save(newObj, { session: txInfo?.session, insertOnly: true });
+            } else {
+                const repo: any = txInfo?.entityManager
+                    ? txInfo.entityManager.getRepository(this.modelClass)
+                    : this.repo;
+                saved = await repo.save(newObj);
+            }
+        } catch (err: any) {
+            // Don't leave the ACL claimed above behind for a record that was never written. This can't be left to a
+            // rollback hook alone: without transaction support there is no rollback to run one.
+            if (freshAclUid) {
+                try {
+                    await this.aclUtils!.removeACL(freshAclUid);
+                } catch (removeErr) {
+                    this.logger?.warn(`RepoUtils: Failed to remove ACL ${freshAclUid} after a failed create().`);
+                    this.logger?.debug(removeErr);
+                }
+            }
+            // A duplicate key (a concurrent create of the same identifier, or a preserved `_id` that's already taken)
+            // is an identifier conflict, not an internal error.
+            if (err?.code === 11000) {
+                throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+            }
+            throw err;
         }
         const result: T = this.instantiateObject(saved);
 
-        if (this.aclUtils?.enabled && this.modelClass.recordACL) {
-            // Reuse the existing ACL if this is a legitimate trackChanges "new version" rather than building a fresh,
-            // version-less object from scratch. Building fresh here would let saveACL()'s optimistic-lock version
-            // check pass by coincidence (a never-updated ACL is also version 0), silently discarding the real records.
-            const existingAcl: AccessControlList | undefined = await this.aclUtils.findACL(result.uid);
-            const isFreshAcl: boolean = !existingAcl;
-            const acl: AccessControlList = existingAcl ?? {
-                uid: result.uid,
-                parentUid: options?.acl?.parentUid || this.defaultACLUid,
-                records: options?.acl?.records || [],
-            };
-
-            // Look for an existing record for the creator. We only search the immediate ACL
-            // and not the parent chain and we perform an exact match.
-            let found: boolean = !!this.aclUtils.getRecord(acl, options?.user, { maxDepth: 0, specificity: "exact" });
-            let modifiedExistingAcl: boolean = false;
-
-            // Always grant the creator CRUD access, unless the user is a superuser.
-            if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
-                acl.records.push({
-                    userOrRoleId: options.user.uid,
-                    actions: [
-                        ACLAction.COUNT,
-                        ACLAction.CREATE,
-                        ACLAction.DELETE,
-                        ACLAction.EXISTS,
-                        ACLAction.READ,
-                        ACLAction.LIST,
-                        ACLAction.TRUNCATE,
-                        ACLAction.UPDATE,
-                    ],
-                });
-                modifiedExistingAcl = !isFreshAcl;
-            }
-
-            await this.aclUtils.saveACL(acl);
-
-            // `saveACL()` commits independently, on the `acl` connection's own transaction (see its doc
-            // comment). That means it can't be rolled back by this (the entity-side) transaction's own abort if this
-            // transaction fails later. Register a compensating action so a later failure doesn't leave an orphaned
-            // ACL behind.
-            if (isFreshAcl) {
-                const newAclUid: string = acl.uid;
-                registerRollbackHook(async () => {
-                    try {
-                        await this.aclUtils!.removeACL(newAclUid);
-                    } catch (err) {
-                        this.logger?.warn(
-                            `RepoUtils: Failed to roll back orphaned ACL ${newAclUid} after a failed create().`,
-                        );
-                        this.logger?.debug(err);
-                    }
-                });
-            } else if (modifiedExistingAcl) {
-                // Reverting a change to an already-existing ACL isn't well-defined in general (it may carry
-                // other, unrelated state) — log loudly instead so this is visible for manual reconciliation.
-                const modifiedAclUid: string = acl.uid;
-                registerRollbackHook(async () => {
+        // `saveACL()` commits independently, on the `acl` connection's own transaction (see its doc comment). That
+        // means it can't be rolled back by this (the entity-side) transaction's own abort if this transaction fails
+        // later. Register a compensating action so a later failure doesn't leave an orphaned ACL behind.
+        if (freshAclUid) {
+            registerRollbackHook(async () => {
+                try {
+                    await this.aclUtils!.removeACL(freshAclUid);
+                } catch (err) {
                     this.logger?.warn(
-                        `RepoUtils: create() failed after modifying existing ACL ${modifiedAclUid} — that change was not automatically reverted.`,
+                        `RepoUtils: Failed to roll back orphaned ACL ${freshAclUid} after a failed create().`,
                     );
-                });
-            }
+                    this.logger?.debug(err);
+                }
+            });
         }
 
         if (this.cache) {
@@ -938,6 +974,137 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     }
 
     /**
+     * Resolves the per-record ACL for a record about to be created by `create()` under `uid`. Returns `uid` when a
+     * fresh ACL was created for it (so the caller can clean it up if the create fails), or `undefined` when an
+     * existing ACL is legitimately reused as-is.
+     *
+     * ACLs live in one global collection keyed only by uid, shared by every model, and a create's uid can come from
+     * the client. An ACL that already exists at `uid` may guard a record of another model, or sit at a well-known
+     * uid - adopting it (and adding the creator with full rights, as this used to) would hand the caller whatever
+     * it protects. An existing ACL is therefore only reused, unchanged, when:
+     * - `count > 0`: a trackChanges "new version" of an existing record (`create()` has already verified the
+     * caller's UPDATE right on that record);
+     * - the caller is trusted (`trusted_roles`), or trusted server code passed `allowExistingACL`;
+     * - the caller already holds every right a creator would be granted on that ACL, so reusing it grants nothing.
+     *
+     * Otherwise the create is refused with `IDENTIFIER_EXISTS`, the same error as a record identifier collision.
+     * A genuinely orphaned ACL can't be reliably told apart from one guarding another model's record, so no attempt
+     * is made to replace it. A fresh ACL is claimed with `saveACL()`'s `createOnly` mode, so two concurrent creates
+     * (of the same or of different models) can't both claim the same uid either.
+     */
+    private async claimRecordACL(
+        uid: string,
+        count: number,
+        options: RepoCreateOptions | undefined,
+    ): Promise<string | undefined> {
+        const aclUtils: ACLUtils = this.aclUtils!;
+        // Bypass the cache: this is an authorization decision about the ACL's current state.
+        const existingAcl: AccessControlList | undefined = await aclUtils.findACL(uid, [], { skipCache: true });
+
+        if (existingAcl) {
+            if (count > 0 || options?.allowExistingACL || UserUtils.hasRoles(options?.user, this.trustedRoles, uid)) {
+                return undefined;
+            }
+            for (const action of CREATOR_ACTIONS) {
+                if (!(await aclUtils.hasPermission(options?.user, existingAcl, action))) {
+                    throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+                }
+            }
+            return undefined;
+        }
+
+        const acl: AccessControlList = {
+            uid,
+            parentUid: options?.acl?.parentUid || this.defaultACLUid,
+            records: [...(options?.acl?.records || [])],
+        };
+
+        // Look for an existing record for the creator. We only search the immediate ACL
+        // and not the parent chain and we perform an exact match.
+        const found: boolean = !!aclUtils.getRecord(acl, options?.user, { maxDepth: 0, specificity: "exact" });
+
+        // Always grant the creator CRUD access, unless the user is a superuser.
+        if (!found && options?.user && !UserUtils.hasRoles(options?.user, this.trustedRoles)) {
+            acl.records.push({ userOrRoleId: options.user.uid, actions: [...CREATOR_ACTIONS] });
+        }
+
+        await aclUtils.saveACL(acl, { createOnly: true });
+        return uid;
+    }
+
+    /**
+     * Converts every `Date`-typed property of `obj` that holds a string or number (e.g. an ISO 8601 string from a
+     * JSON request body) to a real `Date`, in place. Without this a MongoDB document stores the string itself, and
+     * date range queries (which compare against `Date` operands) never match it.
+     *
+     * A property counts as `Date`-typed when its `@Column` declares an explicit date/time `type`, or otherwise when
+     * TypeScript's emitted `design:type` is `Date`. TypeScript reflects a union-typed property (e.g. `Date | null`)
+     * as `Object`, so such a property is only converted when its `@Column` sets `type` explicitly. Properties that
+     * aren't `@Column`s are never touched.
+     *
+     * @param obj The object whose properties to convert.
+     * @param clazz The model class describing `obj`.
+     * @throws ApiError `INVALID_REQUEST` (400) when a value isn't a valid date.
+     */
+    protected coerceDateProperties(obj: any, clazz: any): void {
+        if (!obj || typeof obj !== "object" || !clazz) {
+            return;
+        }
+
+        for (const column of getColumnMetadata(clazz)) {
+            const type: any = column.options.type ?? column.designType;
+            const isDate: boolean =
+                type === Date || (typeof type === "string" && DATE_COLUMN_TYPES.has(type.toLowerCase()));
+            const value: any = obj[column.propertyName];
+            if (!isDate || (typeof value !== "string" && typeof value !== "number")) {
+                continue;
+            }
+
+            const date: Date = new Date(value);
+            if (isNaN(date.getTime()) || (typeof value === "string" && value.trim() === "")) {
+                throw new ApiError(
+                    ApiErrors.INVALID_REQUEST,
+                    400,
+                    `Property ${column.propertyName} is invalid. Expected a valid date.`,
+                );
+            }
+            obj[column.propertyName] = date;
+        }
+    }
+
+    /**
+     * Rejects update input with a top-level key that MongoDB would interpret as something other than a plain field
+     * name: a dotted path (`"aliases.3"`, which writes a nested element) or an operator (`"$inc"`). Such a key
+     * bypasses route/model validation (which only knows the model's real property names), so it is refused on
+     * every backend rather than passed through.
+     *
+     * @throws ApiError `INVALID_REQUEST` (400) naming the first offending key.
+     */
+    private assertPlainPropertyNames(obj: any): void {
+        for (const key of Object.keys(obj ?? {})) {
+            if (key.includes(".") || key.startsWith("$")) {
+                throw new ApiError(
+                    ApiErrors.INVALID_REQUEST,
+                    400,
+                    `Property ${key} is invalid. Property names cannot contain '.' or start with '$'.`,
+                );
+            }
+        }
+    }
+
+    /**
+     * Determines whether `existing` is under optimistic locking: a `BaseEntity` instance or - for a `BaseEntity`
+     * model - any object carrying a numeric `version`, such as a plain document read straight from a
+     * `MongoRepository` (whose `find()`/`findOne()` return plain documents, not model instances).
+     */
+    private isVersioned(existing: any): boolean {
+        return (
+            existing instanceof BaseEntity ||
+            (typeof existing?.version === "number" && this.modelClass?.prototype instanceof BaseEntity)
+        );
+    }
+
+    /**
      * Returns the default access control list governing the model type. Returning a value of `undefined` will grant
      * full acccess to any user (including unauthenticated anonymous users).
      */
@@ -1189,9 +1356,16 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        // Enforce optimistic locking when applicable
-        if (existing instanceof BaseEntity) {
-            if (existing.version !== (obj as any).version) {
+        // A dotted (`"aliases.3"`) or `$`-prefixed top-level key would write a nested path (or an operator) that
+        // route/model validation never saw. `update()` itself never needs one, so it's refused outright.
+        this.assertPlainPropertyNames(obj);
+
+        // Enforce optimistic locking when applicable. Keyed on the record actually carrying a version, not on its
+        // prototype: a plain document read straight from a `MongoRepository` is just as versioned as a model
+        // instance, and silently skipping the check (and the version bump below) for it lost concurrent writes.
+        const versioned: boolean = this.isVersioned(existing);
+        if (versioned) {
+            if ((existing as any).version !== (obj as any).version) {
                 throw new ApiError(ApiErrors.INVALID_OBJECT_VERSION, 409, ApiErrorMessages.INVALID_OBJECT_VERSION);
             }
         }
@@ -1201,14 +1375,17 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             throw new ApiError(ApiErrors.OBJECT_ID_MISMATCH, 400, ApiErrorMessages.OBJECT_ID_MISMATCH);
         }
 
+        // JSON has no date type - store Date-typed properties as real dates, not strings.
+        this.coerceDateProperties(obj, this.getClassType(obj));
+
         // Force system-managed fields back to their persisted value, discarding whatever the client sent (or
         // didn't send) for them. `dateCreated` is always protected, with no bypass - there is never a
         // legitimate reason to change it via update(). `@ReadOnly`-decorated properties are an app-level
         // opt-in for anything else (roles, ownership fields, etc.) that must never be client-settable, but
         // trusted server-side code may pass `allowReadOnly: true` to write them anyway - see that option's
         // own doc comment on `RepoUpdateOptions`.
-        if (existing instanceof BaseEntity) {
-            (obj as any).dateCreated = existing.dateCreated;
+        if (versioned) {
+            (obj as any).dateCreated = (existing as any).dateCreated;
         }
         if (!options?.allowReadOnly) {
             for (const prop of ModelUtils.getReadOnlyPropertyNames(this.modelClass)) {
@@ -1216,9 +1393,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        // When using MongoDB we need to copy the _id property in order to prevent duplicate entries
-        if (existing instanceof BaseMongoEntity) {
-            (obj as any)._id = existing._id;
+        // `_id` always comes from the stored record, never from the input. On MongoDB this also prevents duplicate
+        // entries when saving; an input `_id` is never allowed to select (or be written over) some other document.
+        if ((existing as any)._id !== undefined && (existing as any)._id !== null) {
+            (obj as any)._id = (existing as any)._id;
+        } else {
+            delete (obj as any)._id;
         }
 
         const keepPrevious: boolean = !!this.modelClass.trackChanges;
@@ -1226,7 +1406,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         let result: T | null = null;
 
         if (this.repo instanceof MongoRepository) {
-            if (existing instanceof BaseEntity) {
+            // The fields to `$set` in place - never `_id`, which is immutable and already identifies the document.
+            const { _id, ...fields } = obj as any;
+
+            if (versioned) {
                 if (keepPrevious) {
                     // Same (uid, version) unique index race as RepoUtils.create(): two concurrent updates of
                     // the same version can both pass the optimistic-lock check above and both attempt to
@@ -1255,25 +1438,23 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         throw err;
                     }
                 } else {
-                    const updateResult: any = await this.repo.updateOne(
+                    // One atomic, version-conditioned find-and-modify that returns this call's own write. A separate
+                    // `updateOne()` followed by a `findOne(version + 1)` read-back could miss when a concurrent writer
+                    // bumped the version again in between, failing a write that had actually succeeded.
+                    result = await this.repo.findOneAndUpdate(
                         { uid: obj.uid, version: (obj as any).version },
                         {
                             $set: {
-                                ...obj,
+                                ...fields,
                                 dateModified: new Date(),
                                 version: (obj as any).version + 1,
                             },
                         },
-                        {
-                            session: txInfo?.session,
-                        },
+                        { session: txInfo?.session, returnDocument: "after" },
                     );
-                    // `updateOne()` doesn't throw when its filter (including `version`) matches nothing - a
-                    // concurrent writer that already advanced this row past `obj.version` leaves this call
-                    // matching zero documents. Without this check, the fallback `findOne(version + 1)` below
-                    // would silently find THAT concurrent writer's row and return it as if it were this call's
-                    // own successful update - a genuine version conflict lost instead of reported.
-                    if (updateResult?.matchedCount === 0) {
+                    // No match means a concurrent writer already advanced this record past `obj.version` (or removed
+                    // it): a lost optimistic-lock race, reported as such rather than silently overwriting.
+                    if (!result) {
                         throw new ApiError(
                             ApiErrors.INVALID_OBJECT_VERSION,
                             409,
@@ -1288,6 +1469,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                             await this.repo.save(
                                 {
                                     ...obj,
+                                    _id: undefined, // Ensure we save a new document
                                     version: (obj as any).version + 1,
                                 } as any,
                                 { session: txInfo?.session },
@@ -1304,15 +1486,15 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         throw err;
                     }
                 } else {
-                    await this.repo.updateOne(
+                    result = await this.repo.findOneAndUpdate(
                         { uid: obj.uid },
-                        {
-                            $set: {
-                                ...obj,
-                            },
-                        },
-                        { session: txInfo?.session },
+                        { $set: fields },
+                        { session: txInfo?.session, returnDocument: "after" },
                     );
+                    // The record was removed after `existing` was read.
+                    if (!result) {
+                        throw new ApiError(ApiErrors.NOT_FOUND, 404, ApiErrorMessages.NOT_FOUND);
+                    }
                 }
             } else {
                 const toSave: any = obj as any;
@@ -1324,7 +1506,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         } else {
             const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
-            if (existing instanceof BaseEntity) {
+            if (versioned) {
                 if (keepPrevious) {
                     await repo.insert({
                         ...obj,
@@ -1364,7 +1546,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             }
         }
 
-        query = this.searchIdQuery(existing.uid, existing instanceof BaseEntity ? existing.version + 1 : undefined);
+        query = this.searchIdQuery(existing.uid, versioned ? (existing as any).version + 1 : undefined);
         if (!result) {
             if (this.repo instanceof MongoRepository) {
                 result = await this.repo.findOne(query["$match"] ? query["$match"] : query, {

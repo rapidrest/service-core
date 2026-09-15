@@ -488,3 +488,140 @@ on the literal `` `${req.method} ${req.path}` `` of the incoming request.
   attacker rotating the *target* on every request, which a per-target counter structurally can't). Every
   existing manual `checkAndIncrement(identifier, req)` call site elsewhere in that repo was deliberately left
   alone for the reason above.
+
+### 2026-09-14 — Query/schema layer fixes from the `@rapidmx/restapi` adversarial review (agent B)
+
+Found downstream (restapi's `.claude/NOTES.md` has the workarounds). Ran alongside a second agent working on the
+`RepoUtils`/`MongoRepository`/route write paths, so none of those files were touched here.
+
+1. **[HIGH] SQL `$or` replaced colliding top-level keys.** `buildSearchQuerySQL()` built each `$or` branch with
+   `{...existing, ...orClause}`, so `{folderUid: "mine", $or: [{folderUid: "x"}]}` became `WHERE folderUid = 'x'`
+   (Mongo ANDs it correctly). This is externally reachable: `RouteUtils` decodes the base64 `q` JSON query parameter
+   on GET/HEAD into an arbitrary object, including `$or`. restapi's note that "`parseQueryString` is flat, so a client
+   can't build `$or`" only covers the plain query string. The same spread was in `compileNodeSQL`'s AND reducer.
+   Fixed with `andBranches()`/`mergeWhereBranches()`: a key on both sides becomes a flat TypeORM `And(...)` (raw
+   values wrapped as `Equal`/`IsNull`, nested plain objects merged per key), and the cross-product bound is checked
+   before allocating. Related holes closed at the same time:
+   - `$or: []` expanded to zero branches, which deleted the whole `where` and matched every row (a total scope bypass).
+     Mongo 500'd on it. Both now return 400.
+   - A non-array `$or`, or an array of non-objects (a repeated `?$or=`), is now 400 on both (it was a 500 or
+     meaningless per-character sub-queries).
+   - `$`-prefixed keys/segments are now 400 on SQL too (they were TypeORM 500s), matching Mongo.
+   - `$and` is now supported on both backends. It's needed to combine two `$or`s, e.g. a forced one and a client one.
+   - Every `regex()` `Raw()` now gets a unique parameter name (`rrst_regex_<n>`). Two regex conditions in one query
+     used to share `:pattern`, so the second silently replaced the first.
+   - A programmatic bare `null` value compiles to `IsNull()` on SQL. TypeORM throws on it by default.
+2. **[HIGH] No literal escape for programmatic values.** Findings verified against the current code:
+   - `eq()` did take everything between the first `(` and the last `)`, but not across a newline: the regex used
+     `.`, so `eq(a\nb)` fell through to a bare literal `"eq(a\nb)"`. It now uses `[\s\S]`.
+   - `eq()` operands are still coerced (`me`, `null`, declared type, JSON/date heuristic without metadata). That is
+     public HTTP API behavior, so it was kept and documented.
+   - `in()`/`nin()`/`range()` now split with `splitListOperand()`: `\,` is a comma, `\\` is a backslash, and any other
+     backslash is kept.
+   - Added `ModelUtils.literal(value, op = "eq")`, which returns a frozen `QueryLiteral`. Ops are
+     eq/ne/gt/gte/lt/lte/in/nin/range. A literal skips operator parsing, `me`/`null` substitution and type coercion.
+     Only the hidden-`$`-key check still runs. It works in zipped arrays and `$or`/`$and` branches.
+   - Added `PredicateNode.literal`, the same flag for the AST path.
+   - `QueryLiteral.toJSON()` serializes under a `$literal` key, so `RepoUtils`' query hash differs from a plain value
+     and a client echoing that JSON gets a 400 (operator-injection guard).
+   - Documented the escape rules in `buildSearchQuery`'s doc comment (the README has no query DSL section).
+3. **[MEDIUM] `ColumnOptions` gained `default`, `length`, `unique`, `precision`, `scale`, `array`, `enum`,
+   `unsigned` and `comment`.** `TypeOrmSupport` forwards the keys listed in `FORWARDED_SQL_COLUMN_OPTIONS`.
+   - `unique` is not forwarded as a column option. `@Column` registers it as the same single-property unique index
+     `@Unique()` creates, so `MongoSchemaSync` enforces it too, and it dedupes with an explicit `@Unique()`.
+   - Everything else is documented as SQL only. Mongo has no document-default layer, so use property initializers there.
+   - `test/database/TypeOrmColumnOptions.test.ts` reproduces restapi's `NOT NULL constraint failed` on a real
+     file-backed SQLite `synchronize`, and shows that `default` fixes it.
+
+Tests:
+- `test/database/SearchQueryParity.test.ts` runs identical queries against real Mongo (port 9999) and SQLite and
+  requires the same rows back, including the count path and truncate's uid-only query. With the `ModelUtils.ts` fix
+  stashed, all 7 tests fail and it shows the `u3`/`u4` cross-scope leak.
+- Unit tests were added in `ModelUtils.test.ts`, `TypeOrmSupport.unit.test.ts` and `PersistenceDecorators.test.ts`.
+- Four existing regex tests now match `:rrst_regex_\d+` instead of `:pattern`.
+
+Not done, noted for whoever picks it up:
+- `RepoUtils.count()`'s `clientRequestsDeleted` detection only recognizes a plain `deleted: true/"true"`, not
+  `ModelUtils.literal(true)`. Only trusted code can build a literal, so this isn't externally reachable.
+- `count({includeDeleted})` on Mongo only strips a top-level `$match.deleted`, not the copy inside each zipped
+  `$or` branch (pre-existing; SQL loops over every branch).
+- SQL `ne(x)` excludes NULL rows, while Mongo `$ne` includes null/missing ones (pre-existing parity gap, untouched).
+
+Verification:
+- `tsc --noEmit` is clean.
+- `yarn lint` is clean (the `RepoUtils.ts:986` jsdoc error seen mid-session was fixed by the write-path work below).
+- Full `yarn vitest run` first showed 262 failures across 17 HTTP integration files (`Server*`, `routes/*`,
+  `security/ACLRoute*`: 404s on `/items`, a WebSocket connect timeout, an OPTIONS 204). **Correction:** these were not
+  pre-existing code failures. A `rapidmx/server` dev worker was listening on `0.0.0.0:3000`, the test server's default
+  port, so test requests hit that process instead. With `PORT=3777 yarn vitest run` the full suite, including this
+  work, passes and meets the coverage gate (see the write-path entry below). The 2026-09-08 "~16 red files" note was
+  very likely the same port conflict.
+- Targeted coverage for the changed files: `ModelUtils.ts` is at 99% statements and 94.8% branches, with every new
+  line and branch covered. `PersistenceDecorators.ts` is at 100%.
+
+### 2026-09-14 — Write-path fixes from the `@rapidmx/restapi` adversarial review (agent A)
+
+Ran alongside agent B (entry above). Touched `RepoUtils.ts`, `MongoRepository.ts`, `ACLUtils.ts` only; no
+`ModelRoute`/`CRUDRoute` change was needed (every route write goes through `RepoUtils.create()/update()`), so the
+"separate collaborators for a ModelRoute and a RepoUtils change" split didn't apply. Each item was verified against HEAD
+`7a62419` first; all six still reproduced (`test/RepoUtils.WriteSafety.test.ts` fails 12/15 against HEAD's
+`RepoUtils.ts`/`ACLUtils.ts`).
+
+1. **[CRITICAL] Client `_id` on create replaced another document (Mongo).** `create()` now deletes `_id` from the
+   object and always saves with the new opt-in `MongoRepository.save(..., { insertOnly: true })` (insertOne even when
+   `_id` is set; `save()`'s default is unchanged, per the standing decision). New `RepoCreateOptions.preserveId` (trusted
+   code only) keeps the `_id`, still insert-only. A duplicate key on the insert is now `IDENTIFIER_EXISTS` 400 instead of
+   a raw driver error. `version`/`dateCreated`/`dateModified` were already overwritten on create (verified, now tested).
+   No internal caller passed an `_id` into `create()`; trackChanges saves in `update()` and ACL restores use
+   `repo.save()`/`saveACL()` directly and are unaffected. `update()` now always takes `_id` from `existing` (or drops the
+   input's when `existing` has none) instead of only for `BaseMongoEntity` instances.
+2. **[HIGH] ACL adoption on create.** History: `b32dfe5` added a guard (`count === 0 && existing ACL` -> 400) plus a
+   cross-model `runExclusiveForUid` re-check; `e9453ac` (transactions rewrite) dropped both, so `create()` silently
+   adopted any ACL at the uid and appended a full-rights record for the creator. New `claimRecordACL()` runs *before*
+   the record is written. An existing ACL is reused, **unchanged** (the creator is never appended to it), only when:
+   `count > 0` (trackChanges new version; UPDATE already verified), the caller is trusted, trusted code passed the new
+   `RepoCreateOptions.allowExistingACL`, or the caller already passes `hasPermission` for all 8 creator actions on that
+   ACL (so reuse grants nothing). Otherwise `IDENTIFIER_EXISTS` 400 (same code/status as a record collision; kept 400
+   rather than 409 to match the existing collision error and its tests). Orphan detection isn't possible (any model could
+   own the uid), so no replace-orphan path. A fresh ACL is claimed with the new `saveACL(acl, { createOnly: true })`
+   (insert-only at version 0; refuses if one exists; Mongo 11000 on the `(uid, version)` unique index / SQL PK conflict
+   -> `IDENTIFIER_EXISTS`), which closes the cross-model race without a lock, and the loser never writes its row. If the
+   record write fails after a fresh claim, `create()` removes the ACL itself (no rollback hook exists without
+   transactions); the rollback hook is still registered after a successful write. Behaviour change: a trackChanges new
+   version by someone with UPDATE via a role no longer gets a personal full-rights record.
+3. **[HIGH] `$set: {...obj}` path keys.** `update()` rejects any top-level key containing `.` or starting with `$`
+   (400 `INVALID_REQUEST`) on both backends, before any write. On SQL these were TypeORM `EntityPropertyNotFoundError`
+   500s. Covers `PUT /:id`, bulk `PUT /` and `PUT /:id/:property` (all reach `update()`). No framework-internal update
+   uses dotted keys (`delete()`'s soft-delete calls `updateMany` directly), so no opt-out was added.
+4. **[HIGH] Optimistic lock skipped for plain `existing`.** `update()` now treats `existing` as versioned when it is a
+   `BaseEntity` instance or (for a `BaseEntity` model) carries a numeric `version`; that drives the lock check,
+   `dateCreated` protection, the version/`dateModified` bump and branch selection on both backends. Chose this over
+   making `MongoRepository.find()` return model instances: that would change every raw-repo caller, and instantiation
+   drops fields a model constructor doesn't copy (e.g. the fixture `User.uType`), which would then be written back as
+   defaults via the `@ReadOnly` reset.
+5. **[MEDIUM] Mongo read-back race.** Non-trackChanges Mongo updates now use the new
+   `MongoRepository.findOneAndUpdate()` (`returnDocument: "after"`); no match -> 409 (versioned) or 404 (unversioned,
+   record gone). No separate read-back. SQL keeps update + read-back: inside its transaction the row lock blocks a
+   concurrent writer, so the race doesn't exist there.
+6. **[MEDIUM] Date fields stored as strings.** `create()`/`update()` convert string/number values of Date-typed
+   `@Column`s to `Date` (400 on an invalid or blank string), via `getColumnMetadata()`: explicit date-like
+   `@Column({ type })` first, else `design:type === Date`. Limitation: `Date | null` reflects as `Object`, so those
+   fields are only converted when `@Column` sets `type`. SQLite already stored ISO strings correctly; the SQL gain is the
+   400. Nested/array dates are not handled.
+
+Not done / noted: `update()`'s SQL trackChanges `repo.insert()` still turns a concurrent `(uid, version + 1)` PK
+conflict into a raw 500 (Mongo maps it to 409); SQL `create()` still uses TypeORM `save()`, which can become an UPDATE
+if a concurrent insert lands between the count check and the save.
+
+**Test environment finding (affects agent B's entry above):** the ~17 red HTTP integration files were not
+pre-existing flakiness this time. A `rapidmx/server` dev worker (`tsx src/worker.ts`) was listening on `0.0.0.0:3000`,
+the test `Server`'s default port, so test requests hit that process and got 404s. `PORT=3777 yarn vitest run` (nconf
+env override) is fully green. Check `netstat -ano | grep :3000` before blaming flakiness.
+
+Tests: new `test/RepoUtils.WriteSafety.test.ts` (real Mongo on 9999 + in-memory SQLite: `_id` overwrite, cross-model /
+well-known-uid ACL hijack, concurrent cross-model claim with no orphan row, dotted/`$` keys, plain-document locking,
+read-back race, dates); new cases in `RepoUtils.unit.test.ts`, `security/ACLUtils.unit.test.ts` (`createOnly`) and
+`routes/SecurityFixes.test.ts` (HTTP `_id` single/bulk create, dotted body/`:property`). Updated three unit tests for the
+`findOneAndUpdate` switch and replaced "logs instead of reverting when saveACL() modified an existing ACL" (that path no
+longer exists). Full run with `PORT=3777`: 68 files / 1356 tests passed, coverage 97.93 / 93.3 / 99.45 / 97.88
+(includes agent B's in-progress changes). `yarn lint` and `tsc --noEmit` clean.

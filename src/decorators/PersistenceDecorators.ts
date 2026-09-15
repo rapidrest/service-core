@@ -40,7 +40,50 @@ export interface ColumnOptions {
      * a complex/nested structure that has no direct SQL column equivalent (e.g. `"simple-json"`).
      */
     type?: string | Function;
+    /**
+     * The column's database default, used for rows inserted without a value and, importantly, to fill existing
+     * rows when `synchronize` adds a new `NOT NULL` column to a table that already has data (without a default that
+     * fails with a `NOT NULL constraint failed` error). A function returns a raw SQL expression, e.g.
+     * `() => "CURRENT_TIMESTAMP"`. (SQL only; on MongoDB use a property initializer instead.)
+     */
+    default?: string | number | boolean | null | (() => string);
+    /** The maximum length of a string column, e.g. `varchar(255)`. (SQL only) */
+    length?: number | string;
+    /**
+     * Set to `true` to enforce that every value of the column is unique. Equivalent to also applying `@Unique()` to
+     * the property, so it creates a unique index on both SQL and MongoDB.
+     */
+    unique?: boolean;
+    /** The total number of digits stored by a `decimal`/`numeric` column. (SQL only) */
+    precision?: number;
+    /** The number of digits after the decimal point stored by a `decimal`/`numeric` column. (SQL only) */
+    scale?: number;
+    /** Set to `true` to declare an array column. Only supported by PostgreSQL and CockroachDB. (SQL only) */
+    array?: boolean;
+    /** The allowed values of an `enum`/`simple-enum` column. (SQL only) */
+    enum?: (string | number)[] | object;
+    /** Set to `true` to declare a numeric column `UNSIGNED`. Only supported by MySQL/MariaDB. (SQL only) */
+    unsigned?: boolean;
+    /** A comment stored with the column definition, where the database supports it. (SQL only) */
+    comment?: string;
 }
+
+/**
+ * The `ColumnOptions` keys that are forwarded to TypeORM verbatim when set. `unique` is not among them: it is
+ * registered as a unique index instead (see `Column`), so both backends enforce it the same way.
+ */
+export const FORWARDED_SQL_COLUMN_OPTIONS = [
+    "name",
+    "nullable",
+    "default",
+    "length",
+    "precision",
+    "scale",
+    "array",
+    "enum",
+    "unsigned",
+    "comment",
+] as const;
 
 /**
  * The set of options to use when declaring a persistent class type via the `@Entity` decorator.
@@ -137,6 +180,13 @@ export function Column(options: ColumnOptions = {}) {
             designType,
             options,
         } satisfies ColumnInfo);
+        if (options.unique) {
+            // Same registration `@Unique()` makes, so MongoSchemaSync and the TypeORM bridge both pick it up.
+            pushOwnMetadata(INDEXES_KEY, target, {
+                columns: [String(propertyKey)],
+                options: { unique: true },
+            } satisfies IndexInfo);
+        }
     };
 }
 

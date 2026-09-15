@@ -2,7 +2,8 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-import { ObjectDecorators, UserUtils, sleep, type JWTUser } from "@rapidrest/core";
+import { ApiError, ObjectDecorators, UserUtils, sleep, type JWTUser } from "@rapidrest/core";
+import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { AccessControlListSQL } from "./AccessControlListSQL.js";
 import { AccessControlListMongo } from "./AccessControlListMongo.js";
 import type { Repository } from "typeorm";
@@ -387,15 +388,21 @@ export class ACLUtils {
      * need the entity-side write and this ACL save to stay consistent should register a compensating action
      * via `registerRollbackHook()`.
      *
+     * Pass `createOnly: true` to claim a brand new ACL: it is only ever inserted (at version `0`), never merged
+     * into or overwritten on top of an ACL that already exists at the same uid. If one already exists - including
+     * one a concurrent caller inserted first, caught by the ACL collection's unique key - an `IDENTIFIER_EXISTS`
+     * `ApiError` (400) is thrown instead. Used by `RepoUtils.create()` so that a create can never adopt (and grant
+     * its creator rights on) an ACL that belongs to some other record.
+     *
      * @param acl The ACL to store.
      * @param options Set `preserveVersion: true` to restore `acl` exactly as given (see above) instead of the
-     * normal optimistic-locking update semantics.
+     * normal optimistic-locking update semantics. Set `createOnly: true` to only ever insert a new ACL (see above).
      * @return Returns the ACL that was stored in the database.
      */
     @Transactional("acl")
     public async saveACL(
         acl: AccessControlList,
-        options?: { preserveVersion?: boolean },
+        options?: { preserveVersion?: boolean; createOnly?: boolean },
     ): Promise<AccessControlList | null> {
         let result: AccessControlList | null = null;
         if (!this.enabled || !acl) {
@@ -409,7 +416,9 @@ export class ACLUtils {
         const ctx = transactionContext.getStore();
         const preserveVersion: boolean = !!options?.preserveVersion;
 
-        if (this.repo instanceof MongoRepository) {
+        if (options?.createOnly) {
+            result = await this.insertNewACL(acl, ctx);
+        } else if (this.repo instanceof MongoRepository) {
             const mACL: AccessControlListMongo = new AccessControlListMongo(acl);
             const existing: AccessControlListMongo | null = await this.repo.findOne({ uid: acl.uid } as any, {
                 session: ctx?.session,
@@ -476,6 +485,63 @@ export class ACLUtils {
         }
 
         return result;
+    }
+
+    /**
+     * Implements `saveACL()`'s `createOnly` mode: inserts `acl` as a brand new version `0` document, refusing with
+     * `IDENTIFIER_EXISTS` if an ACL already exists at its uid (checked up front, and again via the unique key if a
+     * concurrent insert wins the race in between).
+     */
+    private async insertNewACL(acl: AccessControlList, ctx: any): Promise<AccessControlList> {
+        const exists = (): ApiError =>
+            new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
+
+        if (this.repo instanceof MongoRepository) {
+            const repo: MongoRepository<any> = this.repo;
+            if (await repo.findOne({ uid: acl.uid } as any, { session: ctx?.session })) {
+                throw exists();
+            }
+            const aclMongo: AccessControlListMongo = new AccessControlListMongo({
+                ...acl,
+                _id: undefined,
+                dateModifed: new Date(),
+                version: 0,
+            });
+            try {
+                // `insertOnly` so this can never replace an existing document, whatever `_id` it carries.
+                return await repo.save(aclMongo, { session: ctx?.session, insertOnly: true });
+            } catch (err: any) {
+                // (uid, version) is unique for ACL documents, so a concurrent claim of the same uid fails here.
+                if (err?.code === 11000) {
+                    throw exists();
+                }
+                throw err;
+            }
+        }
+
+        const repo: Repository<any> = ctx?.entityManager
+            ? ctx.entityManager.getRepository(AccessControlListSQL)
+            : (this.repo as Repository<any>);
+        if (await repo.findOne({ where: { uid: acl.uid } })) {
+            throw exists();
+        }
+        const aclSQL: AccessControlListSQL = new AccessControlListSQL({
+            ...acl,
+            dateModifed: new Date(),
+            version: 0,
+        });
+        try {
+            // `insert()` rather than `save()`: TypeORM's `save()` turns into an UPDATE when the row already exists.
+            await repo.insert(aclSQL);
+        } catch (err: any) {
+            // `uid` is the primary key for ACL rows, so a concurrent claim of the same uid fails here. The failed
+            // statement may have poisoned the active transaction, so check for the winner outside of it.
+            if (await (this.repo as Repository<any>).findOne({ where: { uid: acl.uid } })) {
+                throw exists();
+            }
+            throw err;
+        }
+        return aclSQL;
     }
 
     /**

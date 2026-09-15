@@ -125,6 +125,23 @@ describe("PersistenceDecorators Tests", () => {
             expect(code?.options.unique).toBe(true);
         });
 
+        it("registers @Column({ unique: true }) as a unique single-property index, deduplicated with @Unique()", () => {
+            class UniqueColumn {
+                @Column({ unique: true })
+                public code: string = "";
+                @Unique()
+                @Column({ unique: true })
+                public both: string = "";
+                @Column({ unique: false })
+                public plain: string = "";
+            }
+            const indexes = getIndexMetadata(UniqueColumn);
+            expect(indexes.map((i) => [i.columns, i.options.unique])).toEqual([
+                [["code"], true],
+                [["both"], true],
+            ]);
+        });
+
         it("throws when applied to a class with no property names", () => {
             expect(() => Index({ unique: true })(class NoFields {})).toThrow(/requires a list of property names/);
         });

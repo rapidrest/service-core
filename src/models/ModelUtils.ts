@@ -12,7 +12,9 @@ import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { ColumnInfo, getColumnMetadata } from "../decorators/PersistenceDecorators.js";
 
 const logger = Logger();
-const REGEX_QUERY_PARAM_VALUE: RegExp = new RegExp(/^([a-zA-Z]+)\((.*)\)$/, "i");
+// `[\s\S]*` (rather than `.*`) so an operand containing a newline is still taken verbatim, between the first `(`
+// and the final `)`, instead of silently falling through to the bare-value path.
+const REGEX_QUERY_PARAM_VALUE: RegExp = /^([a-zA-Z]+)\(([\s\S]*)\)$/;
 // Anchored at the start so these only match the intended reserved parameter names/prefixes and not any
 // field that merely contains one as a substring (e.g. "sortOrder", "rateLimit", "packageId", "homepage").
 const REGEX_RESERVED_QUERY_PARAMS: RegExp = new RegExp("^(jwt_|oauth_|auth_|cache).*", "i");
@@ -56,6 +58,40 @@ export interface PredicateNode {
     field: string;
     op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "nin" | "range" | "like" | "regex" | "exists";
     value: unknown;
+    /**
+     * Set to `true` to use a string `value` (or each string element of an `in`/`nin`/`range` array) exactly as
+     * given, skipping `me` substitution, the `null` literal and declared-type coercion. Only the hidden-operator
+     * check still applies. See `ModelUtils.literal`.
+     */
+    literal?: boolean;
+}
+
+/** The comparison operators a `QueryLiteral` may carry. */
+export type LiteralOperator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "nin" | "range";
+
+/**
+ * A search query value that is compared exactly as given rather than parsed as `op(value)` syntax. Create one via
+ * `ModelUtils.literal()`. Only code can produce one: a client's query string or `q` JSON can only ever yield plain
+ * strings, arrays and objects.
+ */
+export class QueryLiteral {
+    public readonly op: LiteralOperator;
+    public readonly value: unknown;
+
+    constructor(value: unknown, op: LiteralOperator = "eq") {
+        this.op = op;
+        this.value = value;
+        Object.freeze(this);
+    }
+
+    /**
+     * Serializes under a `$`-prefixed key so a query containing a literal hashes (e.g. for `RepoUtils`' result
+     * cache) differently from any plain value, and so a client echoing the same JSON back is rejected by the
+     * query builders' operator-injection guard instead of being mistaken for a literal.
+     */
+    public toJSON(): any {
+        return { $literal: { op: this.op, value: this.value } };
+    }
 }
 
 /**
@@ -87,6 +123,56 @@ export class ModelUtils {
     private static idPropertyCache: Map<any, string[]> = new Map();
     private static readOnlyPropertyCache: Map<any, string[]> = new Map();
     private static columnTypeCache: Map<any, Map<string, any>> = new Map();
+    /** Sequence used to give every `Raw()` SQL expression's named parameter a unique name within one query. */
+    private static rawParamSeq: number = 0;
+
+    /**
+     * Marks `value` as a literal search value for `buildSearchQuery()` (and so `RepoUtils.find/count/truncate`),
+     * so it is compared exactly as given instead of being parsed as `op(value)` syntax. Use this whenever a query
+     * value comes from outside the code (a client, an email header, an iCalendar UID, a display name): a raw string
+     * such as `ne(x)` would otherwise be read as an operator, `Support(EU)` would be rejected as an unknown
+     * operator, `me`/`null` would be substituted, and a comma inside an `in()` list would split the value.
+     *
+     * The value is not type-coerced, so pass it with the column's real type (number, boolean, `Date`, string).
+     * `null` still compiles to `IS NULL` on SQL. Object values are still checked for hidden `$`/dotted keys.
+     *
+     * ```
+     * repoUtils.find({ messageId: ModelUtils.literal(header) });
+     * repoUtils.find({ uid: ModelUtils.literal(["a,b", "c"], "in") });
+     * repoUtils.find({ name: ModelUtils.literal(displayName, "ne") });
+     * repoUtils.find({ size: ModelUtils.literal([10, 20], "range") });
+     * ```
+     *
+     * @param value The value to compare against. An array for `in`, `nin` and `range` (exactly two elements).
+     * @param op The comparison to apply. Defaults to `eq`.
+     */
+    public static literal(value: unknown, op: LiteralOperator = "eq"): QueryLiteral {
+        return new QueryLiteral(value, op);
+    }
+
+    /**
+     * Splits the operand of a list operator (`in()`, `nin()`, `range()`) on unescaped commas. `\,` yields a literal
+     * comma and `\\` a literal backslash; a backslash before any other character (or at the end) is kept as is.
+     */
+    private static splitListOperand(operand: string): string[] {
+        const parts: string[] = [];
+        let current = "";
+        for (let i = 0; i < operand.length; i++) {
+            const ch: string = operand[i];
+            const next: string | undefined = operand[i + 1];
+            if (ch === "\\" && (next === "," || next === "\\")) {
+                current += next;
+                i++;
+            } else if (ch === ",") {
+                parts.push(current);
+                current = "";
+            } else {
+                current += ch;
+            }
+        }
+        parts.push(current);
+        return parts;
+    }
 
     /**
      * Provides the `typeorm` module to use when building SQL queries. This is called automatically when a SQL
@@ -404,9 +490,7 @@ export class ModelUtils {
 
         if (
             type === Number ||
-            ["int", "integer", "float", "double", "decimal", "numeric", "bigint", "smallint", "tinyint"].includes(
-                type,
-            )
+            ["int", "integer", "float", "double", "decimal", "numeric", "bigint", "smallint", "tinyint"].includes(type)
         ) {
             const value: number = Number(raw);
             if (raw.trim() === "" || isNaN(value)) {
@@ -432,7 +516,11 @@ export class ModelUtils {
         return new ApiError(
             ApiErrors.SEARCH_INVALID_OPERAND_TYPE,
             400,
-            StringUtils.findAndReplace(ApiErrorMessages.SEARCH_INVALID_OPERAND_TYPE, { value: raw, field: property, type }),
+            StringUtils.findAndReplace(ApiErrorMessages.SEARCH_INVALID_OPERAND_TYPE, {
+                value: raw,
+                field: property,
+                type,
+            }),
         );
     }
 
@@ -440,10 +528,16 @@ export class ModelUtils {
      * Coerces an already-typed AST predicate value (see `QueryNode`): a string operand is routed through
      * `coerceOperand` (type coercion, `me` substitution, injection guard) exactly like the flat `op(value)`
      * form; any other value is assumed to already be correctly typed by the caller and is only checked for a
-     * hidden operator/dotted key.
+     * hidden operator/dotted key. With `literal` set, a string operand is kept exactly as given too.
      */
-    private static coerceNodeValue(value: unknown, modelClass: any, property: string, user: any): any {
-        if (typeof value === "string") {
+    private static coerceNodeValue(
+        value: unknown,
+        modelClass: any,
+        property: string,
+        user: any,
+        literal: boolean = false,
+    ): any {
+        if (typeof value === "string" && !literal) {
             return ModelUtils.coerceOperand(value, modelClass, property, user);
         }
         ModelUtils.assertNoOperatorInjection(value);
@@ -540,16 +634,18 @@ export class ModelUtils {
      */
     private static compileSqlRegex(pattern: string, driverType?: string): any {
         const { Raw } = ModelUtils.orm;
+        // TypeORM registers a `Raw()` expression's named parameters query-wide, so two regex() conditions in one
+        // query (on different fields, or ANDed on the same field) must not share a parameter name.
+        const name = `rrst_regex_${++ModelUtils.rawParamSeq}`;
         switch (driverType) {
             case "postgres":
             case "cockroachdb":
-                return Raw((alias: string) => `${alias} ~* :pattern`, { pattern });
+                return Raw((alias: string) => `${alias} ~* :${name}`, { [name]: pattern });
             case "mysql":
             case "mariadb":
-                return Raw((alias: string) => `${alias} REGEXP :pattern`, { pattern });
             case "better-sqlite3":
             case "sqlite":
-                return Raw((alias: string) => `${alias} REGEXP :pattern`, { pattern });
+                return Raw((alias: string) => `${alias} REGEXP :${name}`, { [name]: pattern });
             default:
                 throw new ApiError(
                     ApiErrors.SEARCH_OPERATOR_NOT_SUPPORTED,
@@ -587,9 +683,9 @@ export class ModelUtils {
                 const operand: string = matches[2];
 
                 if (!KNOWN_OPERATORS.has(opName)) {
-                    // The literal-value escape hatch is `eq(...)`: `?title=eq(Report(final))` still parses
-                    // correctly here since REGEX_QUERY_PARAM_VALUE is greedy, so a field value that happens to
-                    // look like `name(args)` remains searchable.
+                    // The HTTP escape hatch is `eq(...)`: `?title=eq(Report(final))` still parses correctly here
+                    // since REGEX_QUERY_PARAM_VALUE is greedy, so a field value that happens to look like
+                    // `name(args)` remains searchable. Code should use `ModelUtils.literal()` instead.
                     throw new ApiError(
                         ApiErrors.SEARCH_UNKNOWN_OPERATOR,
                         400,
@@ -610,9 +706,9 @@ export class ModelUtils {
                     case "gte":
                         return MoreThanOrEqual(ModelUtils.coerceOperand(operand, modelClass, property, user));
                     case "in": {
-                        const args: any[] = operand
-                            .split(",")
-                            .map((raw) => ModelUtils.coerceOperand(raw, modelClass, property, user));
+                        const args: any[] = ModelUtils.splitListOperand(operand).map((raw) =>
+                            ModelUtils.coerceOperand(raw, modelClass, property, user),
+                        );
                         return In(args);
                     }
                     case "like":
@@ -636,13 +732,13 @@ export class ModelUtils {
                         return value === null ? Not(IsNull()) : Not(value);
                     }
                     case "nin": {
-                        const args: any[] = operand
-                            .split(",")
-                            .map((raw) => ModelUtils.coerceOperand(raw, modelClass, property, user));
+                        const args: any[] = ModelUtils.splitListOperand(operand).map((raw) =>
+                            ModelUtils.coerceOperand(raw, modelClass, property, user),
+                        );
                         return Not(In(args));
                     }
                     case "range": {
-                        const args: string[] = operand.split(",");
+                        const args: string[] = ModelUtils.splitListOperand(operand);
                         if (args.length !== 2) {
                             const msg: string = StringUtils.findAndReplace(ApiErrorMessages.SEARCH_INVALID_RANGE, {
                                 value: operand,
@@ -669,11 +765,22 @@ export class ModelUtils {
                 }
                 return coerced === null ? IsNull() : Equal(coerced);
             }
+        } else if (param instanceof QueryLiteral) {
+            return ModelUtils.compilePredicateSQLOperator(
+                param.op,
+                param.value,
+                modelClass,
+                property,
+                user,
+                driverType,
+                true,
+            );
         } else {
             // A non-string value only reaches here when the caller already parsed the raw query into native
             // types itself (mirrors the equivalent Mongo case below) - still validated for a hidden operator.
             ModelUtils.assertNoOperatorInjection(param);
-            return param;
+            // A bare `null` in a TypeORM `where` throws by default rather than matching `IS NULL`; Mongo matches it.
+            return param === null ? ModelUtils.orm.IsNull() : param;
         }
     }
 
@@ -717,15 +824,15 @@ export class ModelUtils {
                     case "gte":
                         return { $gte: ModelUtils.coerceOperand(operand, modelClass, property, user) };
                     case "in": {
-                        const args: any[] = operand
-                            .split(",")
-                            .map((raw) => ModelUtils.coerceOperand(raw, modelClass, property, user));
+                        const args: any[] = ModelUtils.splitListOperand(operand).map((raw) =>
+                            ModelUtils.coerceOperand(raw, modelClass, property, user),
+                        );
                         return { $in: args };
                     }
                     case "nin": {
-                        const args: any[] = operand
-                            .split(",")
-                            .map((raw) => ModelUtils.coerceOperand(raw, modelClass, property, user));
+                        const args: any[] = ModelUtils.splitListOperand(operand).map((raw) =>
+                            ModelUtils.coerceOperand(raw, modelClass, property, user),
+                        );
                         return { $nin: args };
                     }
                     case "like": {
@@ -754,7 +861,7 @@ export class ModelUtils {
                         return value instanceof RegExp ? { $not: value } : { $ne: value };
                     }
                     case "range": {
-                        const args: string[] = operand.split(",");
+                        const args: string[] = ModelUtils.splitListOperand(operand);
                         if (args.length !== 2) {
                             const msg: string = StringUtils.findAndReplace(ApiErrorMessages.SEARCH_INVALID_RANGE, {
                                 value: operand,
@@ -781,6 +888,15 @@ export class ModelUtils {
                 }
                 return coerced;
             }
+        } else if (param instanceof QueryLiteral) {
+            const node: PredicateNode = {
+                kind: "predicate",
+                field: property,
+                op: param.op,
+                value: param.value,
+                literal: true,
+            };
+            return ModelUtils.compilePredicateMongo(node, modelClass, user)[property];
         } else {
             // A non-string value only reaches here when the caller already parsed the raw query into native
             // types itself (e.g. the `q` base64-encoded JSON query parameter in RouteUtils.wrapMiddleware) —
@@ -839,6 +955,79 @@ export class ModelUtils {
         return { take, page, skip: page * take };
     }
 
+    /** Returns `true` for the boolean grouping keys (`$or`, `$and`) accepted in a flat search query. */
+    private static isGroupKey(key: string): boolean {
+        return key === "$or" || key === "$and";
+    }
+
+    /**
+     * Validates the value of a `$or`/`$and` key: a non-empty array (at most `MAX_QUERY_NODES` long) of plain query
+     * objects. Anything else is a 400 on both backends. In particular an empty array is rejected rather than
+     * compiled: on SQL it used to expand to zero branches, which dropped the whole `where` (every other condition
+     * included) and matched every row, while MongoDB rejects `$or: []` outright.
+     */
+    private static assertQueryGroup(value: unknown): any[] {
+        if (
+            !Array.isArray(value) ||
+            value.length === 0 ||
+            value.some((sub) => !sub || typeof sub !== "object" || Array.isArray(sub) || sub instanceof QueryLiteral)
+        ) {
+            throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+        }
+        if (value.length > MAX_QUERY_NODES) {
+            throw new ApiError(ApiErrors.SEARCH_QUERY_TOO_COMPLEX, 400, ApiErrorMessages.SEARCH_QUERY_TOO_COMPLEX);
+        }
+        return value;
+    }
+
+    /**
+     * ANDs two lists of OR-ed SQL `where` branches: `(L1 OR L2) AND (R1 OR R2)` becomes the cross product
+     * `(L1 AND R1) OR (L1 AND R2) OR ...`. Throws before allocating if the product exceeds `MAX_QUERY_NODES`.
+     */
+    private static andBranches(left: any[], right: any[]): any[] {
+        if (left.length * right.length > MAX_QUERY_NODES) {
+            throw new ApiError(ApiErrors.SEARCH_QUERY_TOO_COMPLEX, 400, ApiErrorMessages.SEARCH_QUERY_TOO_COMPLEX);
+        }
+        const combined: any[] = [];
+        for (const l of left) {
+            for (const r of right) {
+                combined.push(ModelUtils.mergeWhereBranches(l, r));
+            }
+        }
+        return combined;
+    }
+
+    /**
+     * ANDs two SQL `where` branch objects. A key present on only one side is copied; a key present on both keeps
+     * both conditions via TypeORM's `And()` (a plain object spread would let the right side silently replace the
+     * left, e.g. a forced scope key being overridden by a `$or` branch). Nested plain objects (embedded entities or
+     * relations) are merged recursively.
+     */
+    private static mergeWhereBranches(left: any, right: any): any {
+        const result: any = { ...left };
+        for (const key of Object.keys(right)) {
+            result[key] = key in result ? ModelUtils.andWhereValues(result[key], right[key]) : right[key];
+        }
+        return result;
+    }
+
+    private static andWhereValues(left: any, right: any): any {
+        const { And, Equal, IsNull, InstanceChecker } = ModelUtils.orm;
+        const isPlainObject = (v: any): boolean =>
+            !!v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype;
+
+        if (isPlainObject(left) && isPlainObject(right)) {
+            return ModelUtils.mergeWhereBranches(left, right);
+        }
+
+        // Flatten nested And() so repeated merges on one key stay a single flat conjunction.
+        const operands = (v: any): any[] => {
+            const op: any = InstanceChecker.isFindOperator(v) ? v : v === null ? IsNull() : Equal(v);
+            return op.type === "and" ? op.value : [op];
+        };
+        return And(...operands(left), ...operands(right));
+    }
+
     /**
      * Builds a query object for the given criteria and repository. Query params can have a value containing a
      * conditional operator to apply for the search. The operator is encoded with the format `op(value)`. The following
@@ -857,6 +1046,27 @@ export class ModelUtils {
      *
      * When no operator is provided the comparison is evaluated as `eq`, unless `exactMatch` is `false`, in which
      * case a string-valued parameter is instead matched as a case-insensitive "contains" search.
+     *
+     * Operand and escaping rules:
+     * * A value is only parsed as an operator when the WHOLE value has the shape `name(...)`. The operand is
+     * everything between the first `(` and the last `)`, verbatim: parentheses, commas, leading/trailing spaces,
+     * newlines and nested `op(...)` text included. So `eq(Support(EU))` matches `Support(EU)`, `eq( a,b )`
+     * matches ` a,b ` and `eq(ne(x))` matches `ne(x)`. The operator name is case-insensitive.
+     * * A bare value shaped like `name(...)` whose `name` is not a known operator is rejected with a 400; wrap it
+     * in `eq(...)` to match it literally.
+     * * `eq()`/`ne()` operands are then coerced like any operand: `me` resolves to the requesting user's uid, `null`
+     * matches a null value, and the value is converted to the column's declared type (number, boolean, date).
+     * With no column metadata a JSON/date heuristic is used instead.
+     * * `in()`, `nin()` and `range()` split their operand on commas. Write `\,` for a comma inside one value and
+     * `\\` for a backslash, e.g. `in(a\,b,c)` matches `a,b` or `c`. A backslash before any other character is
+     * kept as is.
+     * * `$or` and `$and` (only from programmatic queries or the `q` JSON parameter; a query string can't build them)
+     * take a non-empty array of sub-query objects that are ANDed with every other key, the same on both backends.
+     * A `$`-prefixed field name is rejected with a 400.
+     *
+     * Code that passes a value it doesn't control (an email header, an iCalendar UID, a display name, ...) should
+     * use `ModelUtils.literal(value)` instead of building an `eq(...)` string. A literal skips all of the parsing
+     * and coercion above. Other non-string values (numbers, booleans, `Date`, `null`) are also compared as given.
      *
      * A repeated query parameter name (e.g. `?a=1&a=2`) OR-combines its values, "zipped" positionally against
      * every other repeated parameter rather than as a cartesian product: `?a=1&a=2&b=3&b=4` compiles to
@@ -937,7 +1147,7 @@ export class ModelUtils {
         // So first let's find out how many queries in total we are going to need.
         let numQueries = 1;
         for (const key in query) {
-            if (key === "$or" || key.match(REGEX_RESERVED_QUERY_PARAMS) || key.match(REGEX_QUERY_LIMITS)) {
+            if (ModelUtils.isGroupKey(key) || key.match(REGEX_RESERVED_QUERY_PARAMS) || key.match(REGEX_QUERY_LIMITS)) {
                 continue;
             }
             const value: string | string[] = query[key];
@@ -953,8 +1163,8 @@ export class ModelUtils {
         // Now go through each query paramater. If the parameter is a single value, add it to each query object. If it's an array,
         // add only one value to each query object.
         for (let key in query) {
-            // `$or` is composed after the main loop, cross-producted against everything else built here.
-            if (key === "$or") {
+            // `$or`/`$and` are composed after the main loop, cross-producted against everything else built here.
+            if (ModelUtils.isGroupKey(key)) {
                 continue;
             }
 
@@ -1006,6 +1216,12 @@ export class ModelUtils {
                 continue;
             }
 
+            // Same rule as the Mongo builder: a `$`-prefixed key (or path segment) is never a field, so reject it
+            // with a 400 on both backends instead of letting TypeORM fail on an unknown property.
+            if (key.split(".").some((segment) => segment.startsWith("$"))) {
+                throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+            }
+
             if (Array.isArray(query[key])) {
                 // Add each value in the array to each corresponding query. Multi-valued keys are "zipped"
                 // together via `numQueries` above; if this key's array is shorter than another key's, pad the
@@ -1046,29 +1262,34 @@ export class ModelUtils {
             }
         }
 
-        // A `$or` key is composed via a distinct pass, after every other key: since a TypeORM `find()`-based
+        // `$or`/`$and` keys are composed via a distinct pass, after every other key: since a TypeORM `find()`-based
         // `where` only supports OR as a top-level array (no nested-OR expressible within one branch), each
         // sub-query's own OR-branches are cross-producted (distributed) against the branches already built above
         // - (A) AND ($or: [X,Y]) is equivalent to (A AND X) OR (A AND Y), which composes correctly with the
-        // existing "zip" array regardless of processing order.
-        if (query.$or && Array.isArray(query.$or)) {
-            const branchesPerChild: any[][] = [];
-            for (const sub of query.$or as any[]) {
-                const compiled: any = ModelUtils.buildSearchQuerySQL(modelClass, sub, exactMatch, user, driverType, depth + 1);
-                branchesPerChild.push(compiled.where && compiled.where.length > 0 ? compiled.where : [{}]);
+        // existing "zip" array regardless of processing order. Each combined branch must keep BOTH sides'
+        // conditions, including on a key present on both sides (see `mergeWhereBranches`), exactly like Mongo's
+        // implicit AND of a top-level key and a `$or`.
+        for (const groupKey of ["$and", "$or"]) {
+            if (!(groupKey in query)) {
+                continue;
             }
-            const orBranches: any[] = ([] as any[]).concat(...branchesPerChild);
+            const branchesPerChild: any[][] = ModelUtils.assertQueryGroup(query[groupKey]).map((sub) => {
+                const compiled: any = ModelUtils.buildSearchQuerySQL(
+                    modelClass,
+                    sub,
+                    exactMatch,
+                    user,
+                    driverType,
+                    depth + 1,
+                );
+                return compiled.where ?? [{}];
+            });
             const base: any[] = result.where.length > 0 ? result.where : [{}];
-            const combined: any[] = [];
-            for (const existing of base) {
-                for (const orClause of orBranches) {
-                    combined.push({ ...existing, ...orClause });
-                }
+            if (groupKey === "$or") {
+                result.where = ModelUtils.andBranches(base, ([] as any[]).concat(...branchesPerChild));
+            } else {
+                result.where = branchesPerChild.reduce((acc, branches) => ModelUtils.andBranches(acc, branches), base);
             }
-            if (combined.length > MAX_QUERY_NODES) {
-                throw new ApiError(ApiErrors.SEARCH_QUERY_TOO_COMPLEX, 400, ApiErrorMessages.SEARCH_QUERY_TOO_COMPLEX);
-            }
-            result.where = combined;
         }
 
         if (result.where.length === 0) {
@@ -1129,7 +1350,7 @@ export class ModelUtils {
         // pre-allocate them, before any key gets applied to a subset of branches.
         let numQueries = 1;
         for (const key in query) {
-            if (key === "$or" || key.match(REGEX_RESERVED_QUERY_PARAMS) || key.match(REGEX_QUERY_LIMITS)) {
+            if (ModelUtils.isGroupKey(key) || key.match(REGEX_RESERVED_QUERY_PARAMS) || key.match(REGEX_QUERY_LIMITS)) {
                 continue;
             }
             const value: any = query[key];
@@ -1213,14 +1434,14 @@ export class ModelUtils {
             // handled just below; its sub-queries are validated recursively when they're built). Operator
             // injection hidden inside a *value* (e.g. `eq({"$ne":null})`) is separately guarded by
             // `assertNoOperatorInjection` wherever values are parsed.
-            if (key !== "$or" && key.split(".").some((segment) => segment.startsWith("$"))) {
+            if (!ModelUtils.isGroupKey(key) && key.split(".").some((segment) => segment.startsWith("$"))) {
                 throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
             }
 
-            if (key === "$or") {
-                // Array of OR queries
+            if (ModelUtils.isGroupKey(key)) {
+                // Array of OR (or AND) sub-queries
                 let orResults: any[] = [];
-                for (const q of query[key] as Array<any>) {
+                for (const q of ModelUtils.assertQueryGroup(query[key])) {
                     const subQueryOrResult = this.buildSearchQueryMongo(modelClass, q, exactMatch, user, depth + 1);
                     const validSubQueryResult = ModelUtils.extractMatch(subQueryOrResult);
                     validSubQueryResult && orResults.push(validSubQueryResult);
@@ -1238,7 +1459,7 @@ export class ModelUtils {
                 // already placed on each branch — replacing outright would silently discard them, and merging
                 // only into queries[0] would silently drop the $or constraint from any other zipped branch.
                 for (let i = 0; i < numQueries; i++) {
-                    queries[i] = { ...queries[i], $or: orResults };
+                    queries[i] = { ...queries[i], [key]: orResults };
                 }
 
                 continue;
@@ -1300,26 +1521,36 @@ export class ModelUtils {
         const { field, op } = node;
         switch (op) {
             case "eq":
-                return { [field]: ModelUtils.coerceNodeValue(node.value, modelClass, field, user) };
+                return { [field]: ModelUtils.coerceNodeValue(node.value, modelClass, field, user, node.literal) };
             case "ne":
-                return { [field]: { $ne: ModelUtils.coerceNodeValue(node.value, modelClass, field, user) } };
+                return {
+                    [field]: { $ne: ModelUtils.coerceNodeValue(node.value, modelClass, field, user, node.literal) },
+                };
             case "gt":
-                return { [field]: { $gt: ModelUtils.coerceNodeValue(node.value, modelClass, field, user) } };
+                return {
+                    [field]: { $gt: ModelUtils.coerceNodeValue(node.value, modelClass, field, user, node.literal) },
+                };
             case "gte":
-                return { [field]: { $gte: ModelUtils.coerceNodeValue(node.value, modelClass, field, user) } };
+                return {
+                    [field]: { $gte: ModelUtils.coerceNodeValue(node.value, modelClass, field, user, node.literal) },
+                };
             case "lt":
-                return { [field]: { $lt: ModelUtils.coerceNodeValue(node.value, modelClass, field, user) } };
+                return {
+                    [field]: { $lt: ModelUtils.coerceNodeValue(node.value, modelClass, field, user, node.literal) },
+                };
             case "lte":
-                return { [field]: { $lte: ModelUtils.coerceNodeValue(node.value, modelClass, field, user) } };
+                return {
+                    [field]: { $lte: ModelUtils.coerceNodeValue(node.value, modelClass, field, user, node.literal) },
+                };
             case "in": {
                 const values: any[] = (Array.isArray(node.value) ? node.value : [node.value]).map((v) =>
-                    ModelUtils.coerceNodeValue(v, modelClass, field, user),
+                    ModelUtils.coerceNodeValue(v, modelClass, field, user, node.literal),
                 );
                 return { [field]: { $in: values } };
             }
             case "nin": {
                 const values: any[] = (Array.isArray(node.value) ? node.value : [node.value]).map((v) =>
-                    ModelUtils.coerceNodeValue(v, modelClass, field, user),
+                    ModelUtils.coerceNodeValue(v, modelClass, field, user, node.literal),
                 );
                 return { [field]: { $nin: values } };
             }
@@ -1337,8 +1568,8 @@ export class ModelUtils {
                 const [lo, hi] = node.value as [unknown, unknown];
                 return {
                     [field]: {
-                        $gte: ModelUtils.coerceNodeValue(lo, modelClass, field, user),
-                        $lte: ModelUtils.coerceNodeValue(hi, modelClass, field, user),
+                        $gte: ModelUtils.coerceNodeValue(lo, modelClass, field, user, node.literal),
+                        $lte: ModelUtils.coerceNodeValue(hi, modelClass, field, user, node.literal),
                     },
                 };
             }
@@ -1393,35 +1624,36 @@ export class ModelUtils {
         field: string,
         user: any,
         driverType?: string,
+        literal: boolean = false,
     ): any {
         const { Equal, MoreThan, MoreThanOrEqual, In, ILike, LessThan, LessThanOrEqual, Not, Between, IsNull } =
             ModelUtils.orm;
         switch (op) {
             case "eq": {
-                const v: any = ModelUtils.coerceNodeValue(value, modelClass, field, user);
+                const v: any = ModelUtils.coerceNodeValue(value, modelClass, field, user, literal);
                 return v === null ? IsNull() : Equal(v);
             }
             case "ne": {
-                const v: any = ModelUtils.coerceNodeValue(value, modelClass, field, user);
+                const v: any = ModelUtils.coerceNodeValue(value, modelClass, field, user, literal);
                 return v === null ? Not(IsNull()) : Not(v);
             }
             case "gt":
-                return MoreThan(ModelUtils.coerceNodeValue(value, modelClass, field, user));
+                return MoreThan(ModelUtils.coerceNodeValue(value, modelClass, field, user, literal));
             case "gte":
-                return MoreThanOrEqual(ModelUtils.coerceNodeValue(value, modelClass, field, user));
+                return MoreThanOrEqual(ModelUtils.coerceNodeValue(value, modelClass, field, user, literal));
             case "lt":
-                return LessThan(ModelUtils.coerceNodeValue(value, modelClass, field, user));
+                return LessThan(ModelUtils.coerceNodeValue(value, modelClass, field, user, literal));
             case "lte":
-                return LessThanOrEqual(ModelUtils.coerceNodeValue(value, modelClass, field, user));
+                return LessThanOrEqual(ModelUtils.coerceNodeValue(value, modelClass, field, user, literal));
             case "in": {
                 const values: any[] = (Array.isArray(value) ? value : [value]).map((v) =>
-                    ModelUtils.coerceNodeValue(v, modelClass, field, user),
+                    ModelUtils.coerceNodeValue(v, modelClass, field, user, literal),
                 );
                 return In(values);
             }
             case "nin": {
                 const values: any[] = (Array.isArray(value) ? value : [value]).map((v) =>
-                    ModelUtils.coerceNodeValue(v, modelClass, field, user),
+                    ModelUtils.coerceNodeValue(v, modelClass, field, user, literal),
                 );
                 return Not(In(values));
             }
@@ -1438,8 +1670,8 @@ export class ModelUtils {
                 }
                 const [lo, hi] = value as [unknown, unknown];
                 return Between(
-                    ModelUtils.coerceNodeValue(lo, modelClass, field, user),
-                    ModelUtils.coerceNodeValue(hi, modelClass, field, user),
+                    ModelUtils.coerceNodeValue(lo, modelClass, field, user, literal),
+                    ModelUtils.coerceNodeValue(hi, modelClass, field, user, literal),
                 );
             }
             case "like":
@@ -1483,6 +1715,7 @@ export class ModelUtils {
                         node.field,
                         user,
                         driverType,
+                        node.literal,
                     ),
                 },
             ];
@@ -1514,15 +1747,7 @@ export class ModelUtils {
             branches = ([] as any[]).concat(...childBranches);
         } else {
             branches = childBranches.reduce<any[]>(
-                (acc, branchesForChild) => {
-                    const combined: any[] = [];
-                    for (const existing of acc) {
-                        for (const clause of branchesForChild) {
-                            combined.push({ ...existing, ...clause });
-                        }
-                    }
-                    return combined;
-                },
+                (acc, branchesForChild) => ModelUtils.andBranches(acc, branchesForChild),
                 [{}],
             );
         }
