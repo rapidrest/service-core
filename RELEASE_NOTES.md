@@ -1,5 +1,18 @@
 # Release Notes
 
+## Unreleased
+
+### Fixes
+
+- Fixed a SQL `ConnectionManager.connect()` silently reusing an earlier TypeORM DataSource with the same datastore
+  name, even when that one was created for different entities or a different URL, or had already been destroyed.
+  The reused DataSource kept its original entity list, so the new connection's other models had no metadata ("No
+  metadata for …") and `synchronize` never created their tables. This happened whenever code connected a datastore
+  name for a few models first (e.g. to read startup state) and the service then connected the same name for all of
+  them. A cached DataSource is now reused only while it's still initialized and was created for the same URL and the
+  same entity classes; otherwise a new one replaces it. `ConnectionManager.disconnect()` also removes each destroyed
+  SQL DataSource from the cache (new `TypeOrmSupport.release()`).
+
 ## v2.1.0
 
 This release is mostly security and correctness hardening from an adversarial review of the framework and its

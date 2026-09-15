@@ -930,3 +930,21 @@ Tests:
 
 Verification: final full `PORT=3777 yarn vitest run` (F1/F3 changes in the tree): 73 files / 1601 tests passed,
 coverage 98.31 / 94.44 / 99.76 / 98.4 (gate met). `yarn lint` and `npx tsc --noEmit` clean. Nothing committed.
+
+### 2026-09-15 — SQL connections reused a cached DataSource built for other entities
+
+Found in `rapidmx/server`: its plugin host connected the `sql` datastore name with only its Plugin model before the
+server's own connect, and `TypeOrmSupport.connect()` then handed the server that same DataSource (the module-level
+`dataSources` map is keyed by name only). Every other model failed with "No metadata", and `synchronize` created only
+the plugin table, on SQLite and Postgres alike. `ConnectionManager.disconnect()` destroyed DataSources without removing
+them from the map, so connecting again later re-initialized the stale one with its old entities too.
+
+- `connect()` reuses a cached DataSource only while it's initialized and its `options.url` and entity classes (as a
+  set) match the call; otherwise it creates a new one and replaces the map entry. The earlier DataSource isn't
+  destroyed there, since another ConnectionManager may still own it.
+- New `release(name, dataSource)` deletes the entry only if it's that DataSource; `disconnect()` calls it after
+  destroying each SQL connection.
+- Still true: two ConnectionManagers connecting the same name with the same entities share one DataSource, and either
+  one's `disconnect()` destroys it for both. Not changed.
+- Tests: `test/database/TypeOrmSupport.connect.test.ts` (real better-sqlite3 files). 5 of its 6 tests fail on the old
+  code with a no-op `release` stub.

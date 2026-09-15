@@ -264,7 +264,7 @@ export class ConnectionManager {
      */
     @Destroy
     public async disconnect(): Promise<void> {
-        for (const conn of this.connections.values()) {
+        for (const [name, conn] of this.connections.entries()) {
             if (conn) {
                 if (conn instanceof MongoConnection) {
                     if (conn.isConnected) {
@@ -275,6 +275,8 @@ export class ConnectionManager {
                     if (sqlConn.isInitialized) {
                         await sqlConn.destroy();
                     }
+                    const orm = await import("./TypeOrmSupport.js");
+                    orm.release(name, sqlConn);
                 } else if (typeof (conn as any).disconnect === "function") {
                     // The only other connection kind this class ever creates is a redis client. Duck-typed
                     // (rather than `instanceof RedisClient`) so `redis` doesn't need to be imported here just

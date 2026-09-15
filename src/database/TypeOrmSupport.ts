@@ -174,12 +174,35 @@ function registerIndex(storage: any, target: any, index: IndexInfo): void {
     });
 }
 
-/** Tracks active DataSource instances by datasource name to support reconnection. */
+/** Tracks active DataSource instances by datasource name, so connecting again with the same options shares one. */
 const dataSources = new Map<string, typeorm.DataSource>();
 
 /**
- * Establishes a TypeORM connection for the given SQL datasource configuration. If a connection with the given name
- * already exists it is reused (and reconnected if necessary).
+ * Returns `true` when a cached DataSource can serve a new `connect()` call: it's still initialized, and it was created
+ * for the same URL and exactly the same entity classes. A DataSource's entity metadata is fixed when it's built, so
+ * one created for a different entity list would leave the missing entities without metadata (and `synchronize`
+ * without their tables).
+ */
+function canReuse(connection: typeorm.DataSource, entities: any[], url: string): boolean {
+    if (!connection.isInitialized) {
+        return false;
+    }
+    const options: any = connection.options;
+    if (options.url !== url) {
+        return false;
+    }
+    const existing: any[] = Array.isArray(options.entities) ? options.entities : [];
+    if (existing.length !== entities.length) {
+        return false;
+    }
+    const wanted = new Set(entities);
+    return existing.every((entity) => wanted.has(entity));
+}
+
+/**
+ * Establishes a TypeORM connection for the given SQL datasource configuration. A connection with the given name is
+ * reused only while it's still initialized and was created for the same URL and entities; otherwise a new
+ * DataSource is created and replaces it under that name.
  *
  * @param name The name of the datasource to connect to.
  * @param datasource The datasource configuration to pass to TypeORM.
@@ -200,11 +223,7 @@ export async function connect(
 
     let connection: typeorm.DataSource | undefined = dataSources.get(name);
 
-    if (connection) {
-        if (!connection.isInitialized) {
-            await connection.initialize();
-        }
-    } else {
+    if (!connection || !canReuse(connection, entities, url)) {
         connection = new typeorm.DataSource({
             ...datasource,
             entities,
@@ -220,6 +239,19 @@ export async function connect(
     registerRegexpFunction(connection);
 
     return connection;
+}
+
+/**
+ * Removes the cached DataSource for `name` if it is `connection`, so a later `connect()` under that name creates a
+ * new one. Called after the DataSource is destroyed.
+ *
+ * @param name The name the DataSource was connected under.
+ * @param connection The DataSource being released.
+ */
+export function release(name: string, connection: typeorm.DataSource): void {
+    if (dataSources.get(name) === connection) {
+        dataSources.delete(name);
+    }
 }
 
 /**
