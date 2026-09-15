@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-15
+
+### Changed
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+### Fixed
+- Fixed SQL connect() reusing a cached DataSource created for other entities, another URL or already destroyed, which left the new connection's models without metadata or tables, and release destroyed DataSources on disconnect()
+
 ## [2.1.0] - 2026-09-15
 
 ### Added
@@ -229,7 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/rapidrest/service-core/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/rapidrest/service-core/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/rapidrest/service-core/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/rapidrest/service-core/compare/v1.7.2...v1.8.0
