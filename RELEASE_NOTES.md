@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v2.1.0
 
 This release is mostly security and correctness hardening from an adversarial review of the framework and its
 largest consumer. Several fixes tighten behaviour that services may have relied on; those are marked **Breaking**.

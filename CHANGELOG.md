@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-15
+
+### Added
+- Added RepoUpdateOptions.allowReadOnly to let trusted code write @ReadOnly fields
+- Added RepoCreateOptions.preserveId for trusted code that must keep an _id, still insert-only, and report duplicate keys as IDENTIFIER_EXISTS
+- Added ACLUtils.saveACL() createOnly so a fresh record ACL is claimed atomically and removed again if the record write fails
+- Added coercion of ISO strings and numbers to Date for Date-typed columns on create and update, with 400 for invalid dates
+- Added $and support, reject empty or malformed $or and $and and $-prefixed field keys with 400, give each regex() condition its own parameter name, and map null to IsNull() on SQL
+- Added ModelUtils.literal() and PredicateNode.literal for passing values without operator parsing, substitution or coercion, and reject forged $literal keys from clients
+- Added default, length, unique, precision, scale, array, enum, unsigned and comment to ColumnOptions and forward them to TypeORM, registering unique as an index for Mongo schema sync
+- Added Mongo and SQL integration tests for create, ACL, update and query parity, and SQL synchronize tests for column options
+- Added graceful shutdown that drains in-flight requests before closing datastores
+- Added PATCH to CORS allowed methods
+
+### Changed
+- RepoUtils.update() previously reset every @ReadOnly field back to its
+- existing persisted value unconditionally, with no way to opt out - which
+- meant trusted server-side code that legitimately owns a @ReadOnly field's
+- lifecycle outside the ordinary create/update path (a background job, a
+- route action handler) could never adopt @ReadOnly for that field without
+- breaking its own writes.
+- allowReadOnly defaults to false/unset, preserving the exact existing
+- behavior for every current caller. Mirrors the ignoreACL option already on
+- RepoOperationOptions for the same "trusted internal code overriding a
+- normally-enforced protection" shape.
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+- Document the port 3000 conflict behind earlier red HTTP integration tests and the remaining SQL concurrency gaps
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+### Fixed
+- Fixed RepoUtils.create() overwriting an existing Mongo document when the input carries an _id, by always inserting through a new MongoRepository.save() insertOnly option
+- Fixed RepoUtils.create() granting the creator an existing ACL that shares the new record's uid, reusing it only for new versions, trusted callers, allowExistingACL or callers already holding every creator action
+- Fixed RepoUtils.update() passing dotted and $-prefixed keys into $set, rejecting them with 400 on both backends for update, bulk update and property updates
+- Fixed optimistic locking being skipped when existing is a plain document with a numeric version
+- Fixed Mongo updates returning 500 when a concurrent update lands before the read-back, using a new MongoRepository.findOneAndUpdate() with 409 on version mismatch
+- Fixed SQL search queries letting a $or branch override a top-level key, combining colliding conditions with And() to match Mongo
+- Fixed eq() and other operators ignoring values containing newlines, and add \, and \ escapes for in(), nin() and range() values
+- Fixed creates reusing route, class and default ACLs by reserving their uids, never removing protected ACLs on delete or truncate, and recreating a missing user-editable ACL at startup
+- Fixed planted ACL reuse, allowing an existing ACL only for new trackChanges versions or trusted code passing allowExistingACL
+- Fixed @Protect routes registering without a permission check when their ACL is missing, always installing the check and denying without an ACL
+- Fixed ACL route changes not reaching the permission cache by invalidating it on every ACL model write and no longer re-saving cache hits
+- Fixed cached results leaking between users for me queries and through uid and query key collisions, using rec: and q: key prefixes, validating queries before cache lookups and stripping scoped fields from copies
+- Fixed stale cached lists after updates and truncates
+- Fixed push notifications carrying @RequiresScope fields to subscribers
+- Fixed count() revealing soft-deleted records through operator spellings of the deleted filter
+- Fixed unbounded record ACL work in truncate() by capping it at one page per request, and stream uids with batched permission checks in count() so it stays uncapped and avoids the MongoDB distinct size limit
+- Fixed Prometheus request metrics growing without bound by labelling them with the matched route pattern
+- Fixed X-Forwarded-For spoofing and IPv6 trusted proxy matching, and add NetUtils.getClientIP(), normalizeIP() and isTrustedProxy() with CIDR support
+- Fixed @RateLimit keys bypassable through percent-encoding and shared by all anonymous callers
+- Fixed bulk error responses exposing raw database errors
+- Fixed Redis client errors crashing the process and add attachRedisErrorHandler()
+- Fixed duplicate-key errors surfacing as 500s across MongoDB, PostgreSQL, MySQL and SQLite, and use insert() for SQL creates
+- Fixed SQL date columns stored a day off and tighten date coercion to ISO 8601 strings and epoch milliseconds
+- Fixed MongoDB schema sync dropping indexes for classes sharing a collection
+- Fixed push socket setup leaking Redis connections and connection slots
+- Fixed sessions persisted for every cookie-less bearer-token request
+- Fixed an invalid cron expression leaving a background service running
+- Fixed uWS WebSocket send() status handling and binary message buffers, and apply WebSocket options on Bun with shared defaults
+- Fixed the query-string parser allowing prototype replacement
+- Fixed WebSocket LOGIN ignoring the route's @Auth strategies, and try every auth strategy before failing
+- Fixed bulk create and update validation errors to report per-object reasons
+
 ## [2.0.0] - 2026-09-11
 
 ### Changed
@@ -166,7 +229,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/rapidrest/service-core/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/rapidrest/service-core/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/rapidrest/service-core/compare/v1.7.2...v1.8.0
 [1.7.2]: https://github.com/rapidrest/service-core/compare/v1.7.1...v1.7.2
