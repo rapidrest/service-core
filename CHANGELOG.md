@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-23
+
+### Added
+- Added HttpRouteOptions.streamingBody, the @StreamingBody() route decorator and @BodyStream() argument decorator so a route can opt out of the framework's default full-body buffering and receive the raw request body as a backpressure-aware req.bodyStream Node Readable instead, leaving every other route's req.body/req.rawBody behavior completely unchanged
+- Added makeBodyStream() to the uWS adapter, feeding a Readable from onData()/onAborted() with real backpressure via pause()/resume(), tracking a local paused flag since calling uWS's resume() without a matching prior pause() silently stops all further onData delivery and hangs the request forever
+- Added makeBunBodyStream() to the Bun adapter, adapting the already-streaming Request.body via Readable.fromWeb() and destroying the stream when the request's AbortSignal fires mid-upload
+- Added splitRouteArgs() shared by HttpRouter and BunRouter so a route can be registered as app.verb(path, { streamingBody: true }, ...handlers) without changing the call signature or behavior of every existing route that only ever passes handler functions
+- Added regression tests covering byte-for-byte upload fidelity over both real uWS and Bun dispatch, client-disconnect-mid-upload cleanup, and an ordinary route on the same router being completely unaffected
+- Added junit.xml to gitignore
+
+### Changed
+- Skip maxBodySize buffering and its 413 rejection entirely for a streaming route, leaving any size limit to the handler consuming req.bodyStream
+- Document the uWS pause()/resume() non-idempotence pitfall in NOTES.md
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+- Document the streaming-body feature added in d556026 under Unreleased in RELEASE_NOTES.md
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
 ## [2.1.1] - 2026-09-15
 
 ### Changed
@@ -237,7 +254,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/rapidrest/service-core/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/rapidrest/service-core/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/rapidrest/service-core/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/rapidrest/service-core/compare/v1.8.0...v2.0.0
