@@ -1,5 +1,21 @@
 # Release Notes
 
+## Unreleased
+
+### Added
+
+- Added opt-in streaming request bodies. A route can now be registered as `app.post(path, { streamingBody: true },
+  ...handlers)`, or declared with the new `@StreamingBody()` route decorator, to receive the raw request body as a
+  backpressure-aware Node `Readable` on `req.bodyStream` (also injectable directly into a handler parameter with the
+  new `@BodyStream()` argument decorator) instead of the framework buffering it into `req.body`/`req.rawBody` first.
+  `maxBodySize` enforcement and its 413 rejection are skipped entirely for a streaming route, leaving any size limit
+  to the handler consuming the stream. Every other route's body handling is unchanged — this is purely opt-in. Built
+  for consumers that need to accept very large uploads (multi-gigabyte files) without buffering the whole body in
+  process memory first. On uWS, the stream is fed from `onData()`/`onAborted()` with real backpressure via
+  `pause()`/`resume()`; on Bun, it adapts the platform's already-streaming `Request.body` via `Readable.fromWeb()`.
+  The stream is destroyed on a client disconnect mid-upload. Not supported in combination with `@Validate` or
+  `before`/`after` functions that expect `req.body` to be populated — those see `undefined` on a streaming route.
+
 ## v2.1.1
 
 ### Fixes
