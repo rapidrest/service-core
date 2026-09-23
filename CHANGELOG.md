@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-23
+
+### Added
+- Added src/http/csrf/csrf.ts, a double-submit CSRF token scheme with a deliberately host-only cookie plus an Origin/Referer allow-list fallback for legitimately cross-origin callers
+- Added RouteUtils.checkCsrf(), wired into every registered route right after Auth Strategies, enforcing the CSRF check only when req.auth.source is "cookie"
+- Added JWTAuthResult.source ("cookie" | "header" | "query"), tracking which credential source actually supplied the JWT so a CSRF check can exempt bearer/API-key/query-token callers
+- Added ApiErrors.AUTH_CSRF_FAILURE
+- Added appendHeader to two pre-existing bare res test mocks in RouteACLFailClosed.test.ts that checkCsrf() now calls unconditionally
+- Added regression tests for each of the above and document the findings in NOTES.md
+
+### Changed
+- Change src/test/request.ts's agent() to echo the CSRF cookie back as an x-csrf-token header automatically on every mutating request, matching real browser SPA behavior, so existing downstream integration tests keep working unchanged
+- Document the changes in the README, CHANGELOG, release notes and NOTES
+
 ### Added
 - Added CSRF double-submit protection: `src/http/csrf/csrf.ts` (token generation, a deliberately host-only cookie, and the double-submit + Origin/Referer allow-list check) and `RouteUtils.checkCsrf()`, wired automatically into every registered route
 - Added `JWTAuthResult.source: "cookie" | "header" | "query"`, so a CSRF (or any other) check can tell a browser-attached cookie credential apart from a deliberately-supplied bearer/query token
@@ -138,7 +152,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - treated as equality.
 - Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
 
-
 ### Added
 - `regex()` search operator for raw regular-expression matching on both SQL (PostgreSQL, MySQL/MariaDB, and
   `better-sqlite3` via an auto-registered `REGEXP` SQL function) and MongoDB.
@@ -220,7 +233,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Removed disable of redis build for CI build job
 
-
 ## [1.5.0] - 2026-09-07
 
 ### Added
@@ -283,7 +295,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/rapidrest/service-core/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/rapidrest/service-core/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/rapidrest/service-core/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/rapidrest/service-core/compare/v2.1.0...v2.1.1
