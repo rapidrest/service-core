@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-23
+
+### Added
+- Added UWSResponse.attachBodyStream() and isBodyStreamFullyReceived(), tracking uWS onData's isLast independently of the stream's own readableEnded, which Node never sets without an active consumer even for an already-fully-arrived empty body
+- Added ModelUtils.getScopedPropertyNames(), reading a constructed instance's own properties (matching ObjectUtils.deleteScopedProps()'s own strategy) instead of getReadOnlyPropertyNames()'s prototype-only walk, which does not see an ordinary @RequiresScope-decorated field since its class-field initializer compiles to an own-instance assignment that never reaches the prototype
+- Added ApiErrors.SEARCH_SCOPED_FIELD
+- Added regression tests for all of the above, including a real uWS raw-socket reproduction of the connection-hang exploit and confirmation a route that does drain the body keeps its normal graceful response path
+
+### Changed
+- Document the streaming-body connection-hang fix, the pause/resume coincident-EOF fix, and the query-time scope enforcement fix under Unreleased in RELEASE_NOTES.md, and record all findings plus the deferred idle-timeout and trackChanges+RequiresScope follow-ups in NOTES.md
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+### Fixed
+- Fixed a @StreamingBody() route that responds without draining req.bodyStream leaving the uWS keep-alive connection open indefinitely, live-reproduced as a trivial anonymous-caller connection-exhaustion DoS via a declared Content-Length the client never sends; UWSResponse.end() now force-closes via uwsRes.close() instead of a graceful end() whenever the declared body was never fully received
+- Fixed destroying an unread body stream (via the close() fix above, or an unrelated client disconnect) crashing the process with an unhandled 'error' event, in both makeBodyStream() and makeBunBodyStream()
+- Fixed makeBodyStream() leaving uWS's incoming-data throttle permanently paused when a single chunk both overflows the buffer and is the final chunk of the body, since Node's Readable never calls _read() again once push(null) has run to issue the matching resume()
+- Fixed @RequiresScope-protected model properties being exfiltrable through search filters, sort and count despite being redacted from responses, since the scope requirement was only ever enforced after a query already ran; add ModelUtils.assertFieldScope(), rejecting a filter, sort or count referencing a scoped field the caller can't read with a 400 at query-build time on both the SQL and MongoDB backends
+- Fixed WebSocket routes bypassing Server.ts's non-ApiError message sanitization, letting an unexpected raw error (e.g. a genuine Redis or database failure) reach a client as the literal WebSocket close reason; add RouteUtils.sanitizeWsError(), appended as the last item of every WS route's middleware chain the same way Server.ts's handleError is the last item of globalMiddleware for HTTP
+
 ## [2.2.0] - 2026-09-23
 
 ### Added
@@ -254,7 +273,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/rapidrest/service-core/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/rapidrest/service-core/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/rapidrest/service-core/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/rapidrest/service-core/compare/v2.0.0...v2.1.0

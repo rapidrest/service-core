@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v2.2.1
 
 ### Security
 
