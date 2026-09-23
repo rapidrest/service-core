@@ -25,6 +25,22 @@ export { RedisSessionStore } from "./session/RedisSessionStore.js";
 export { SessionManager } from "./session/SessionManager.js";
 export { createSessionMiddleware } from "./session/sessionMiddleware.js";
 
+// CSRF support — double-submit cookie protection for the `jwt` cookie `@rapidrest/auth`'s `TokenUtils`
+// issues. `RouteUtils.checkCsrf()` wires the check into every registered route automatically; the pieces
+// below are exported for a route that must check by hand (session-only auth, not the `jwt` cookie — see
+// `BaseOAuthAuthorizeRoute.decideConsent()` in `@rapidrest/auth`) or a service that registers its own
+// middleware chain outside of `RouteUtils`.
+export {
+    DEFAULT_CSRF_COOKIE_NAME,
+    DEFAULT_CSRF_HEADER_NAME,
+    buildCsrfCookie,
+    createCsrfMiddleware,
+    ensureCsrfCookie,
+    generateCsrfToken,
+    verifyCsrfRequest,
+} from "./csrf/csrf.js";
+export type { CsrfCheckOptions, CsrfCookieOptions } from "./csrf/csrf.js";
+
 // uWS-backed adapter. `HttpRouter` is exported as a type only — the class itself value-imports
 // `uWebSockets.js` at module load, which does not work under Bun. Consumers that only annotate with
 // the type stay safe on every runtime; constructing one is done internally by Server.ts via a

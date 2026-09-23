@@ -22,6 +22,10 @@ export interface AuthResult {
     state?: string;
     /** The authenticated user profile, or `undefined` if authentication failed. */
     user?: JWTUser;
+    /**
+     * Where this credential was found in the request.
+     */
+    source?: "cookie" | "header" | "query";
 }
 
 /**

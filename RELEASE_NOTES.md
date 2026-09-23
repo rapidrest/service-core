@@ -1,5 +1,27 @@
 # Release Notes
 
+## Unreleased
+
+### Security
+
+- Added CSRF (double-submit cookie) protection, closing a real gap: `@rapidrest/auth`'s `jwt`/`refresh`
+  cookies had no CSRF protection at all, and are shared across sibling subdomains (e.g. `auth.example.com`
+  and `mail.example.com`) for SSO — cookies `SameSite=Lax` does not protect against, since it only blocks
+  genuinely cross-*site* forgery, not same-site cross-*origin* forgery from a sibling subdomain.
+  - `RouteUtils.checkCsrf()` is wired automatically into every route and applies only to a request whose
+    only credential is the browser-attached `jwt` cookie (`JWTAuthResult.source === "cookie"`, a new
+    field) — a bearer-token/API-key/query-token caller is never affected.
+  - The CSRF cookie (`src/http/csrf/csrf.ts`) is deliberately **host-only** (never `Domain`-scoped), even
+    though the session cookie itself commonly is — a wildcard-domain double-submit cookie can be read via
+    `document.cookie` by any same-site sibling subdomain, which would defeat the whole scheme. A
+    legitimately cross-origin caller (whose JS can never read that host-only cookie) instead relies on an
+    Origin/Referer allow-list check, defaulting to the same origins already configured for CORS.
+  - `src/test/request.ts`'s `agent()` now echoes the CSRF cookie back automatically, so every existing
+    downstream integration test suite keeps working unchanged.
+  - See `@rapidrest/auth`/`@rapidrest/auth-server`/`@rapidmx/react-shared`'s own release notes for the
+    rest of this fix — cookie issuance, the two routes that needed explicit handling, and the browser-side
+    header echo.
+
 ## v2.2.1
 
 ### Security

@@ -48,6 +48,7 @@ async function runAnonymous(handlers: any[]): Promise<any> {
         headersSent: false,
         status: vi.fn().mockReturnThis(),
         setHeader: vi.fn(),
+        appendHeader: vi.fn().mockReturnThis(),
         json: vi.fn().mockReturnThis(),
         send: vi.fn().mockReturnThis(),
     };

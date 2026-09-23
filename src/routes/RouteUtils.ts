@@ -16,6 +16,7 @@ import type { AuthResult } from "../auth/AuthStrategy.js";
 import { RateLimiter } from "../RateLimiter.js";
 import { RateLimitOptions } from "../decorators/RouteDecorators.js";
 import { NetUtils } from "../NetUtils.js";
+import { verifyCsrfRequest, ensureCsrfCookie, type CsrfCheckOptions } from "../http/csrf/csrf.js";
 const { Config, Inject, Logger } = ObjectDecorators;
 
 /**
@@ -45,6 +46,12 @@ export class RouteUtils {
     @Config("trusted_proxies", [])
     protected trustedProxies: string[] = [];
 
+    @Config("csrf", { enabled: true })
+    protected csrfConfig: any = { enabled: true };
+
+    @Config("cors", {})
+    protected corsConfig: any = {};
+
     /**
      * Creates a middleware function that checks if the user has elevated privileges and if not
      * throws the `AUTH_REQUIRES_ELEVATION` error.
@@ -72,6 +79,49 @@ export class RouteUtils {
             }
 
             return next(err);
+        };
+    }
+
+    /**
+     * Creates a middleware function that enforces CSRF protection for a state-changing request whose only
+     * credential came from the `jwt` cookie (`req.auth?.source === "cookie"`.
+     * See `JWTAuthResult`/`JWTStrategy`). A request authenticated via an `Authorization` header, API key,
+     * or query-string token never had that cookie automatically attached by the browser, so it was never
+     * exposed to this class of forgery and is left untouched here.
+     */
+    public checkCsrf(): RequestHandler {
+        return (req: HttpRequest, res: HttpResponse, next: NextFunction) => {
+            const options: CsrfCheckOptions = {
+                enabled: this.csrfConfig?.enabled !== false,
+                cookieName: this.csrfConfig?.cookieName,
+                headerName: this.csrfConfig?.headerName,
+                maxAge: this.csrfConfig?.maxAge,
+                secure: this.csrfConfig?.secure,
+                allowedOrigins: Array.isArray(this.csrfConfig?.allowedOrigins)
+                    ? this.csrfConfig.allowedOrigins
+                    : Array.isArray(this.corsConfig?.origins)
+                      ? this.corsConfig.origins
+                      : [],
+                logger: this.logger,
+            };
+
+            // Always ensure the caller holds a cookie to echo back later, regardless of whether this
+            // particular request needs to be verified — unless the whole mechanism is switched off, in
+            // which case an operator who disabled this deliberately shouldn't see an unexplained cookie.
+            if (options.enabled !== false) {
+                ensureCsrfCookie(req, res, options);
+            }
+
+            if (req.auth?.source !== "cookie") {
+                return next();
+            }
+
+            try {
+                verifyCsrfRequest(req, options);
+                return next();
+            } catch (err) {
+                return next(err);
+            }
         };
     }
 
@@ -432,6 +482,7 @@ export class RouteUtils {
                 // 1. Rate Limiter
                 // 2. Requires Elevation
                 // 3. Auth Strategies
+                // 3a. CSRF Check
                 // 4. Required Roles
                 // 5. Required Scopes
                 // 6. Required Permissions (Path Matching)
@@ -446,6 +497,7 @@ export class RouteUtils {
                 if (requiresElevation !== undefined) {
                     middleware.push(this.checkElevation(requiresElevation));
                 }
+                middleware.push(this.checkCsrf());
                 if (requiresTrustedRole) {
                     middleware.push(this.checkTrusedRoles());
                 }

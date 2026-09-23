@@ -29,6 +29,7 @@ export enum ApiErrors {
     AUTH_PERMISSION_FAILURE = "api-102",
     AUTH_REQUIRES_TRUSTED_ROLE = "api-103",
     AUTH_REQUIRES_ELEVATION = "api-104",
+    AUTH_CSRF_FAILURE = "api-105",
 }
 
 /**
@@ -58,4 +59,5 @@ export enum ApiErrorMessages {
     AUTH_PERMISSION_FAILURE = "User does not have permission to perform this action.",
     AUTH_REQUIRES_TRUSTED_ROLE = "User does not have permission to perform this action.",
     AUTH_REQUIRES_ELEVATION = "This operation requires elevation.",
+    AUTH_CSRF_FAILURE = "This request is missing a valid CSRF token.",
 }

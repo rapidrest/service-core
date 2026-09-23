@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added CSRF double-submit protection: `src/http/csrf/csrf.ts` (token generation, a deliberately host-only cookie, and the double-submit + Origin/Referer allow-list check) and `RouteUtils.checkCsrf()`, wired automatically into every registered route
+- Added `JWTAuthResult.source: "cookie" | "header" | "query"`, so a CSRF (or any other) check can tell a browser-attached cookie credential apart from a deliberately-supplied bearer/query token
+- Added `ApiErrors.AUTH_CSRF_FAILURE` (`api-105`)
+- Added regression tests for all of the above
+
+### Changed
+- Changed `src/test/request.ts`'s `agent()` to echo the CSRF cookie back as an `x-csrf-token` header automatically on every mutating request once its jar has one, matching real browser SPA behavior
+- Document the changes in the README, CHANGELOG, release notes and NOTES
+
 ## [2.2.1] - 2026-09-23
 
 ### Added

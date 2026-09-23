@@ -113,9 +113,9 @@ export class JWTStrategy {
     /**
      * Scans the provided request object for an authentication token this strategy can process.
      * @param req The request to scan for an auth token.
-     * @returns The auth token if found, otherwise `undefined`.
+     * @returns The auth token and which source it was found in, if found, otherwise `undefined`.
      */
-    private getAuthToken(req: HttpRequest): string | undefined {
+    private getAuthToken(req: HttpRequest): { token: string; source: "cookie" | "header" | "query" } | undefined {
         let authToken: string | undefined = undefined;
 
         // Tokens should be found in this order: Query Parameter => Authorization => Cookie
@@ -127,6 +127,9 @@ export class JWTStrategy {
             this.options.queryKey in req.query
         ) {
             authToken = req.query[this.options.queryKey] as string;
+            if (authToken) {
+                return { token: authToken, source: "query" };
+            }
         }
 
         // Next check the headers, but only if a higher-precedence source (the query parameter above)
@@ -151,6 +154,9 @@ export class JWTStrategy {
                 authToken = parts[1];
                 break;
             }
+            if (authToken) {
+                return { token: authToken, source: "header" };
+            }
         }
 
         // Check the cookie header — lowest precedence, so only consulted if neither the query parameter
@@ -161,23 +167,24 @@ export class JWTStrategy {
         if (!authToken && this.options.cookieSecure && this.options.cookieName && req.signedCookies) {
             const cookieToken = req.signedCookies[this.options.cookieName];
             if (cookieToken) {
-                authToken = cookieToken;
+                return { token: cookieToken, source: "cookie" };
             }
         }
         if (!authToken && !this.options.cookieSecure && this.options.cookieName && req.cookies) {
             const cookieToken = req.cookies[this.options.cookieName];
             if (cookieToken) {
-                authToken = cookieToken;
+                return { token: cookieToken, source: "cookie" };
             }
         }
 
-        return authToken;
+        return undefined;
     }
 
     public async authenticate(req: HttpRequest, res: HttpResponse): Promise<JWTAuthResult | undefined> {
         let user: JWTUser | undefined = undefined;
         let authPayload: JWTPayload | undefined = undefined;
-        let authToken: string | undefined = this.getAuthToken(req);
+        const found = this.getAuthToken(req);
+        const authToken: string | undefined = found?.token;
 
         // If the token has been found, verify it.
         if (authToken && authToken.length > 0) {
@@ -204,6 +211,7 @@ export class JWTStrategy {
                     method: this.name,
                     payload: authPayload,
                     tokenFound: authToken !== undefined,
+                    source: found?.source,
                     user,
                 };
             }
@@ -215,7 +223,8 @@ export class JWTStrategy {
     public authenticateSync(req: HttpRequest, res: HttpResponse): JWTAuthResult | undefined {
         let user: JWTUser | undefined = undefined;
         let authPayload: JWTPayload | undefined = undefined;
-        let authToken: string | undefined = this.getAuthToken(req);
+        const found = this.getAuthToken(req);
+        const authToken: string | undefined = found?.token;
 
         // If the token has been found, verify it.
         if (authToken && authToken.length > 0) {
@@ -242,6 +251,7 @@ export class JWTStrategy {
                     method: this.name,
                     payload: authPayload,
                     tokenFound: authToken !== undefined,
+                    source: found?.source,
                     user,
                 };
             }

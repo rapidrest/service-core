@@ -1089,3 +1089,49 @@ by an anonymous caller.
 
 Verification: full `vitest run --coverage` — all files/tests passed, coverage above the repo's gate (97/92/99/97).
 `tsc --noEmit` and `eslint ./src ./test` clean. See the commit for the exact numbers and hash.
+
+### 2026-09-23 — CSRF double-submit protection (`src/http/csrf/csrf.ts`, `RouteUtils.checkCsrf()`)
+
+Ecosystem-wide CSRF fix (`@rapidrest/auth`'s `jwt`/`refresh` cookies have zero CSRF protection today),
+spanning this repo, `auth`, `auth-server`, and `react-shared`. This repo owns the actual double-submit
+mechanism and the generic enforcement point; downstream repos consume it.
+
+- **New `JWTAuthResult.source: "cookie" | "header" | "query"`** (`JWTStrategy.ts`, and the base
+  `AuthResult` interface it extends, since the CSRF check needs to read it off `req.auth` generically).
+  `getAuthToken()` now returns `{ token, source }` instead of a bare string. This is what lets the CSRF
+  gate apply *only* to a request whose only credential was the browser-attached `jwt` cookie, never a
+  deliberately-supplied `Authorization` header or query token.
+- **`src/http/csrf/csrf.ts`**: `generateCsrfToken()` (`crypto.randomBytes(32)`, matching `OIDCStrategy`'s
+  own `state`-token style), `buildCsrfCookie()` (deliberately never emits `Domain` — see the module's own
+  doc comment for why a wildcard-domain double-submit cookie is a known naive-double-submit weakness: any
+  same-site sibling subdomain can read it via `document.cookie` and defeat the scheme, even though the
+  `jwt`/`refresh` cookies themselves are commonly wildcard-domain for SSO), `ensureCsrfCookie()` (lazy
+  issue-if-missing, so a service that never issues auth cookies itself — e.g. `server`/`restapi` — can
+  still adopt this standalone), and `verifyCsrfRequest()` (the actual check: same-origin requires a
+  matching cookie+`x-csrf-token` header via `crypto.timingSafeEqual`; cross-origin falls back to an
+  Origin/Referer allow-list, since a legitimately cross-origin caller's JS can never read a host-only
+  cookie set by a different host — see `react-shared`'s `authApiFetch()`; fails closed with no allow-list
+  configured).
+- **`RouteUtils.checkCsrf()`** installs this automatically in every route's middleware chain, right after
+  Auth Strategies (the first point `req.auth.source` exists) and before Required Roles. Unconditional
+  (not gated on route metadata) since it's a no-op for anything that isn't a mutating, cookie-authenticated
+  request — deliberately not an opt-in decorator, so a route can't forget to add it.
+  `RouteUtils.checkCsrf()`'s allow-list defaults to the same `cors:origins` config already used for CORS
+  when `csrf:allowedOrigins` isn't set separately.
+  - New `ApiErrors.AUTH_CSRF_FAILURE` (`api-105`).
+- **`src/test/request.ts`'s `agent()`** now echoes the CSRF cookie back as `x-csrf-token` automatically on
+  every mutating request once its jar has one, mirroring what a real browser-hosted SPA does. This is what
+  keeps every existing downstream integration test (`auth`, `auth-server`) working without per-test
+  changes — they all drive real multi-request cookie flows through `agent()`.
+- Left deliberately for downstream repos: `auth`'s `TokenUtils`/`CsrfUtils` actually issue/rotate the
+  cookie at login; `auth-server` wires the two special-case routes that the generic
+  `req.auth.source === "cookie"` gate can't cover on its own (a state-changing `GET`, and a route that
+  authenticates via `req.session` instead of the `jwt` cookie); `react-shared`'s `apiFetch()`/
+  `authApiFetch()` read the cookie and attach the header. `server`/`restapi` were NOT wired up this pass —
+  the mechanism is built to be reusable there (their own `checkCsrf()` would need no changes at all), but
+  actually adding it to their ~50 routes is a follow-up.
+- Verification: full `vitest run --coverage`, `tsc --noEmit` clean. New `test/http/csrf/csrf.test.ts`
+  (100% lines/statements/functions on `csrf.ts`) plus `RouteUtils.checkCsrf` unit tests and an
+  end-to-end `registerRoute()` test driving a real POST route through both the auth and CSRF middleware.
+  Two pre-existing tests (`RouteACLFailClosed.test.ts`) needed `appendHeader` added to their bare `res`
+  mocks — `checkCsrf()` calls it unconditionally now, same as every other route.

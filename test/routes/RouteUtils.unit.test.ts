@@ -68,6 +68,7 @@ function makeRes(): any {
         setHeader: vi.fn((k: string, v: string) => {
             headers[k] = v;
         }),
+        appendHeader: vi.fn().mockReturnThis(),
         getHeader: (k: string) => headers[k],
         json: vi.fn().mockReturnThis(),
         send: vi.fn().mockReturnThis(),
@@ -113,6 +114,84 @@ describe("RouteUtils.checkElevation", () => {
         const next = vi.fn();
         handler(makeReq({ user: { uid: "u1", elevated: Date.now() - 61000 } }), makeRes(), next);
         expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+});
+
+describe("RouteUtils.checkCsrf", () => {
+    it("is a no-op that still lazily issues a CSRF cookie for a request with no cookie-sourced auth", () => {
+        const routeUtils: any = new RouteUtils();
+        const handler = routeUtils.checkCsrf();
+        const res = makeRes();
+        const next = vi.fn();
+        handler(makeReq({ method: "POST", cookies: {} }), res, next);
+        expect(res.appendHeader).toHaveBeenCalledWith("Set-Cookie", expect.stringContaining("csrf="));
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    it("never enforces the check for a bearer-header-sourced credential", () => {
+        const routeUtils: any = new RouteUtils();
+        const handler = routeUtils.checkCsrf();
+        const next = vi.fn();
+        handler(makeReq({ method: "POST", cookies: {}, headers: {}, auth: { source: "header" } }), makeRes(), next);
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    it("calls next() for a mutating, cookie-authenticated request whose double-submit token matches", () => {
+        const routeUtils: any = new RouteUtils();
+        const handler = routeUtils.checkCsrf();
+        const next = vi.fn();
+        handler(
+            makeReq({
+                method: "POST",
+                cookies: { csrf: "tok-abc" },
+                headers: { "x-csrf-token": "tok-abc" },
+                auth: { source: "cookie" },
+            }),
+            makeRes(),
+            next,
+        );
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    it("calls next(err) with an AUTH_CSRF_FAILURE ApiError for a mutating, cookie-authenticated request missing a valid token", () => {
+        const routeUtils: any = new RouteUtils();
+        const handler = routeUtils.checkCsrf();
+        const next = vi.fn();
+        handler(
+            makeReq({ method: "POST", cookies: { csrf: "tok-abc" }, headers: {}, auth: { source: "cookie" } }),
+            makeRes(),
+            next,
+        );
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 403, code: ApiErrors.AUTH_CSRF_FAILURE }));
+    });
+
+    it("defaults the allow-list to the configured cors:origins when csrf:allowedOrigins is unset", () => {
+        const routeUtils: any = new RouteUtils();
+        routeUtils.corsConfig = { origins: ["https://mail.example.com"] };
+        const handler = routeUtils.checkCsrf();
+        const next = vi.fn();
+        handler(
+            makeReq({
+                method: "POST",
+                cookies: {},
+                headers: { origin: "https://mail.example.com", host: "auth.example.com" },
+                auth: { source: "cookie" },
+            }),
+            makeRes(),
+            next,
+        );
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    it("is disabled entirely when csrf:enabled is false — no cookie issued, no token required", () => {
+        const routeUtils: any = new RouteUtils();
+        routeUtils.csrfConfig = { enabled: false };
+        const handler = routeUtils.checkCsrf();
+        const next = vi.fn();
+        const res = makeRes();
+        handler(makeReq({ method: "POST", cookies: {}, headers: {}, auth: { source: "cookie" } }), res, next);
+        expect(next).toHaveBeenCalledWith();
+        expect(res.appendHeader).not.toHaveBeenCalled();
     });
 });
 
@@ -589,9 +668,11 @@ describe("RouteUtils.registerRoute", () => {
 
         expect(routeUtils.logger.error).toHaveBeenCalledWith(expect.stringContaining("VictimRoute"));
         const handlers = app._registered["get /victim/secret"];
-        expect(handlers).toHaveLength(2);
+        // checkCsrf() (a no-op here — the request carries no cookie-sourced auth) now runs ahead of the
+        // permission check, so the chain is one middleware longer than before.
+        expect(handlers).toHaveLength(3);
         const next = vi.fn();
-        await handlers[0](makeReq({ method: "GET" }), makeRes(), next);
+        await handlers[1](makeReq({ method: "GET" }), makeRes(), next);
         expect(checkRequestPerms).toHaveBeenCalledWith("VictimRoute", undefined, expect.anything());
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
     });
@@ -615,7 +696,8 @@ describe("RouteUtils.registerRoute", () => {
         await routeUtils.registerRoute(app, new VictimRoute2());
 
         const next = vi.fn();
-        await app._registered["get /victim2"][0](makeReq({ method: "GET" }), makeRes(), next);
+        // Index 1, not 0 — checkCsrf() (a no-op for this unauthenticated request) now runs first.
+        await app._registered["get /victim2"][1](makeReq({ method: "GET" }), makeRes(), next);
         expect(checkRequestPerms).toHaveBeenCalledWith("victim-method", undefined, expect.anything());
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
     });
@@ -841,6 +923,42 @@ describe("RouteUtils.registerRoute", () => {
         const next = vi.fn();
         await authMw(makeReq(), makeRes(), next);
         expect(next).toHaveBeenCalledWith();
+    });
+
+    it("end-to-end: a POST route wired through registerRoute() rejects a jwt-cookie-authenticated request with a missing/mismatched CSRF token, and accepts one with a matching double-submit pair", async () => {
+        @Route("/widgets")
+        class WidgetRoute {
+            @Auth(["jwt"], true)
+            @Post()
+            public create() {
+                return { ok: true };
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        const cookieUser = { uid: "u1" };
+        routeUtils.authMiddleware = {
+            authenticate: vi.fn().mockResolvedValue({ method: "jwt", source: "cookie", user: cookieUser }),
+        };
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new WidgetRoute());
+        const [authMw, csrfMw] = app._registered["post /widgets"];
+
+        // Missing CSRF header entirely — rejected.
+        const req1 = makeReq({ method: "POST", cookies: { csrf: "tok-abc" }, headers: {} });
+        const next1 = vi.fn();
+        await authMw(req1, makeRes(), () => csrfMw(req1, makeRes(), next1));
+        expect(next1).toHaveBeenCalledWith(expect.objectContaining({ status: 403, code: ApiErrors.AUTH_CSRF_FAILURE }));
+
+        // Matching double-submit pair — accepted.
+        const req2 = makeReq({
+            method: "POST",
+            cookies: { csrf: "tok-abc" },
+            headers: { "x-csrf-token": "tok-abc" },
+        });
+        const next2 = vi.fn();
+        await authMw(req2, makeRes(), () => csrfMw(req2, makeRes(), next2));
+        expect(next2).toHaveBeenCalledWith();
     });
 
     it("passes { streamingBody: true } as the router's HttpRouteOptions for a @StreamingBody() route", async () => {

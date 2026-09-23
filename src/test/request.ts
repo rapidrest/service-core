@@ -7,6 +7,9 @@
  * Accepts either a Server instance (extracts port from server.port) or a port number.
  */
 import axios from "axios";
+import { DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_HEADER_NAME } from "../http/csrf/csrf.js";
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** Minimal supertest-compatible response shape. */
 export interface TestResponse {
@@ -93,6 +96,20 @@ function createRequester(app: any, jar?: Map<string, string>) {
                 if (jar && !hdrs["Cookie"] && !hdrs["cookie"]) {
                     const cookieHeader = buildCookieHeader(jar);
                     if (cookieHeader) hdrs["Cookie"] = cookieHeader;
+                }
+                // Mirrors what a real browser-hosted SPA does (see react-shared's apiFetch()/authApiFetch()):
+                // echo the double-submit CSRF cookie back as a header on every mutating request, once the
+                // jar has one. A stateless request() call never accumulates cookies across calls, so this
+                // only ever applies to agent()'s persistent jar — the same jar that's already standing in
+                // for "an authenticated browser session" for cookie-based auth in these tests.
+                if (
+                    jar &&
+                    !SAFE_METHODS.has(method.toUpperCase()) &&
+                    !hdrs[DEFAULT_CSRF_HEADER_NAME] &&
+                    !hdrs[DEFAULT_CSRF_HEADER_NAME.toUpperCase()]
+                ) {
+                    const csrfToken = jar.get(DEFAULT_CSRF_COOKIE_NAME);
+                    if (csrfToken) hdrs[DEFAULT_CSRF_HEADER_NAME] = csrfToken;
                 }
                 return axios
                     .request({

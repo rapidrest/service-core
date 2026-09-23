@@ -40,6 +40,8 @@ For complete documentation please visit [RapidREST.dev](https://rapidrest.dev).
 - Server-side session management (in-memory or Redis-backed)
 - Attempt-count rate limiting (`RateLimiter`) for brute-force/abuse defense, layered per-identifier
   and per-source-IP (reverse-proxy aware), Redis-backed and atomic across instances
+- CSRF (double-submit cookie) protection (`RouteUtils.checkCsrf()`), applied automatically to every
+  cookie-authenticated, state-changing request — never a bearer-token/API-key/query-token caller
 
 **Real-time & Background Work**
 
