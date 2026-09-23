@@ -453,6 +453,51 @@ export function Route(paths: string | string[]) {
 }
 
 /**
+ * Injects the request's streamed raw body (`req.bodyStream`, a Node `Readable`) as the value of the
+ * decorated argument. Only populated on a route also decorated with `@StreamingBody()` — `undefined`
+ * for every other route, including one with no body at all (e.g. a `GET`).
+ */
+export function BodyStream(target: any, propertyKey: string, index: number) {
+    let args: any = getArgsMetadata(target, propertyKey);
+    args[index] = ["bodyStream"];
+    Reflect.defineMetadata("rrst:args", args, target, propertyKey);
+}
+
+/**
+ * Indicates that the decorated route handler wants the raw request body exposed as a stream
+ * (`req.bodyStream`, a Node `Readable` — see the `@BodyStream()` argument decorator) instead of
+ * having it fully buffered into memory as `req.body`/`req.rawBody` before the handler runs. Intended
+ * for large uploads (e.g. multi-GB PST/mbox mailbox imports) where buffering the entire body first
+ * would defeat the point of streaming it straight to disk or another sink.
+ *
+ * Opting in disables the framework's default request-body buffering AND its `maxBodySize` 413
+ * rejection for this route entirely — the handler alone is responsible for consuming
+ * `req.bodyStream` and for enforcing whatever size limit it wants (e.g. counting bytes as they
+ * arrive and destroying the stream if a limit is exceeded). Backpressure is still handled by the
+ * framework: a slow consumer naturally throttles how fast bytes are read off the connection rather
+ * than buffering unbounded data in memory.
+ *
+ * A route that relies on `req.body`/`req.rawBody` being populated — a `@Validate` function, a
+ * `before`/`after` function, or the decorated handler's own implicit body argument — must NOT be
+ * combined with this decorator; those all read `undefined` on a streaming route.
+ *
+ * Can be applied to a route class (every route in the class streams) or an individual route handler
+ * method (only that endpoint streams), the same class/method pairing rules as `@RateLimit`/
+ * `@RequiresElevation` apply.
+ */
+export function StreamingBody() {
+    return function (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
+        if (propertyKey) {
+            let route: any = getRouteMetadata(target, propertyKey);
+            route.streamingBody = true;
+            Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+        } else {
+            Reflect.defineMetadata("rrst:streamingBody", true, target.prototype);
+        }
+    };
+}
+
+/**
  * Injects the underlying Socket object associated with the request as the value of the decorated argument.
  * When the handler function is for a WebSocket request, the returned socket will be the newly established
  * WebSocket connection.

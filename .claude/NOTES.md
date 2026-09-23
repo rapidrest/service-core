@@ -131,6 +131,19 @@ Keep entries terse — this is a reference, not a transcript.
   so the entity-side transaction aborting still cleans up the ACL side, best-effort. Don't reuse
   the caller's own session/entityManager across a connection boundary — open a new scope instead.
 
+- **uWebSockets.js `HttpResponse.pause()`/`.resume()` are NOT idempotent throttle toggles — track
+  your own paused flag, never call `resume()` speculatively.** Discovered building the streaming-body
+  feature (see Session Log, 2026-09-22): the obvious implementation of a backpressure-aware
+  `Readable` wrapping `res.onData()` calls `uwsRes.resume()` unconditionally from `_read()` (Node's
+  Readable always calls `_read()` at least once, before any backpressure has ever been applied).
+  Empirically, calling `resume()` when the connection was never `pause()`d stops ALL further
+  `onData` delivery for the rest of the request — not a no-op, an outright hang, with zero error or
+  signal that anything went wrong. `makeBodyStream()` (`src/http/uWS/Adapters.ts`) fixes this with a
+  closure-local `paused` boolean: `pause()` is only called when `push()` returns `false`, and
+  `resume()` is only called from `_read()` when that local flag is currently `true` (then reset to
+  `false`). Same pairing discipline applies to any other code that touches uWS's `pause()`/`resume()`
+  directly — never call `resume()` "just in case."
+
 ## Open / in-progress design threads
 
 - **Transaction support is implemented, ongoing refinement.** `@Transactional`

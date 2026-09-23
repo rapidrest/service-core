@@ -7,6 +7,7 @@ import {
     After,
     ApiRoute,
     Before,
+    BodyStream,
     Method,
     Options,
     Patch,
@@ -15,6 +16,7 @@ import {
     RequiresRole,
     RequiresScope,
     RequiresTrustedRole,
+    StreamingBody,
 } from "../src/decorators/RouteDecorators";
 
 describe("RouteDecorators Tests", () => {
@@ -240,6 +242,52 @@ describe("RouteDecorators Tests", () => {
             }
             const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
             expect(route.requiresTrustedRole).toBeTruthy();
+        });
+    });
+
+    describe("@StreamingBody", () => {
+        it("sets streamingBody to true on the method's route metadata", () => {
+            class Foo {
+                @StreamingBody()
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.streamingBody).toBe(true);
+        });
+
+        it("does not set streamingBody on a method that isn't decorated", () => {
+            class Foo {
+                @Options("/bar")
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.streamingBody).toBeUndefined();
+        });
+
+        it("applied at the class level stores the flag separately from method-level route metadata", () => {
+            @StreamingBody()
+            class Foo {
+                public handler(): void {
+                    return;
+                }
+            }
+            expect(Reflect.getMetadata("rrst:streamingBody", Foo.prototype)).toBe(true);
+        });
+    });
+
+    describe("@BodyStream", () => {
+        it("stores a 'bodyStream' argument marker in the args metadata", () => {
+            class Foo {
+                public handler(@BodyStream stream: any): void {
+                    return;
+                }
+            }
+            const args: any = Reflect.getMetadata("rrst:args", Foo.prototype, "handler");
+            expect(args[0]).toEqual(["bodyStream"]);
         });
     });
 });

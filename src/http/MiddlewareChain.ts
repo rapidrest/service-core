@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-import type { HttpRequest, HttpResponse, RequestHandler } from "./types.js";
+import type { HttpRequest, HttpResponse, HttpRouteOptions, RequestHandler } from "./types.js";
 
 /**
  * Runs an ordered array of middleware handlers sequentially, Express-style.
@@ -117,6 +117,25 @@ export type WsUpgradeAuthResult = {
  * Authorization header skip the LOGIN step.
  */
 export type WsUpgradeAuth = (req: HttpRequest) => WsUpgradeAuthResult;
+
+/**
+ * Splits a route registration's variadic argument list into its optional leading `HttpRouteOptions`
+ * and the actual `RequestHandler` list. Shared by both `HttpRouter` (uWS) and `BunRouter` so a route
+ * can be registered as either `app.post(path, handler1, handler2)` (no options — the overwhelmingly
+ * common case, completely unaffected) or `app.post(path, { streamingBody: true }, handler1)`.
+ *
+ * Detection is purely by type: `RequestHandler`s are always functions, so a non-function first
+ * element can only be an options object. This never misfires against a real handler.
+ */
+export function splitRouteArgs(args: Array<RequestHandler | HttpRouteOptions>): {
+    options: HttpRouteOptions;
+    handlers: RequestHandler[];
+} {
+    if (args.length > 0 && typeof args[0] !== "function") {
+        return { options: args[0], handlers: args.slice(1) as RequestHandler[] };
+    }
+    return { options: {}, handlers: args as RequestHandler[] };
+}
 
 /** Parses `:param` names out of a route pattern (e.g. `/users/:uid/:version` → `["uid","version"]`). */
 export function extractParamNames(routePath: string): string[] {

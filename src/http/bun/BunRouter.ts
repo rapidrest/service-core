@@ -5,6 +5,7 @@
 /// <reference types="bun" />
 import {
     DEFAULT_WS_OPTIONS,
+    type HttpRouteOptions,
     type IHttpRouter,
     type NextFunction,
     type RequestHandler,
@@ -12,9 +13,9 @@ import {
 } from "../types.js";
 import type { RequestWS } from "../uWS/WebSocket.js";
 import { DEFAULT_MAX_BODY_SIZE } from "../uWS/Adapters.js";
-import { BunRequest, BunResponse, readBunBody } from "./BunAdapters.js";
+import { BunRequest, BunResponse, makeBunBodyStream, readBunBody } from "./BunAdapters.js";
 import { BunWebSocketShim } from "./BunWebSocket.js";
-import { makeWsStubResponse, runChain, type WsUpgradeAuth } from "../MiddlewareChain.js";
+import { makeWsStubResponse, runChain, splitRouteArgs, type WsUpgradeAuth } from "../MiddlewareChain.js";
 import { ApiError } from "@rapidrest/core";
 import { ApiErrorMessages, ApiErrors } from "../../ApiErrors.js";
 
@@ -111,6 +112,8 @@ interface CompiledRoute {
     isHead: boolean;
     /** The registered route pattern, exposed as `req.routePattern`. `undefined` for the router's own fallbacks. */
     pattern?: string;
+    /** When `true`, skip buffering the body and expose it as `req.bodyStream` instead — see `HttpRouteOptions`. */
+    streamingBody?: boolean;
 }
 
 /** The WebSocket options a route resolved to (its own options over `DEFAULT_WS_OPTIONS`). */
@@ -206,6 +209,7 @@ export class BunRouter implements IHttpRouter {
         isHead: boolean = false,
         // `null` (not `undefined`, which would select this default) marks the router's own fallback routes.
         pattern: string | null = routePath,
+        streamingBody?: boolean,
     ): this {
         const pre = this.capturePreRouteCount();
         const normalized = normalizePath(routePath);
@@ -222,6 +226,7 @@ export class BunRouter implements IHttpRouter {
             preLength: pre,
             isHead,
             pattern: pattern ?? undefined,
+            streamingBody,
         });
         return this;
     }
@@ -230,37 +235,44 @@ export class BunRouter implements IHttpRouter {
     // HTTP verb methods
     // -------------------------------------------------------------------------
 
-    public get(routePath: string, ...handlers: RequestHandler[]): this {
-        return this.register("GET", routePath, handlers);
+    public get(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        return this.register("GET", routePath, handlers, false, routePath, options.streamingBody);
     }
 
-    public post(routePath: string, ...handlers: RequestHandler[]): this {
-        return this.register("POST", routePath, handlers);
+    public post(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        return this.register("POST", routePath, handlers, false, routePath, options.streamingBody);
     }
 
-    public put(routePath: string, ...handlers: RequestHandler[]): this {
-        return this.register("PUT", routePath, handlers);
+    public put(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        return this.register("PUT", routePath, handlers, false, routePath, options.streamingBody);
     }
 
-    public delete(routePath: string, ...handlers: RequestHandler[]): this {
-        return this.register("DELETE", routePath, handlers);
+    public delete(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        return this.register("DELETE", routePath, handlers, false, routePath, options.streamingBody);
     }
 
-    public patch(routePath: string, ...handlers: RequestHandler[]): this {
-        return this.register("PATCH", routePath, handlers);
+    public patch(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        return this.register("PATCH", routePath, handlers, false, routePath, options.streamingBody);
     }
 
-    public head(routePath: string, ...handlers: RequestHandler[]): this {
-        return this.register("HEAD", routePath, handlers, true);
+    public head(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        return this.register("HEAD", routePath, handlers, true, routePath, options.streamingBody);
     }
 
-    public options(routePath: string, ...handlers: RequestHandler[]): this {
+    public options(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const normalized = normalizePath(routePath);
         // The framework's own `listen()` fallback pushes its "/*" OPTIONS route directly via
         // `pushRoute()`, bypassing this method entirely - so it's never tracked as "explicit" here,
         // and always keeps deferring to the CORS middleware's blanket 204.
         if (normalized !== "/*") this.explicitOptionsPaths.add(normalized);
-        return this.register("OPTIONS", routePath, handlers);
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        return this.register("OPTIONS", routePath, handlers, false, routePath, options.streamingBody);
     }
 
     /** Returns `true` if the application has registered its own literal `OPTIONS` route at `path`
@@ -449,16 +461,24 @@ export class BunRouter implements IHttpRouter {
         res.isHead = route.isHead;
 
         this.inFlight++;
-        let bodyResult: Awaited<ReturnType<typeof readBunBody>>;
-        try {
-            bodyResult = await readBunBody(req, rawReq, this.maxBodySize);
-        } catch (err) {
-            this.inFlight--;
-            throw err;
-        }
-        if (!bodyResult.ok) {
-            this.inFlight--;
-            return bodyResult.response;
+        if (route.streamingBody) {
+            // Opted out of buffering (see HttpRouteOptions.streamingBody / @StreamingBody()) — expose
+            // the already-streaming Bun request body directly instead. No maxBodySize check applies
+            // here, matching the uWS router's identical streaming branch: buffering (and therefore
+            // capping) the body up front is exactly what a streaming route opted out of.
+            req.bodyStream = makeBunBodyStream(rawReq);
+        } else {
+            let bodyResult: Awaited<ReturnType<typeof readBunBody>>;
+            try {
+                bodyResult = await readBunBody(req, rawReq, this.maxBodySize);
+            } catch (err) {
+                this.inFlight--;
+                throw err;
+            }
+            if (!bodyResult.ok) {
+                this.inFlight--;
+                return bodyResult.response;
+            }
         }
 
         const allHandlers = [

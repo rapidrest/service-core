@@ -5,6 +5,7 @@
 import type { HttpRequest, HttpResponse } from "../types.js";
 import { DEFAULT_MAX_BODY_SIZE, parseBodyByContentType, parseCookies, parseQueryString } from "../uWS/Adapters.js";
 import { ApiErrorMessages, ApiErrors } from "../../ApiErrors.js";
+import { Readable } from "stream";
 
 /**
  * Minimal structural slice of Bun's `Server` used by `BunRequest`. Deliberately NOT typed as
@@ -385,4 +386,31 @@ export async function readBunBody(
     req.rawBody = raw;
     req.body = parseBodyByContentType(raw, String(req.headers["content-type"] || ""));
     return { ok: true };
+}
+
+/**
+ * Exposes a Bun request body as a Node `Readable` stream instead of buffering it, for a route
+ * registered with `{ streamingBody: true }` (see `HttpRouteOptions`). Much simpler than the uWS
+ * equivalent (`makeBodyStream()`) because `rawRequest.body` is already a real, backpressure-aware
+ * Web `ReadableStream` — `Readable.fromWeb()` adapts it without copying, so pulling from the
+ * returned `Readable` (e.g. via `for await` or `.pipe()`) drives the same pull-based backpressure
+ * all the way back to the underlying Bun socket.
+ *
+ * Returns `undefined` for a request with no body (e.g. GET), matching `req.rawBody`/`req.body` being
+ * left `undefined` in that case on the ordinary buffering path.
+ *
+ * Destroys the returned stream if the client disconnects mid-upload, via the request's own
+ * `AbortSignal` — mirroring `makeBodyStream()`'s uWS `onAborted`-driven cleanup — so a handler
+ * consuming it via `for await` sees a thrown error instead of hanging forever.
+ */
+export function makeBunBodyStream(rawRequest: Request): Readable | undefined {
+    if (!rawRequest.body) return undefined;
+
+    const stream = Readable.fromWeb(rawRequest.body as any);
+    rawRequest.signal?.addEventListener("abort", () => {
+        if (!stream.destroyed) {
+            stream.destroy(new Error("Request aborted before the body stream was fully read."));
+        }
+    });
+    return stream;
 }

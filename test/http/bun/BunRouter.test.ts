@@ -356,6 +356,141 @@ describe("BunRouter HTTP dispatch", () => {
     });
 });
 
+describe("BunRouter streaming body (HttpRouteOptions.streamingBody)", () => {
+    it("exposes req.bodyStream instead of buffering, and matches the request's exact bytes", async () => {
+        const router = new BunRouter();
+        let capturedBodyStream: any;
+        let capturedRawBody: any;
+        router.post("/upload", { streamingBody: true }, async (req, res) => {
+            capturedBodyStream = req.bodyStream;
+            capturedRawBody = req.rawBody;
+            const chunks: Buffer[] = [];
+            for await (const chunk of req.bodyStream) {
+                chunks.push(chunk as Buffer);
+            }
+            res.json({ received: Buffer.concat(chunks).toString() });
+        });
+
+        const res = await dispatch(router, new Request("http://localhost/upload", { method: "POST", body: "hello streaming world" }));
+
+        expect(await res!.json()).toEqual({ received: "hello streaming world" });
+        expect(capturedBodyStream).toBeDefined();
+        expect(capturedRawBody).toBeUndefined();
+    });
+
+    it("does not enforce maxBodySize on a streaming route", async () => {
+        // A tiny maxBodySize would 413 an ordinary route; a streaming route must be exempt since
+        // the whole point of opting in is accepting bodies that don't fit any fixed limit.
+        const router = new BunRouter(16);
+        router.post("/upload", { streamingBody: true }, async (req, res) => {
+            let total = 0;
+            for await (const chunk of req.bodyStream) {
+                total += (chunk as Buffer).length;
+            }
+            res.json({ total });
+        });
+
+        const payload = "x".repeat(1024);
+        const res = await dispatch(router, new Request("http://localhost/upload", { method: "POST", body: payload }));
+        expect(res!.status).toBe(200);
+        expect(await res!.json()).toEqual({ total: 1024 });
+    });
+
+    it("leaves a non-streaming route on the same router unaffected", async () => {
+        const router = new BunRouter();
+        router.post("/upload", { streamingBody: true }, async (req, res) => {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req.bodyStream) chunks.push(chunk as Buffer);
+            res.json({ streamed: true });
+        });
+        router.post("/echo", (req, res) => {
+            res.json({ bodyStreamIsUndefined: req.bodyStream === undefined, body: req.body });
+        });
+
+        const streamRes = await dispatch(
+            router,
+            new Request("http://localhost/upload", { method: "POST", body: "abc" }),
+        );
+        expect(await streamRes!.json()).toEqual({ streamed: true });
+
+        const echoRes = await dispatch(
+            router,
+            new Request("http://localhost/echo", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ a: 1 }),
+            }),
+        );
+        expect(await echoRes!.json()).toEqual({ bodyStreamIsUndefined: true, body: { a: 1 } });
+    });
+
+    it("destroys req.bodyStream and lets the handler clean up when the client's AbortSignal fires mid-upload", async () => {
+        const router = new BunRouter();
+        let observedError: any;
+        let handlerSettled = false;
+        router.post("/upload", { streamingBody: true }, async (req, res) => {
+            try {
+                for await (const _chunk of req.bodyStream) {
+                    // draining
+                }
+            } catch (err) {
+                observedError = err;
+            } finally {
+                handlerSettled = true;
+            }
+            if (!res.writableEnded) res.status(499).end();
+        });
+
+        const controller = new AbortController();
+        let enqueued = false;
+        const bodyStream = new ReadableStream<Uint8Array>({
+            pull(streamController) {
+                // Enqueue exactly one chunk, then go quiet (simulating a stalled connection) rather
+                // than enqueueing again on every subsequent pull() — an unthrottled pull() that keeps
+                // enqueueing starves the event loop's macrotask queue (the abort() below never gets a
+                // chance to run) in a tight microtask read/enqueue loop instead of actually modeling a
+                // client that stops sending data mid-upload.
+                if (!enqueued) {
+                    enqueued = true;
+                    streamController.enqueue(new TextEncoder().encode("partial"));
+                }
+                // Never closes — the AbortSignal below is what ends the read.
+            },
+        });
+        const rawReq = new Request("http://localhost/upload", {
+            method: "POST",
+            body: bodyStream,
+            duplex: "half",
+            signal: controller.signal,
+        } as any);
+
+        // Deliberately not awaited: once aborted, BunResponse.end() is a no-op (nothing to send to an
+        // already-disconnected client — see BunResponse.end()'s own `_aborted` guard), so
+        // res.responseReady never resolves. Matches the "calls res.abortStream()" test above, which
+        // has the identical constraint for the same reason.
+        void dispatch(router, rawReq);
+        await new Promise((resolve) => setImmediate(resolve));
+        controller.abort();
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(handlerSettled).toBe(true);
+        expect(observedError).toBeDefined();
+        expect(observedError.message).toMatch(/aborted/i);
+    });
+
+    it("accepts HttpRouteOptions on a verb other than post (e.g. put/patch)", async () => {
+        const router = new BunRouter();
+        let captured: any;
+        router.patch("/x", { streamingBody: true }, (req, res) => {
+            captured = req.bodyStream;
+            res.status(204).end();
+        });
+        await dispatch(router, new Request("http://localhost/x", { method: "PATCH", body: "y" }));
+        expect(captured).toBeDefined();
+    });
+});
+
 describe("BunRouter WebSocket upgrade dispatch", () => {
     function upgradeRequest(path: string, headerValue: string = "websocket"): Request {
         return new Request(`http://localhost${path}`, { headers: { upgrade: headerValue } });

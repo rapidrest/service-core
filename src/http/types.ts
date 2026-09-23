@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { JWTUser } from "@rapidrest/core";
+import type { Readable } from "stream";
 
 /**
  * Framework-agnostic HTTP request interface. Mirrors the Express `Request` surface used throughout
@@ -18,6 +19,25 @@ export interface HttpRequest {
     query: Record<string, string | string[]>;
     body: any;
     rawBody?: Buffer;
+    /**
+     * The raw request body as a Node `Readable` stream, populated instead of `body`/`rawBody` for a
+     * route registered with `{ streamingBody: true }` (see `HttpRouteOptions`) — e.g. via the
+     * `@StreamingBody()` decorator. `undefined` for every ordinary route, where `body`/`rawBody` are
+     * populated as before.
+     *
+     * The stream yields `Buffer` chunks and supports `for await (const chunk of req.bodyStream)` as
+     * well as `.pipe()`. Backpressure is enforced end-to-end by both adapters — a slow consumer
+     * throttles how fast bytes are read off the underlying connection rather than buffering
+     * unbounded data in memory — which is the entire point of opting into streaming (e.g. a
+     * multi-GB file upload). The stream is destroyed (with an error) if the client disconnects
+     * mid-upload; a handler consuming it via `for await` sees that as a thrown error and should
+     * clean up (e.g. delete a partially-written temp file) in a `catch`/`finally`.
+     *
+     * A streaming route does NOT get the framework's default `maxBodySize` enforcement — that check
+     * only runs as part of the ordinary buffering path. The handler is responsible for enforcing
+     * whatever size limit makes sense for the route itself.
+     */
+    bodyStream?: Readable;
     cookies: Record<string, string>;
     signedCookies: Record<string, string>;
     /**
@@ -92,19 +112,39 @@ export type RequestHandler = (req: HttpRequest, res: HttpResponse, next: NextFun
 export type ErrorHandler = (err: any, req: HttpRequest, res: HttpResponse, next: NextFunction) => void | Promise<void>;
 
 /**
+ * Per-route registration options, optionally passed as the first element of a route's handler list
+ * (e.g. `app.post(path, { streamingBody: true }, ...handlers)`). Detected at runtime by both router
+ * implementations: a non-function first argument is treated as `HttpRouteOptions` rather than a
+ * `RequestHandler`, so omitting it entirely (the overwhelmingly common case) is unaffected — every
+ * existing call site that only ever passes handler functions keeps its exact current behavior.
+ */
+export interface HttpRouteOptions {
+    /**
+     * When `true`, the router does not buffer this route's request body into `req.body`/`req.rawBody`
+     * before running its middleware/handler chain. Instead the raw body is exposed as a stream on
+     * `req.bodyStream` (see its doc comment on `HttpRequest`), and the route's own handler is
+     * responsible for consuming it and enforcing any size limit it needs — the framework's
+     * `maxBodySize` 413 rejection does not apply to a streaming route. Set by the `@StreamingBody()`
+     * route decorator; see `RouteUtils.registerRoute()`.
+     */
+    streamingBody?: boolean;
+    [key: string]: any;
+}
+
+/**
  * Public surface shared by every HTTP router implementation (uWS-backed, Bun-backed, ...).
  * `Server.ts` depends only on this interface, never on a concrete router class, so the
  * underlying HTTP server can be swapped per-runtime without touching route registration.
  */
 export interface IHttpRouter {
     use(...handlers: RequestHandler[]): this;
-    get(path: string, ...handlers: RequestHandler[]): this;
-    post(path: string, ...handlers: RequestHandler[]): this;
-    put(path: string, ...handlers: RequestHandler[]): this;
-    delete(path: string, ...handlers: RequestHandler[]): this;
-    patch(path: string, ...handlers: RequestHandler[]): this;
-    head(path: string, ...handlers: RequestHandler[]): this;
-    options(path: string, ...handlers: RequestHandler[]): this;
+    get(path: string, ...handlers: Array<RequestHandler | HttpRouteOptions>): this;
+    post(path: string, ...handlers: Array<RequestHandler | HttpRouteOptions>): this;
+    put(path: string, ...handlers: Array<RequestHandler | HttpRouteOptions>): this;
+    delete(path: string, ...handlers: Array<RequestHandler | HttpRouteOptions>): this;
+    patch(path: string, ...handlers: Array<RequestHandler | HttpRouteOptions>): this;
+    head(path: string, ...handlers: Array<RequestHandler | HttpRouteOptions>): this;
+    options(path: string, ...handlers: Array<RequestHandler | HttpRouteOptions>): this;
     /** `true` if the application has registered its own literal `OPTIONS` route at `path` (as
      * opposed to the framework's own internal `/*` CORS-preflight fallback registered in `listen()`).
      * Consulted by `Server.ts`'s global CORS middleware so a real app-defined `OPTIONS` handler gets a

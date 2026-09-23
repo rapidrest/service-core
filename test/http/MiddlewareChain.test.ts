@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-import { extractParamNames, makeWsStubResponse, runChain } from "../../src/http/MiddlewareChain";
+import { extractParamNames, makeWsStubResponse, runChain, splitRouteArgs } from "../../src/http/MiddlewareChain";
 import type { HttpRequest, HttpResponse, RequestHandler } from "../../src/http/types";
 
 function makeReq(): HttpRequest {
@@ -411,5 +411,28 @@ describe("makeWsStubResponse Tests", () => {
         res.end();
         await new Promise((resolve) => setImmediate(resolve));
         expect(count).toBe(1);
+    });
+});
+
+describe("splitRouteArgs", () => {
+    it("treats every argument as a handler when none is an options object (the default, overwhelmingly common case)", () => {
+        const h1: RequestHandler = (_req, _res, next) => next();
+        const h2: RequestHandler = (_req, _res, next) => next();
+        expect(splitRouteArgs([h1, h2])).toEqual({ options: {}, handlers: [h1, h2] });
+    });
+
+    it("returns an empty options object and empty handlers for an empty argument list", () => {
+        expect(splitRouteArgs([])).toEqual({ options: {}, handlers: [] });
+    });
+
+    it("pulls a leading non-function element out as HttpRouteOptions", () => {
+        const h1: RequestHandler = (_req, _res, next) => next();
+        const result = splitRouteArgs([{ streamingBody: true }, h1]);
+        expect(result.options).toEqual({ streamingBody: true });
+        expect(result.handlers).toEqual([h1]);
+    });
+
+    it("supports a route registered with options but no handlers", () => {
+        expect(splitRouteArgs([{ streamingBody: true }])).toEqual({ options: { streamingBody: true }, handlers: [] });
     });
 });

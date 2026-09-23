@@ -4,10 +4,12 @@
 ///////////////////////////////////////////////////////////////////////////////
 import {
     DEFAULT_MAX_BODY_SIZE,
+    makeBodyStream,
     parseBodyByContentType,
     parseCookies,
     parseQueryString,
     readBody,
+    STREAMING_BODY_HIGH_WATER_MARK,
     UWSRequest,
     UWSResponse,
 } from "../../../src/http/uWS/Adapters";
@@ -575,5 +577,135 @@ describe("readBody Tests", () => {
         uwsRes.fireData(JSON.stringify({ a: 1 }), true);
         await expect(promise).resolves.toBe(false);
         expect(req.body).toBeUndefined();
+    });
+});
+
+/** A fuller fake uWS HttpResponse, adding pause()/resume() tracking on top of makeUwsResForBody(). */
+function makeUwsResForStream() {
+    let onDataCb: ((chunk: ArrayBuffer, isLast: boolean) => void) | undefined;
+    const pauseCalls: number[] = [];
+    const resumeCalls: number[] = [];
+    return {
+        onData: (cb: (chunk: ArrayBuffer, isLast: boolean) => void) => {
+            onDataCb = cb;
+        },
+        pause: () => pauseCalls.push(1),
+        resume: () => resumeCalls.push(1),
+        fireData: (chunk: string | Buffer, isLast: boolean) => {
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            onDataCb?.(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), isLast);
+        },
+        get pauseCount() {
+            return pauseCalls.length;
+        },
+        get resumeCount() {
+            return resumeCalls.length;
+        },
+    };
+}
+
+describe("makeBodyStream Tests", () => {
+    it("yields chunks in order and ends the stream when isLast is delivered", async () => {
+        const uwsRes = makeUwsResForStream();
+        let onAbortCb: (() => void) | undefined;
+        const res = { onAbort: (cb: () => void) => (onAbortCb = cb) };
+        const stream = makeBodyStream(uwsRes as any, res);
+
+        const received: Buffer[] = [];
+        const done = (async () => {
+            for await (const chunk of stream) {
+                received.push(chunk as Buffer);
+            }
+        })();
+
+        uwsRes.fireData("hello ", false);
+        uwsRes.fireData("world", true);
+        await done;
+
+        expect(Buffer.concat(received).toString()).toBe("hello world");
+        expect(onAbortCb).toBeDefined();
+    });
+
+    it("produces an empty (immediately-ended) stream for a request with no body", async () => {
+        const uwsRes = makeUwsResForStream();
+        const stream = makeBodyStream(uwsRes as any, { onAbort: () => undefined });
+
+        const received: Buffer[] = [];
+        const done = (async () => {
+            for await (const chunk of stream) {
+                received.push(chunk as Buffer);
+            }
+        })();
+
+        uwsRes.fireData(Buffer.alloc(0), true);
+        await done;
+
+        expect(Buffer.concat(received).length).toBe(0);
+    });
+
+    it("applies backpressure: a chunk that overflows the internal buffer pauses uWS, and reading resumes it", async () => {
+        const uwsRes = makeUwsResForStream();
+        const stream = makeBodyStream(uwsRes as any, { onAbort: () => undefined });
+
+        // A single chunk larger than the stream's highWaterMark makes push() return false immediately.
+        const big = Buffer.alloc(STREAMING_BODY_HIGH_WATER_MARK + 1, 1);
+        uwsRes.fireData(big, false);
+        expect(uwsRes.pauseCount).toBe(1);
+
+        // Consuming a chunk triggers _read(), which must resume uWS.
+        const iterator = stream[Symbol.asyncIterator]();
+        const { value } = await iterator.next();
+        expect((value as Buffer).length).toBe(big.length);
+        expect(uwsRes.resumeCount).toBeGreaterThanOrEqual(1);
+
+        uwsRes.fireData(Buffer.alloc(0), true);
+        await iterator.next();
+    });
+
+    it("destroys the stream with an error when the connection aborts mid-upload", async () => {
+        const uwsRes = makeUwsResForStream();
+        let onAbortCb: (() => void) | undefined;
+        const stream = makeBodyStream(uwsRes as any, { onAbort: (cb) => (onAbortCb = cb) });
+
+        uwsRes.fireData("partial", false);
+        onAbortCb?.();
+
+        await expect(
+            (async () => {
+                for await (const _chunk of stream) {
+                    // draining
+                }
+            })(),
+        ).rejects.toThrow(/aborted/i);
+        expect(stream.destroyed).toBe(true);
+    });
+
+    it("ignores onData delivered after the stream has already been destroyed", async () => {
+        const uwsRes = makeUwsResForStream();
+        let onAbortCb: (() => void) | undefined;
+        const stream = makeBodyStream(uwsRes as any, { onAbort: (cb) => (onAbortCb = cb) });
+        stream.on("error", () => {
+            // Expected — destroyed with an error below. Prevent an unhandled 'error' event from
+            // failing the test process.
+        });
+
+        onAbortCb?.();
+        // Must not throw ("push after destroy") even though uWS keeps delivering chunks after abort.
+        expect(() => uwsRes.fireData("late", true)).not.toThrow();
+        expect(stream.destroyed).toBe(true);
+    });
+
+    it("calling onAbort's callback twice does not double-destroy or throw", () => {
+        const uwsRes = makeUwsResForStream();
+        let onAbortCb: (() => void) | undefined;
+        const stream = makeBodyStream(uwsRes as any, { onAbort: (cb) => (onAbortCb = cb) });
+        stream.on("error", () => {
+            // Expected.
+        });
+
+        expect(() => {
+            onAbortCb?.();
+            onAbortCb?.();
+        }).not.toThrow();
     });
 });

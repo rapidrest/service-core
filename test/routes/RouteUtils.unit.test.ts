@@ -10,8 +10,10 @@ import { RouteUtils } from "../../src/routes/RouteUtils";
 import {
     Auth,
     AuthResult as AuthResultDecorator,
+    BodyStream,
     Get,
     Header,
+    Post,
     Protect,
     Query,
     RateLimit,
@@ -20,6 +22,7 @@ import {
     RequiresScope,
     Route,
     Socket,
+    StreamingBody,
     WebSocket,
 } from "../../src/decorators/RouteDecorators";
 
@@ -835,5 +838,104 @@ describe("RouteUtils.registerRoute", () => {
         const next = vi.fn();
         await authMw(makeReq(), makeRes(), next);
         expect(next).toHaveBeenCalledWith();
+    });
+
+    it("passes { streamingBody: true } as the router's HttpRouteOptions for a @StreamingBody() route", async () => {
+        @Route("/streamed")
+        class StreamedRoute {
+            @StreamingBody()
+            @Post()
+            public upload() {
+                return { ok: true };
+            }
+        }
+        const routeUtils = new RouteUtils();
+        (routeUtils as any).logger = makeLogger();
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new StreamedRoute());
+
+        const handlers = app._registered["post /streamed"];
+        expect(handlers[0]).toEqual({ streamingBody: true });
+        expect(typeof handlers[1]).toBe("function");
+    });
+
+    it("does not pass an HttpRouteOptions argument for an ordinary (non-streaming) route", async () => {
+        @Route("/ordinary")
+        class OrdinaryRoute {
+            @Post()
+            public create() {
+                return { ok: true };
+            }
+        }
+        const routeUtils = new RouteUtils();
+        (routeUtils as any).logger = makeLogger();
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new OrdinaryRoute());
+
+        const handlers = app._registered["post /ordinary"];
+        // Every element must be a handler function — no leading options object was inserted.
+        for (const h of handlers) expect(typeof h).toBe("function");
+    });
+
+    it("still passes { streamingBody: true } ahead of the auth middleware when @Auth is also present", async () => {
+        @Route("/streamed-auth")
+        class StreamedAuthRoute {
+            @Auth(["jwt"], true)
+            @StreamingBody()
+            @Post()
+            public upload() {
+                return { ok: true };
+            }
+        }
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        routeUtils.authMiddleware = { authenticate: vi.fn().mockResolvedValue({ user: { uid: "u1" } }) };
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new StreamedAuthRoute());
+
+        const handlers = app._registered["post /streamed-auth"];
+        expect(handlers[0]).toEqual({ streamingBody: true });
+        expect(typeof handlers[1]).toBe("function"); // the auth middleware
+    });
+});
+
+describe("RouteUtils.wrapMiddleware @BodyStream argument resolution", () => {
+    it("resolves the @BodyStream decorator argument from req.bodyStream", async () => {
+        @Route("/upload")
+        class UploadRoute {
+            public lastArgs: any[] = [];
+
+            @StreamingBody()
+            @Post()
+            public upload(@BodyStream stream: any) {
+                this.lastArgs = [stream];
+                return { ok: true };
+            }
+        }
+        const routeUtils = new RouteUtils();
+        const route = new UploadRoute();
+        const handler = routeUtils.wrapMiddleware(route, route.upload);
+        const fakeStream = { pipe: vi.fn() };
+        const req = makeReq({ bodyStream: fakeStream });
+        await handler(req, makeRes(), vi.fn());
+        expect(route.lastArgs[0]).toBe(fakeStream);
+    });
+
+    it("resolves to undefined when the route did not opt into streaming (req.bodyStream is unset)", async () => {
+        @Route("/normal")
+        class NormalRoute {
+            public lastArgs: any[] = [];
+
+            @Post()
+            public create(@BodyStream stream: any) {
+                this.lastArgs = [stream];
+                return { ok: true };
+            }
+        }
+        const routeUtils = new RouteUtils();
+        const route = new NormalRoute();
+        const handler = routeUtils.wrapMiddleware(route, route.create);
+        await handler(makeReq(), makeRes(), vi.fn());
+        expect(route.lastArgs[0]).toBeUndefined();
     });
 });

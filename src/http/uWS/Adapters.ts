@@ -5,6 +5,7 @@
 import type { HttpRequest, HttpResponse } from "../types.js";
 import type { HttpRequest as UWSHttpRequest, HttpResponse as UWSHttpResponse } from "uWebSockets.js";
 import { ApiErrorMessages, ApiErrors } from "../../ApiErrors.js";
+import { Readable } from "stream";
 
 /** Parses a `cookie` header string into a key/value map. */
 export function parseCookies(cookieHeader: string): Record<string, string> {
@@ -475,4 +476,101 @@ export function readBody(
             }
         });
     });
+}
+
+/**
+ * Internal buffer size (in bytes) at which `makeBodyStream()`'s stream applies backpressure — i.e.
+ * pauses pulling more bytes off the uWS connection until its consumer catches up. Chosen much larger
+ * than a Node `Readable`'s 16 KiB default: a streaming route exists specifically to move large
+ * payloads (e.g. a multi-GB mailbox import) efficiently, and throttling every 16 KiB would make
+ * pause()/resume() churn dominate. 1 MiB bounds worst-case extra memory per in-flight streaming
+ * request to a small, predictable amount while still giving a slow consumer (e.g. writing to disk)
+ * plenty of headroom before the network is throttled.
+ */
+export const STREAMING_BODY_HIGH_WATER_MARK = 1024 * 1024;
+
+/**
+ * Exposes a uWS request body as a Node `Readable` stream instead of buffering it into memory, for a
+ * route registered with `{ streamingBody: true }` (see `HttpRouteOptions`). Does NOT populate
+ * `req.body`/`req.rawBody` and does NOT enforce any `maxBodySize` limit — this is the entire point:
+ * unlike `readBody()`, the caller has opted out of buffering specifically so an arbitrarily large
+ * body (e.g. a 20 GB PST/mbox import) never needs to fit in memory at once. Enforcing a size limit,
+ * if wanted, is the route handler's own responsibility while consuming the stream.
+ *
+ * Backpressure is real, not simulated: a chunk that overflows the stream's internal buffer
+ * (`push()` returning `false`) calls `uwsRes.pause()` (uWS suspends delivering more `onData`
+ * chunks), and the returned `Readable`'s `_read()` calls `uwsRes.resume()` — but ONLY when this
+ * function itself previously paused it. uWS's `pause()`/`resume()` are not simple idempotent
+ * throttle toggles: empirically, calling `resume()` when the connection was never paused (e.g. from
+ * `_read()`'s very first call, before any backpressure has ever been applied) stops any further
+ * `onData` delivery for the rest of the request, hanging it forever. A local `paused` flag makes
+ * `resume()` a no-op unless a matching `pause()` was actually issued, matching the exact
+ * pause/resume pairing uWS expects. A slow consumer (a route piping to a slow disk, or one simply
+ * not reading yet) still throttles how fast bytes are pulled off the client connection rather than
+ * piling up unbounded data in process memory — the failure mode this whole feature exists to avoid.
+ *
+ * The stream is destroyed with an error if the client disconnects mid-upload (wired through the
+ * existing single `onAborted` fan-out via `res.onAbort()`, matching `readBody()`'s own abort
+ * handling) so a handler awaiting `for await (const chunk of req.bodyStream)` sees a thrown error
+ * instead of hanging forever, and can clean up (e.g. delete a partial temp file) in its own
+ * `catch`/`finally`.
+ *
+ * Must be called synchronously, before any `await`, in the same tick as request handling begins —
+ * uWS requires `onData`/`onAborted` to be registered before any asynchronous operation, matching the
+ * exact constraint `readBody()` above is already subject to.
+ *
+ * @param uwsRes The uWS HttpResponse to read the body from.
+ * @param res Used only to register the abort callback through the framework's existing single
+ * `onAborted` slot (see `UWSResponse.onAbort()`) — never written to otherwise.
+ */
+export function makeBodyStream(uwsRes: UWSHttpResponse, res: { onAbort: (callback: () => void) => void }): Readable {
+    // Tracks whether THIS function called uwsRes.pause() and is therefore the one that owes it a
+    // matching resume() — see the doc comment above for why resume() must never be called
+    // speculatively.
+    let paused = false;
+
+    const stream = new Readable({
+        highWaterMark: STREAMING_BODY_HIGH_WATER_MARK,
+        read() {
+            // `stream.destroyed` is set synchronously the moment destroy() is called (Node
+            // guarantees this before this `_destroy` implementation even runs), so this check can't
+            // race a concurrent destroy from the onAbort handler below.
+            if (paused && !stream.destroyed) {
+                paused = false;
+                uwsRes.resume();
+            }
+        },
+        destroy(err, callback) {
+            callback(err);
+        },
+    });
+
+    res.onAbort(() => {
+        if (stream.destroyed) return;
+        stream.destroy(new Error("Request aborted before the body stream was fully read."));
+    });
+
+    uwsRes.onData((chunk, isLast) => {
+        // The stream was already destroyed (consumer error, or the connection aborted) — nothing
+        // downstream wants any more chunks. uWS keeps delivering onData for the remainder of the
+        // body regardless (there's no way to tell it to stop mid-request), so this must stay a
+        // silent no-op rather than pushing into a destroyed stream (which throws).
+        if (stream.destroyed) return;
+
+        if (chunk.byteLength > 0) {
+            // `chunk` is a raw ArrayBuffer uWS reuses/detaches once this callback returns — see the
+            // identical, more detailed comment in readBody() above for why `.slice(0)` is required.
+            const ok = stream.push(Buffer.from(chunk.slice(0)));
+            if (!ok) {
+                paused = true;
+                uwsRes.pause();
+            }
+        }
+
+        if (isLast) {
+            stream.push(null);
+        }
+    });
+
+    return stream;
 }

@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import uWS from "uWebSockets.js";
-import { DEFAULT_MAX_BODY_SIZE, UWSRequest, UWSResponse, readBody } from "./Adapters.js";
+import { DEFAULT_MAX_BODY_SIZE, UWSRequest, UWSResponse, makeBodyStream, readBody } from "./Adapters.js";
 import {
     DEFAULT_WS_OPTIONS,
     type HttpRequest,
     type HttpResponse,
+    type HttpRouteOptions,
     type IHttpRouter,
     type NextFunction,
     type RequestHandler,
@@ -15,7 +16,7 @@ import {
 } from "../types.js";
 import { NetUtils } from "../../NetUtils.js";
 import { UWSWebSocketShim, type RequestWS } from "./WebSocket.js";
-import { extractParamNames, makeWsStubResponse, runChain, type WsUpgradeAuth } from "../MiddlewareChain.js";
+import { extractParamNames, makeWsStubResponse, runChain, splitRouteArgs, type WsUpgradeAuth } from "../MiddlewareChain.js";
 import { ApiError } from "@rapidrest/core";
 import { ApiErrorMessages, ApiErrors } from "../../ApiErrors.js";
 
@@ -55,6 +56,8 @@ interface UWSHandlerOptions {
     isHead?: boolean;
     maxBodySize?: number;
     inFlight: InFlightCounter;
+    /** When `true`, skip buffering the body and expose it as `req.bodyStream` instead — see `HttpRouteOptions`. */
+    streamingBody?: boolean;
 }
 
 /**
@@ -77,6 +80,7 @@ function makeUWSHandler(
         isHead = false,
         maxBodySize = DEFAULT_MAX_BODY_SIZE,
         inFlight,
+        streamingBody = false,
     } = options;
     // Built lazily on the first request and reused thereafter. Safe because all use() calls
     // complete before listen() is invoked, and requests only arrive after listen().
@@ -116,17 +120,28 @@ function makeUWSHandler(
             }
         }
 
-        // Body must be read before any middleware runs. If it exceeds maxBodySize, readBody() has
-        // already written a 413 response and ended the connection — stop here without running any
-        // middleware/route logic against a truncated/oversized body.
-        let bodyOk = true;
-        try {
-            bodyOk = await readBody(uwsRes, req, maxBodySize, res);
-        } catch {
-            // Non-fatal: body may not exist for GET/HEAD/OPTIONS
-        }
-        if (!bodyOk) {
-            return;
+        if (streamingBody) {
+            // Opted out of buffering (see HttpRouteOptions.streamingBody / @StreamingBody()) — expose
+            // the raw body as a stream instead. This must happen synchronously, in the same tick as
+            // req/res construction above, since uWS requires onData/onAborted to be registered before
+            // any asynchronous operation (matching readBody()'s own constraint below). No maxBodySize
+            // check applies here: buffering is exactly what a streaming route opted out of, so there's
+            // nothing to buffer or cap up front — enforcing a limit, if desired, is left to the
+            // handler consuming req.bodyStream.
+            req.bodyStream = makeBodyStream(uwsRes, res);
+        } else {
+            // Body must be read before any middleware runs. If it exceeds maxBodySize, readBody() has
+            // already written a 413 response and ended the connection — stop here without running any
+            // middleware/route logic against a truncated/oversized body.
+            let bodyOk = true;
+            try {
+                bodyOk = await readBody(uwsRes, req, maxBodySize, res);
+            } catch {
+                // Non-fatal: body may not exist for GET/HEAD/OPTIONS
+            }
+            if (!bodyOk) {
+                return;
+            }
         }
 
         // Build the combined handler chain once; reuse on every subsequent request.
@@ -220,6 +235,7 @@ export class HttpRouter implements IHttpRouter {
         preLength: number,
         routePattern: string | undefined,
         isHead: boolean = false,
+        routeOptions: HttpRouteOptions = {},
     ) {
         return makeUWSHandler(this.globalMiddleware, handlers, {
             preLength,
@@ -228,6 +244,7 @@ export class HttpRouter implements IHttpRouter {
             isHead,
             maxBodySize: this.maxBodySize,
             inFlight: this.inFlight,
+            streamingBody: routeOptions.streamingBody,
         });
     }
 
@@ -235,56 +252,63 @@ export class HttpRouter implements IHttpRouter {
     // HTTP verb methods — each registers a uWS route
     // -------------------------------------------------------------------------
 
-    public get(routePath: string, ...handlers: RequestHandler[]): this {
+    public get(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("get");
-        this.uwsApp.get(routePath, this.makeHandler(handlers, pre, routePath));
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        this.uwsApp.get(routePath, this.makeHandler(handlers, pre, routePath, false, options));
         return this;
     }
 
-    public post(routePath: string, ...handlers: RequestHandler[]): this {
+    public post(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("post");
-        this.uwsApp.post(routePath, this.makeHandler(handlers, pre, routePath));
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        this.uwsApp.post(routePath, this.makeHandler(handlers, pre, routePath, false, options));
         return this;
     }
 
-    public put(routePath: string, ...handlers: RequestHandler[]): this {
+    public put(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("put");
-        this.uwsApp.put(routePath, this.makeHandler(handlers, pre, routePath));
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        this.uwsApp.put(routePath, this.makeHandler(handlers, pre, routePath, false, options));
         return this;
     }
 
-    public delete(routePath: string, ...handlers: RequestHandler[]): this {
+    public delete(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("delete");
-        this.uwsApp.del(routePath, this.makeHandler(handlers, pre, routePath));
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        this.uwsApp.del(routePath, this.makeHandler(handlers, pre, routePath, false, options));
         return this;
     }
 
-    public patch(routePath: string, ...handlers: RequestHandler[]): this {
+    public patch(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("patch");
-        this.uwsApp.patch(routePath, this.makeHandler(handlers, pre, routePath));
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        this.uwsApp.patch(routePath, this.makeHandler(handlers, pre, routePath, false, options));
         return this;
     }
 
-    public head(routePath: string, ...handlers: RequestHandler[]): this {
+    public head(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const pre = this.capturePreRouteCount();
         if (routePath === "/*") this.rootWildcardVerbs.add("head");
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
         // uWS explicitly-registered HEAD routes do send body bytes — suppress them via isHead flag
-        this.uwsApp.head(routePath, this.makeHandler(handlers, pre, routePath, true));
+        this.uwsApp.head(routePath, this.makeHandler(handlers, pre, routePath, true, options));
         return this;
     }
 
-    public options(routePath: string, ...handlers: RequestHandler[]): this {
+    public options(routePath: string, ...handlersOrOptions: Array<RequestHandler | HttpRouteOptions>): this {
         const pre = this.capturePreRouteCount();
         const normalized = normalizePath(routePath);
         // The framework's own `listen()` fallback registers exactly "/*" for CORS preflight support -
         // never treated as "explicit" here, so it keeps deferring to the CORS middleware's blanket 204.
         if (normalized !== "/*") this.explicitOptionsPaths.add(normalized);
-        this.uwsApp.options(routePath, this.makeHandler(handlers, pre, routePath));
+        const { options, handlers } = splitRouteArgs(handlersOrOptions);
+        this.uwsApp.options(routePath, this.makeHandler(handlers, pre, routePath, false, options));
         return this;
     }
 

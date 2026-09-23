@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiError, JWTUser, ObjectDecorators, UserUtils } from "@rapidrest/core";
-import type { HttpRequest, HttpResponse, NextFunction, RequestHandler } from "../http/types.js";
+import type { HttpRequest, HttpResponse, HttpRouteOptions, NextFunction, RequestHandler } from "../http/types.js";
 import type { WsUpgradeAuth } from "../http/MiddlewareChain.js";
 import type { RequestWS } from "../http/uWS/WebSocket.js";
 import { ServerResponse } from "http";
@@ -373,6 +373,11 @@ export class RouteUtils {
                     metadata.rateLimit ?? Reflect.getMetadata("rrst:rateLimit", route);
                 const requiresElevation =
                     metadata.requiresElevation ?? Reflect.getMetadata("rrst:requiresElevation", route);
+                // @StreamingBody() — see HttpRouteOptions.streamingBody. Method-level metadata wins over a
+                // class-level default, same precedence as rateLimit/requiresElevation above.
+                const streamingBody: boolean =
+                    metadata.streamingBody ?? Reflect.getMetadata("rrst:streamingBody", route) ?? false;
+                const routeOptions: HttpRouteOptions | undefined = streamingBody ? { streamingBody: true } : undefined;
                 let { authStrategies } = metadata;
                 let verbMap: Map<string, string> = methods as Map<string, string>;
 
@@ -525,7 +530,13 @@ export class RouteUtils {
                                     }
                                 }
                             };
-                            app[verb](path, authMw, ...middleware);
+                            if (routeOptions) {
+                                app[verb](path, routeOptions, authMw, ...middleware);
+                            } else {
+                                app[verb](path, authMw, ...middleware);
+                            }
+                        } else if (routeOptions) {
+                            app[verb](path, routeOptions, ...middleware);
                         } else {
                             app[verb](path, ...middleware);
                         }
@@ -605,6 +616,8 @@ export class RouteUtils {
                                 const bufferJsonString = Buffer.from(qParam, "base64").toString("utf-8");
                                 args[i] = JSON.parse(bufferJsonString);
                             }
+                        } else if (argMetadata[i][0] === "bodyStream") {
+                            args[i] = req.bodyStream;
                         } else if (argMetadata[i][0] === "request") {
                             args[i] = req;
                         } else if (argMetadata[i][0] === "response") {

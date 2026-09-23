@@ -3,7 +3,13 @@
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
 import { ApiErrorMessages, ApiErrors } from "../../../src/ApiErrors";
-import { BunRequest, BunResponse, readBunBody, type RequestIPSource } from "../../../src/http/bun/BunAdapters";
+import {
+    BunRequest,
+    BunResponse,
+    makeBunBodyStream,
+    readBunBody,
+    type RequestIPSource,
+} from "../../../src/http/bun/BunAdapters";
 
 function makeIpSource(overrides: Partial<{ requestIP: any }> = {}): RequestIPSource {
     return {
@@ -475,5 +481,72 @@ describe("readBunBody Tests", () => {
         });
         const req = new BunRequest(rawReq, makeIpSource());
         await expect(readBunBody(req, rawReq)).resolves.toEqual({ ok: true });
+    });
+});
+
+describe("makeBunBodyStream Tests", () => {
+    it("returns undefined for a request with no body", () => {
+        const rawReq = new Request("http://localhost/test");
+        expect(makeBunBodyStream(rawReq)).toBeUndefined();
+    });
+
+    it("adapts the Web ReadableStream body into a Node Readable that yields the same bytes", async () => {
+        const rawReq = new Request("http://localhost/test", {
+            method: "POST",
+            body: "hello world",
+            duplex: "half",
+        } as any);
+        const stream = makeBunBodyStream(rawReq);
+        expect(stream).toBeDefined();
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream!) {
+            chunks.push(chunk as Buffer);
+        }
+        expect(Buffer.concat(chunks).toString()).toBe("hello world");
+    });
+
+    it("destroys the stream when the request's AbortSignal fires mid-read", async () => {
+        const controller = new AbortController();
+        const bodyStream = new ReadableStream<Uint8Array>({
+            pull(streamController) {
+                streamController.enqueue(new TextEncoder().encode("partial"));
+                // Never closes on its own — the abort below must be what ends the read.
+            },
+        });
+        const rawReq = new Request("http://localhost/test", {
+            method: "POST",
+            body: bodyStream,
+            duplex: "half",
+            signal: controller.signal,
+        } as any);
+        const stream = makeBunBodyStream(rawReq)!;
+        stream.on("error", () => {
+            // Expected once aborted below; prevents an unhandled 'error' event from failing the test.
+        });
+
+        // Read one chunk so the stream is actively in use, then abort mid-stream.
+        const iterator = stream[Symbol.asyncIterator]();
+        await iterator.next();
+        controller.abort();
+
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(stream.destroyed).toBe(true);
+    });
+
+    it("does not throw when the AbortSignal fires after the stream is already destroyed", async () => {
+        const controller = new AbortController();
+        const rawReq = new Request("http://localhost/test", {
+            method: "POST",
+            body: "x",
+            duplex: "half",
+            signal: controller.signal,
+        } as any);
+        const stream = makeBunBodyStream(rawReq)!;
+        stream.on("error", () => {
+            // Expected.
+        });
+        stream.destroy(new Error("already gone"));
+        expect(() => controller.abort()).not.toThrow();
     });
 });
