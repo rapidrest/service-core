@@ -5,6 +5,7 @@
 import "reflect-metadata";
 
 import { ModelUtils, GroupNode, PredicateNode, QueryNode, QueryLiteral } from "../src";
+import { ObjectDecorators } from "@rapidrest/core";
 import { Identifier } from "../src/decorators/ModelDecorators";
 import { RecoverableBaseEntity } from "../src/models/RecoverableBaseEntity";
 import { RecoverableBaseMongoEntity } from "../src/models/RecoverableBaseMongoEntity";
@@ -48,6 +49,22 @@ class TypedTestClass {
 
     @RrstColumn()
     public createdAt: Date = new Date();
+}
+
+const { RequiresScope } = ObjectDecorators;
+
+// A model with a @RequiresScope-protected field, for testing that a search filter/sort/count referencing it is
+// rejected at query-build time for a caller who lacks the scope — see `assertFieldScope()` in ModelUtils.ts.
+class ScopedTestClass {
+    @RrstColumn({ primary: true })
+    public uid: string = "";
+
+    @RrstColumn()
+    public name: string = "";
+
+    @RequiresScope("hr")
+    @RrstColumn()
+    public salary: number = 0;
 }
 
 @Entity()
@@ -2388,5 +2405,123 @@ describe("ModelUtils Tests", () => {
 
     it("Rejects when the given models path cannot be loaded.", async () => {
         await expect(ModelUtils.loadModels("./this/path/does/not/exist")).rejects.toBeDefined();
+    });
+
+    // Regression coverage for the query-time scope-exfiltration fix (2026-09-23): a @RequiresScope-protected
+    // field must be rejected as a filter/sort/count key for a caller who lacks the scope, instead of silently
+    // driving the query and only being redacted from the response afterward (see assertFieldScope()).
+    describe("@RequiresScope query-time enforcement", () => {
+        const withScope = { uid: "hr-user", scopes: ["hr"] };
+        const withoutScope = { uid: "plain-user", scopes: ["other"] };
+
+        describe("buildSearchQuerySQL", () => {
+            it("rejects a filter on a scoped field for a caller without the scope", () => {
+                expect(() =>
+                    ModelUtils.buildSearchQuerySQL(ScopedTestClass, { salary: "gt(99999)" }, true, withoutScope),
+                ).toThrow();
+            });
+
+            it("rejects a filter on a scoped field for an anonymous (unauthenticated) caller", () => {
+                expect(() =>
+                    ModelUtils.buildSearchQuerySQL(ScopedTestClass, { salary: "eq(150000)" }, true, undefined),
+                ).toThrow();
+            });
+
+            it("allows a filter on a scoped field for a caller who holds the scope", () => {
+                const query = ModelUtils.buildSearchQuerySQL(ScopedTestClass, { salary: "gt(99999)" }, true, withScope);
+                expect(query.where[0].salary).toEqual(MoreThan(99999));
+            });
+
+            it("rejects every operator uniformly, including ones that bypass coerceOperand (like/regex/exists)", () => {
+                for (const filter of ["like(*)", "regex(.*)", "exists(true)", "in(1,2)", "range(1,2)", "ne(1)"]) {
+                    expect(() =>
+                        ModelUtils.buildSearchQuerySQL(ScopedTestClass, { salary: filter }, true, withoutScope),
+                    ).toThrow();
+                }
+            });
+
+            it("rejects sorting by a scoped field for a caller without the scope", () => {
+                expect(() =>
+                    ModelUtils.buildSearchQuerySQL(ScopedTestClass, { sort: "-salary" }, true, withoutScope),
+                ).toThrow();
+            });
+
+            it("allows sorting by a scoped field for a caller who holds the scope", () => {
+                const query = ModelUtils.buildSearchQuerySQL(ScopedTestClass, { sort: "-salary" }, true, withScope);
+                expect(query.order).toEqual({ salary: "DESC" });
+            });
+
+            it("does not affect filtering/sorting by an unscoped field", () => {
+                const filterQuery = ModelUtils.buildSearchQuerySQL(
+                    ScopedTestClass,
+                    { name: "eq(Bob)" },
+                    true,
+                    withoutScope,
+                );
+                expect(filterQuery.where[0].name).toEqual(Equal("Bob"));
+                const sortQuery = ModelUtils.buildSearchQuerySQL(ScopedTestClass, { sort: "name" }, true, withoutScope);
+                expect(sortQuery.order).toEqual({ name: "ASC" });
+            });
+
+            it("rejects a scoped-field filter nested inside an $or branch", () => {
+                expect(() =>
+                    ModelUtils.buildSearchQuerySQL(
+                        ScopedTestClass,
+                        { $or: [{ name: "eq(Bob)" }, { salary: "gt(1)" }] },
+                        true,
+                        withoutScope,
+                    ),
+                ).toThrow();
+            });
+        });
+
+        describe("buildSearchQueryMongo", () => {
+            it("rejects a filter on a scoped field for a caller without the scope", () => {
+                expect(() =>
+                    ModelUtils.buildSearchQueryMongo(ScopedTestClass, { salary: "gt(99999)" }, true, withoutScope),
+                ).toThrow();
+            });
+
+            it("allows a filter on a scoped field for a caller who holds the scope", () => {
+                const query: any = ModelUtils.buildSearchQueryMongo(ScopedTestClass, { salary: "gt(99999)" }, true, withScope);
+                expect(query.$match.salary).toEqual({ $gt: 99999 });
+            });
+
+            it("rejects every operator uniformly, including ones that bypass coerceOperand (like/regex/exists)", () => {
+                for (const filter of ["like(*)", "regex(.*)", "exists(true)", "in(1,2)", "range(1,2)", "ne(1)"]) {
+                    expect(() =>
+                        ModelUtils.buildSearchQueryMongo(ScopedTestClass, { salary: filter }, true, withoutScope),
+                    ).toThrow();
+                }
+            });
+
+            it("rejects sorting by a scoped field for a caller without the scope", () => {
+                expect(() =>
+                    ModelUtils.buildSearchQueryMongo(ScopedTestClass, { sort: "-salary" }, true, withoutScope),
+                ).toThrow();
+            });
+
+            it("rejects a scoped-field filter nested inside an $or branch", () => {
+                expect(() =>
+                    ModelUtils.buildSearchQueryMongo(
+                        ScopedTestClass,
+                        { $or: [{ name: "eq(Bob)" }, { salary: "gt(1)" }] },
+                        true,
+                        withoutScope,
+                    ),
+                ).toThrow();
+            });
+
+            it("does not affect filtering by an unscoped field", () => {
+                const query: any = ModelUtils.buildSearchQueryMongo(ScopedTestClass, { name: "eq(Bob)" }, true, withoutScope);
+                expect(query.$match.name).toBe("Bob");
+            });
+        });
+
+        it("applies no scope enforcement when modelClass is not provided (matches the existing sort-field heuristic fallback)", () => {
+            expect(() =>
+                ModelUtils.buildSearchQuerySQL(undefined, { salary: "gt(1)" }, true, withoutScope),
+            ).not.toThrow();
+        });
     });
 });

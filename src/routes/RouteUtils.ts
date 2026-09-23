@@ -251,6 +251,35 @@ export class RouteUtils {
     }
 
     /**
+     * Creates a WebSocket-specific error-sanitizing middleware, appended as the last item in every
+     * `@WebSocket()` route's handler chain (see `registerRoute()`'s WS branch below). Mirrors what
+     * `Server.ts`'s `handleError()`/`serializeError()` already do for ordinary HTTP routes: an
+     * `ApiError`'s own status/code/message pass through unchanged (it's meant to reach the client),
+     * but anything else — a raw DB driver error, an unexpected throw from `RateLimiter`,
+     * `ACLUtils.findACL()`, or any other non-`ApiError` thrown by a middleware in the chain — is
+     * replaced with a generic internal error before `runChain()`'s own end-of-chain fallback can turn
+     * it into a response.
+     *
+     * This matters specifically for WebSocket routes because `runChain()`'s fallback response, for a
+     * WS route, ends up as the literal WebSocket close reason (`ws.close(1002, message)` — see
+     * `Router.ts`/`BunRouter.ts`'s `ws()` `open` handlers), visible to any client via the browser
+     * close event's `event.reason`. An ordinary HTTP route gets the same sanitization for free
+     * because `Server.ts` registers `handleError` as global middleware, which `registerRoute()`
+     * concatenates onto every HTTP route's own handler chain — but `app.ws()` is never given
+     * `globalMiddleware` (only the WS-specific chain built here), so WS routes need their own copy of
+     * the same safety net.
+     */
+    public sanitizeWsError(): RequestHandler {
+        return ((err: any, _req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+            next(
+                err instanceof ApiError
+                    ? err
+                    : new ApiError(ApiErrors.INTERNAL_ERROR, 500, ApiErrorMessages.INTERNAL_ERROR),
+            );
+        }) as unknown as RequestHandler;
+    }
+
+    /**
      * Converts the given array of string or Function objects to functions bound to the given route object.
      *
      * @param route The route object that the list of functions is bound to.
@@ -487,10 +516,17 @@ export class RouteUtils {
                             // Build a per-path copy of the middleware chain. `middleware` is shared across
                             // every verb/basePath combination for this decorated method (and, once
                             // registered, held by reference by the router), so mutating it in place here
-                            // would corrupt other registrations sharing the same array.
+                            // would corrupt other registrations sharing the same array. `sanitizeWsError()`
+                            // is appended last so it sits closest to runChain()'s own end-of-chain fallback —
+                            // see its doc comment for why WS routes need this even though HTTP routes don't
+                            // (globalMiddleware, which is where HTTP gets this from, is never given to ws()).
                             const wsMiddleware: Array<RequestHandler> = this.authMiddleware
-                                ? [this.authMiddleware.authWebSocket(authRequired, authStrategies), ...middleware]
-                                : [...middleware];
+                                ? [
+                                      this.authMiddleware.authWebSocket(authRequired, authStrategies),
+                                      ...middleware,
+                                      this.sanitizeWsError(),
+                                  ]
+                                : [...middleware, this.sanitizeWsError()];
 
                             // Register with the HttpRouter's ws() method; trailing slash handled internally
                             app.ws(path, wsMiddleware, undefined, upgradeAuth);

@@ -1,5 +1,35 @@
 # Release Notes
 
+## Unreleased
+
+### Security
+
+- Fixed a `@StreamingBody()` route that responds without reading `req.bodyStream` (an auth failure, a validation
+  error, or any other pre-body-touch rejection) leaving the underlying keep-alive connection open indefinitely if
+  the client's declared `Content-Length` was never fully delivered — reachable by a fully anonymous caller sending
+  only headers and zero body bytes, at a fraction of the cost of a classic slowloris attack. `UWSResponse.end()`
+  now force-closes the connection instead of a graceful `end()` whenever the streaming route's declared body was
+  never fully received. Fixed alongside it: destroying an unread body stream (as this fix, or an unrelated client
+  disconnect, can do) no longer crashes the process (a stream with no consumer previously had no `error` listener,
+  and Node treats an unhandled `error` event as fatal).
+- Fixed `@RequiresScope`-protected model properties being exfiltrable through search filters, sort and count, even
+  though their value was always redacted from the response. The scope requirement was only ever enforced AFTER a
+  query already ran (`ObjectUtils.deleteScopedProps()`, applied to the fetched result) — a caller without the
+  required scope could still binary-search a scoped field's exact value via repeated `gt()`/`lt()`/`range()`
+  filters, use a `HEAD` request's `Content-Length` as an existence/equality oracle via `count()`, or read a scoped
+  field's relative ordering via `sort`. Filtering, sorting or counting by a scoped field a caller can't read is now
+  rejected with a 400 at query-build time, on both the SQL and MongoDB backends.
+- Fixed WebSocket routes bypassing the same error-message sanitization every HTTP route gets from `Server.ts`. An
+  unexpected non-`ApiError` thrown inside a `@WebSocket()` route's middleware chain (e.g. a genuine Redis/database
+  failure) previously reached the client as the literal WebSocket close reason, unsanitized. WS routes now get
+  their own copy of the same sanitization HTTP routes already had.
+
+### Fixed
+
+- Fixed `makeBodyStream()` (the uWS adapter behind `@StreamingBody()`) leaving the connection's incoming-data
+  throttle permanently paused when a single chunk both overflowed the internal buffer and was the final chunk of
+  the body — a narrow timing coincidence, but one a real (non-malicious) large-and-nearly-full upload could hit.
+
 ## v2.2.0
 
 ### Added

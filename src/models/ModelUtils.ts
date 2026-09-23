@@ -4,7 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import type { Repository } from "typeorm";
 import { MongoRepository } from "../database/MongoRepository.js";
-import { ApiError, ClassLoader, Logger, StringUtils } from "@rapidrest/core";
+import { ApiError, ClassLoader, Logger, StringUtils, UserUtils } from "@rapidrest/core";
 import "reflect-metadata";
 import { isEmpty } from "lodash-es";
 import { RecoverableBaseEntity } from "./RecoverableBaseEntity.js";
@@ -123,6 +123,8 @@ export class ModelUtils {
     private static idPropertyCache: Map<any, string[]> = new Map();
     private static readOnlyPropertyCache: Map<any, string[]> = new Map();
     private static columnTypeCache: Map<any, Map<string, any>> = new Map();
+    /** Caches each class's `@RequiresScope`-decorated property names to their required scopes (see `assertFieldScope()`). */
+    private static scopedPropertyCache: Map<any, Map<string, string[]>> = new Map();
     /** Sequence used to give every `Raw()` SQL expression's named parameter a unique name within one query. */
     private static rawParamSeq: number = 0;
 
@@ -262,6 +264,86 @@ export class ModelUtils {
         ModelUtils.readOnlyPropertyCache.set(modelClass, results);
 
         return results;
+    }
+
+    /**
+     * Returns a map of every `@RequiresScope`-decorated property on `modelClass` to the scope(s) it requires (the
+     * exact same `rrst:scopes` metadata `@rapidrest/core`'s `ObjectUtils.deleteScopedProps()` reads to redact a
+     * property from an already-fetched result). `undefined` when `modelClass` isn't provided.
+     *
+     * Deliberately does NOT use `getReadOnlyPropertyNames()`'s prototype-walking-only pattern: a plain class field
+     * initializer (`public salary: number = 0`) compiles to an own-INSTANCE assignment, so it never appears on the
+     * prototype at all unless its OWN decorator specifically forces a placeholder there (this framework's
+     * `@ReadOnly`/`@Identifier` do; `@rapidrest/core`'s `RequiresScope` has no reason to and doesn't). Confirmed
+     * empirically: `Object.getOwnPropertyNames(SomeClass.prototype)` for a bare `@RequiresScope("x") salary = 0`
+     * field returns only `["constructor"]`. Instead this walks the property names of an actual constructed
+     * instance (mirroring `deleteScopedProps()`'s own `Object.getOwnPropertyNames(obj)` over a data object) union
+     * the prototype chain (still needed to also catch a property that IS forced onto the prototype, e.g. one
+     * additionally decorated with `@ReadOnly`) — metadata itself is always read off `modelClass.prototype`
+     * (`Reflect.getMetadata` walks the prototype chain on its own), regardless of which own-properties surfaced
+     * the candidate name.
+     */
+    private static getScopedPropertyNames(modelClass: any): Map<string, string[]> | undefined {
+        if (!modelClass) {
+            return undefined;
+        }
+
+        const cached: Map<string, string[]> | undefined = ModelUtils.scopedPropertyCache.get(modelClass);
+        if (cached) {
+            return cached;
+        }
+
+        const instance: any = new modelClass();
+        const candidateNames: Set<string> = new Set(Object.getOwnPropertyNames(instance));
+        let proto: any = Object.getPrototypeOf(instance);
+        while (proto) {
+            for (const prop of Object.getOwnPropertyNames(proto)) {
+                candidateNames.add(prop);
+            }
+            proto = Object.getPrototypeOf(proto);
+        }
+
+        const results: Map<string, string[]> = new Map();
+        for (const prop of candidateNames) {
+            if (prop === "constructor") continue;
+            const scopes: string[] | undefined = Reflect.getMetadata("rrst:scopes", modelClass.prototype, prop);
+            if (scopes) {
+                results.set(prop, scopes);
+            }
+        }
+
+        ModelUtils.scopedPropertyCache.set(modelClass, results);
+        return results;
+    }
+
+    /**
+     * Rejects (400) a search filter, sort or count referencing a `@RequiresScope`-protected property when the
+     * requesting user doesn't hold at least one of its required scopes.
+     *
+     * Without this, `@RequiresScope` was only ever a RESPONSE-time redaction (`ObjectUtils.deleteScopedProps()`,
+     * applied after a query already ran) — a scope-restricted field could still drive `WHERE`/`ORDER BY`/count
+     * itself, letting a caller who could never READ the field's value still binary-search it out via repeated
+     * `gt()`/`lt()`/`range()` filters, turn a `HEAD` request's `Content-Length` into an existence/equality oracle
+     * via `count()`, or read its relative ordering via `sort`. Checked at query-BUILD time instead, so a
+     * disallowed field never reaches `WHERE`/`ORDER BY`/count in the first place — matches `hasScopes()`'s exact
+     * semantics (same function `deleteScopedProps()` uses), so query-time rejection and response-time redaction
+     * never disagree about who has access to a given field.
+     *
+     * Applied uniformly to every field referenced by a filter (regardless of operator — `eq`/`gt`/`like`/`regex`/
+     * `exists`/... all pass through this same per-key check) and to every `sort` key, on both SQL and Mongo.
+     *
+     * @throws {ApiError} 400 `SEARCH_SCOPED_FIELD` if `property` requires a scope `user` doesn't hold.
+     */
+    private static assertFieldScope(modelClass: any, property: string, user: any): void {
+        const scoped: Map<string, string[]> | undefined = ModelUtils.getScopedPropertyNames(modelClass);
+        const requiredScopes: string[] | undefined = scoped?.get(property);
+        if (requiredScopes && !UserUtils.hasScopes(user, requiredScopes)) {
+            throw new ApiError(
+                ApiErrors.SEARCH_SCOPED_FIELD,
+                400,
+                StringUtils.findAndReplace(ApiErrorMessages.SEARCH_SCOPED_FIELD, { field: property }),
+            );
+        }
     }
 
     /**
@@ -1207,6 +1289,9 @@ export class ModelUtils {
                                     }),
                                 );
                             }
+                            // Sorting by a scoped field the caller can't read would still leak its relative
+                            // ordering across records even though its value never appears in the response.
+                            ModelUtils.assertFieldScope(modelClass, sortKey, user);
                         }
                     }
 
@@ -1221,6 +1306,11 @@ export class ModelUtils {
             if (key.split(".").some((segment) => segment.startsWith("$"))) {
                 throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
             }
+
+            // Reject filtering by a @RequiresScope-protected field before it ever reaches WHERE/count — see
+            // assertFieldScope()'s doc comment. Applies to every operator uniformly (eq/gt/like/regex/exists/...
+            // all funnel through this same per-key loop), not just the ones that go through coerceOperand().
+            ModelUtils.assertFieldScope(modelClass, key, user);
 
             if (Array.isArray(query[key])) {
                 // Add each value in the array to each corresponding query. Multi-valued keys are "zipped"
@@ -1395,6 +1485,9 @@ export class ModelUtils {
                                     }),
                                 );
                             }
+                            // Sorting by a scoped field the caller can't read would still leak its relative
+                            // ordering across records even though its value never appears in the response.
+                            ModelUtils.assertFieldScope(modelClass, sortKey, user);
                         }
                     }
 
@@ -1436,6 +1529,14 @@ export class ModelUtils {
             // `assertNoOperatorInjection` wherever values are parsed.
             if (!ModelUtils.isGroupKey(key) && key.split(".").some((segment) => segment.startsWith("$"))) {
                 throw new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
+            }
+
+            // Reject filtering by a @RequiresScope-protected field before it ever reaches $match/count — see
+            // assertFieldScope()'s doc comment. Applies to every operator uniformly (eq/gt/like/regex/exists/...
+            // all funnel through this same per-key loop), not just the ones that go through coerceOperand().
+            // $or/$and sub-queries are checked recursively (each is its own buildSearchQueryMongo() call below).
+            if (!ModelUtils.isGroupKey(key)) {
+                ModelUtils.assertFieldScope(modelClass, key, user);
             }
 
             if (ModelUtils.isGroupKey(key)) {

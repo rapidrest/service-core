@@ -4,6 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import {
     DEFAULT_MAX_BODY_SIZE,
+    isBodyStreamFullyReceived,
     makeBodyStream,
     parseBodyByContentType,
     parseCookies,
@@ -13,6 +14,7 @@ import {
     UWSRequest,
     UWSResponse,
 } from "../../../src/http/uWS/Adapters";
+import { Readable } from "stream";
 
 describe("parseCookies Tests", () => {
     it("returns an empty object for an empty header", () => {
@@ -707,5 +709,162 @@ describe("makeBodyStream Tests", () => {
             onAbortCb?.();
             onAbortCb?.();
         }).not.toThrow();
+    });
+
+    // Regression coverage for the connection-hang fix (2026-09-23): a route that never reads
+    // req.bodyStream at all must not crash the process when the stream is later destroyed (e.g. via
+    // UWSResponse.end()'s force-close path, or an unrelated client disconnect) — a Readable with no
+    // consumer and no listener still emits 'error' on destroy(), which Node treats as fatal if
+    // nothing is listening. Deliberately attaches NO listener of its own (unlike the two tests above)
+    // so this only passes if makeBodyStream()'s own internal safety-net listener is doing the work.
+    it("does not crash when destroyed with no consumer and no external error listener attached", async () => {
+        const uwsRes = makeUwsResForStream();
+        let onAbortCb: (() => void) | undefined;
+        const stream = makeBodyStream(uwsRes as any, { onAbort: (cb) => (onAbortCb = cb) });
+
+        uwsRes.fireData("never read", false);
+        expect(() => onAbortCb?.()).not.toThrow();
+        // Give the destroy()'s queued 'error' emission a chance to actually fire.
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(stream.destroyed).toBe(true);
+    });
+
+    // Regression coverage for the pause/resume coincident-EOF fix (2026-09-23): a chunk that both
+    // overflows the internal buffer AND is the final chunk of the body must not call uwsRes.pause() —
+    // Node's Readable never calls _read() again once push(null) has run, so nothing would ever issue
+    // the matching resume(), permanently stranding the uWS connection in a paused state.
+    it("does not pause uWS when the overflowing chunk is also the final (isLast) chunk", async () => {
+        const uwsRes = makeUwsResForStream();
+        const stream = makeBodyStream(uwsRes as any, { onAbort: () => undefined });
+
+        const big = Buffer.alloc(STREAMING_BODY_HIGH_WATER_MARK + 1, 2);
+        uwsRes.fireData(big, true);
+
+        expect(uwsRes.pauseCount).toBe(0);
+        expect(isBodyStreamFullyReceived(stream)).toBe(true);
+
+        const received: Buffer[] = [];
+        for await (const chunk of stream) received.push(chunk as Buffer);
+        expect(Buffer.concat(received).length).toBe(big.length);
+        // No resume() should have been needed either, since pause() was never called.
+        expect(uwsRes.resumeCount).toBe(0);
+    });
+});
+
+describe("isBodyStreamFullyReceived Tests", () => {
+    it("returns true for undefined (nothing to wait for)", () => {
+        expect(isBodyStreamFullyReceived(undefined)).toBe(true);
+    });
+
+    it("returns false before isLast has been observed, even if data has already been pushed", () => {
+        const uwsRes = makeUwsResForStream();
+        const stream = makeBodyStream(uwsRes as any, { onAbort: () => undefined });
+        uwsRes.fireData("partial", false);
+        expect(isBodyStreamFullyReceived(stream)).toBe(false);
+    });
+
+    it("returns true once isLast has been observed, independent of whether the stream was ever consumed", () => {
+        const uwsRes = makeUwsResForStream();
+        const stream = makeBodyStream(uwsRes as any, { onAbort: () => undefined });
+        // Nothing ever reads from `stream` — isBodyStreamFullyReceived must not depend on Node's own
+        // readableEnded, which (confirmed empirically) never becomes true without an active consumer.
+        uwsRes.fireData(Buffer.alloc(0), true);
+        expect(isBodyStreamFullyReceived(stream)).toBe(true);
+        expect(stream.readableEnded).toBe(false);
+    });
+
+    it("returns true for a stream not produced by makeBodyStream() (no marker set)", () => {
+        const plain = new Readable({ read: () => undefined });
+        plain.on("error", () => undefined);
+        expect(isBodyStreamFullyReceived(plain)).toBe(false);
+    });
+});
+
+/** A fake uWS HttpResponse combining everything both UWSResponse and makeBodyStream() need: status/
+ * header/end/endWithoutBody/write tracking (from makeUwsRes()) plus onData/pause/resume/close (from
+ * makeUwsResForStream()) — used only by the force-close integration tests below. */
+function makeFullFakeUwsRes() {
+    const calls: any = { headers: [], statuses: [], ended: [], endWithoutBody: [], writes: [], closed: [] };
+    let onAbortedCb: (() => void) | undefined;
+    let onDataCb: ((chunk: ArrayBuffer, isLast: boolean) => void) | undefined;
+    const res: any = {
+        onAborted: (cb: () => void) => {
+            onAbortedCb = cb;
+        },
+        cork: (fn: () => void) => fn(),
+        writeStatus: (s: string) => calls.statuses.push(s),
+        writeHeader: (k: string, v: string) => calls.headers.push([k, v]),
+        end: (data?: any) => calls.ended.push(data),
+        endWithoutBody: (n?: number) => calls.endWithoutBody.push(n),
+        write: (data: any) => calls.writes.push(data),
+        close: () => {
+            calls.closed.push(1);
+            // uwsRes.close() fires the same onAborted callback a real client disconnect would.
+            onAbortedCb?.();
+        },
+        onData: (cb: (chunk: ArrayBuffer, isLast: boolean) => void) => {
+            onDataCb = cb;
+        },
+        fireData: (chunk: string | Buffer, isLast: boolean) => {
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            onDataCb?.(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), isLast);
+        },
+        _calls: calls,
+    };
+    return res;
+}
+
+describe("UWSResponse.attachBodyStream() / end() force-close on undrained body (2026-09-23 fix)", () => {
+    it("force-closes the connection instead of writing a normal response when the body was never fully received", () => {
+        const uwsRes = makeFullFakeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        const stream = makeBodyStream(uwsRes, res);
+        res.attachBodyStream(stream);
+
+        // The route rejects the request without ever reading req.bodyStream, and uWS hasn't
+        // delivered isLast yet (e.g. the client declared a huge Content-Length and never sent it).
+        res.status(400).json({ error: "rejected" });
+
+        expect(uwsRes._calls.closed).toEqual([1]);
+        expect(uwsRes._calls.ended).toEqual([]);
+        expect(uwsRes._calls.statuses).toEqual([]);
+        expect(uwsRes._calls.headers).toEqual([]);
+    });
+
+    it("ends normally when the attached body stream was fully received before end() is called", () => {
+        const uwsRes = makeFullFakeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        const stream = makeBodyStream(uwsRes, res);
+        res.attachBodyStream(stream);
+
+        uwsRes.fireData(Buffer.alloc(0), true); // empty body, fully received immediately
+        res.status(200).json({ ok: true });
+
+        expect(uwsRes._calls.closed).toEqual([]);
+        expect(uwsRes._calls.ended).toEqual([JSON.stringify({ ok: true })]);
+        expect(uwsRes._calls.statuses).toEqual(["200 OK"]);
+    });
+
+    it("is unaffected by attachBodyStream() when it is never called (an ordinary non-streaming route)", () => {
+        const uwsRes = makeFullFakeUwsRes();
+        const res = new UWSResponse(uwsRes);
+
+        res.status(204).end();
+
+        expect(uwsRes._calls.closed).toEqual([]);
+        expect(uwsRes._calls.ended).toEqual([undefined]);
+    });
+
+    it("swallows a throw from uwsRes.close() (already invalid/closed) rather than propagating it", () => {
+        const uwsRes = makeFullFakeUwsRes();
+        uwsRes.close = () => {
+            throw new Error("invalid access of closed uWS.HttpResponse");
+        };
+        const res = new UWSResponse(uwsRes);
+        const stream = makeBodyStream(uwsRes, res);
+        res.attachBodyStream(stream);
+
+        expect(() => res.status(400).end()).not.toThrow();
     });
 });

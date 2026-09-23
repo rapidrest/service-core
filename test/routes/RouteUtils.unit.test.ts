@@ -6,7 +6,10 @@
 // resolution branches that the full-server integration tests don't specifically exercise
 // (disabled ACL fast-path, missing user scopes, the base64 "q" query buffer feature, etc).
 import "reflect-metadata";
+import { ApiError } from "@rapidrest/core";
 import { RouteUtils } from "../../src/routes/RouteUtils";
+import { makeWsStubResponse, runChain } from "../../src/http/MiddlewareChain";
+import { ApiErrorMessages, ApiErrors } from "../../src/ApiErrors";
 import {
     Auth,
     AuthResult as AuthResultDecorator,
@@ -937,5 +940,116 @@ describe("RouteUtils.wrapMiddleware @BodyStream argument resolution", () => {
         const handler = routeUtils.wrapMiddleware(route, route.create);
         await handler(makeReq(), makeRes(), vi.fn());
         expect(route.lastArgs[0]).toBeUndefined();
+    });
+});
+
+// Regression coverage for the WS error-sanitization fix (2026-09-23): a non-ApiError thrown inside a
+// WebSocket route's middleware chain must not leak its raw message/details through the close reason —
+// see RouteUtils.sanitizeWsError()'s doc comment for the full rationale (globalMiddleware, which gives
+// HTTP routes Server.ts's handleError() sanitization for free, is never passed to app.ws()).
+describe("RouteUtils.sanitizeWsError", () => {
+    it("replaces a non-ApiError with a generic, sanitized ApiError", () => {
+        const routeUtils = new RouteUtils();
+        const handler: any = routeUtils.sanitizeWsError();
+        const next = vi.fn();
+        const dbError = new Error("duplicate key value violates unique constraint on table employees.salary=150000");
+
+        handler(dbError, makeReq(), makeRes(), next);
+
+        expect(next).toHaveBeenCalledTimes(1);
+        const passed: ApiError = next.mock.calls[0][0];
+        expect(passed).toBeInstanceOf(ApiError);
+        expect(passed.code).toBe(ApiErrors.INTERNAL_ERROR);
+        expect(passed.status).toBe(500);
+        expect(passed.message).not.toContain("employees");
+        expect(passed.message).not.toContain("salary");
+    });
+
+    it("passes an ApiError through unchanged", () => {
+        const routeUtils = new RouteUtils();
+        const handler: any = routeUtils.sanitizeWsError();
+        const next = vi.fn();
+        const apiErr = new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, "custom permission message");
+
+        handler(apiErr, makeReq(), makeRes(), next);
+
+        expect(next).toHaveBeenCalledWith(apiErr);
+    });
+
+    it("is recognized by runChain as a 4-arg error handler", () => {
+        const routeUtils = new RouteUtils();
+        const handler: any = routeUtils.sanitizeWsError();
+        expect(handler.length).toBe(4);
+    });
+});
+
+describe("RouteUtils.registerRoute — WS chains get sanitizeWsError() appended", () => {
+    it("sanitizes a raw non-ApiError thrown mid-chain before it reaches the WS close reason", async () => {
+        @Route("/chat")
+        class ChatRoute {
+            @WebSocket()
+            public connect(): void {
+                return undefined;
+            }
+        }
+        const routeUtils = new RouteUtils();
+        (routeUtils as any).logger = makeLogger();
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new ChatRoute());
+
+        const { middleware } = app._registered["ws /chat"];
+        // Splice in a throwing handler right after auth (index 0) to simulate an unexpected failure
+        // from something like RateLimiter.enforceLimit() or ACLUtils.findACL() hitting a real backend
+        // error — the kind of thing that reaches the chain as a raw, non-ApiError throw.
+        const chainWithFailure = [
+            middleware[0],
+            () => {
+                throw new Error("ECONNRESET: redis connection lost at 10.0.0.5:6379");
+            },
+            ...middleware.slice(1),
+        ];
+
+        let closePayload: any;
+        const stubRes = makeWsStubResponse((_status, payload) => {
+            closePayload = payload;
+        });
+        await runChain(chainWithFailure, makeReq(), stubRes);
+
+        expect(closePayload).toBeDefined();
+        expect(closePayload.message).not.toContain("redis");
+        expect(closePayload.message).not.toContain("10.0.0.5");
+        expect(closePayload.code).toBe(ApiErrors.INTERNAL_ERROR);
+    });
+
+    it("still surfaces a real ApiError's own message/code through the WS close reason", async () => {
+        @Route("/chat2")
+        class ChatRoute2 {
+            @WebSocket()
+            public connect(): void {
+                return undefined;
+            }
+        }
+        const routeUtils = new RouteUtils();
+        (routeUtils as any).logger = makeLogger();
+        const app = makeApp();
+        await routeUtils.registerRoute(app, new ChatRoute2());
+
+        const { middleware } = app._registered["ws /chat2"];
+        const chainWithApiError = [
+            middleware[0],
+            () => {
+                throw new ApiError(ApiErrors.AUTH_PERMISSION_FAILURE, 403, ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+            },
+            ...middleware.slice(1),
+        ];
+
+        let closePayload: any;
+        const stubRes = makeWsStubResponse((_status, payload) => {
+            closePayload = payload;
+        });
+        await runChain(chainWithApiError, makeReq(), stubRes);
+
+        expect(closePayload.code).toBe(ApiErrors.AUTH_PERMISSION_FAILURE);
+        expect(closePayload.message).toBe(ApiErrorMessages.AUTH_PERMISSION_FAILURE);
     });
 });

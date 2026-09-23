@@ -129,6 +129,12 @@ function makeUWSHandler(
             // nothing to buffer or cap up front — enforcing a limit, if desired, is left to the
             // handler consuming req.bodyStream.
             req.bodyStream = makeBodyStream(uwsRes, res);
+            // See UWSResponse.end() / isBodyStreamFullyReceived(): lets end() force-close the
+            // connection instead of hanging it if the response finalizes before the declared body
+            // has actually arrived (e.g. a route rejecting the request without ever reading the
+            // stream — an auth failure, a validation error, or a client that never sends the body
+            // it declared at all).
+            res.attachBodyStream(req.bodyStream);
         } else {
             // Body must be read before any middleware runs. If it exceeds maxBodySize, readBody() has
             // already written a 413 response and ended the connection — stop here without running any

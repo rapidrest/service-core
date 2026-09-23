@@ -402,11 +402,19 @@ export async function readBunBody(
  * Destroys the returned stream if the client disconnects mid-upload, via the request's own
  * `AbortSignal` — mirroring `makeBodyStream()`'s uWS `onAborted`-driven cleanup — so a handler
  * consuming it via `for await` sees a thrown error instead of hanging forever.
+ *
+ * A route that never reads the returned stream at all can still trigger that destroy() (the request
+ * simply gets aborted independently, e.g. the client navigating away), so a permanent no-op `error`
+ * listener is attached — a `Readable` with no active consumer still emits `error` on `destroy(err)`,
+ * and Node treats a zero-listener `error` event as fatal (crashes the process). This doesn't swallow
+ * anything from a real consumer: EventEmitter calls every registered listener, not just the first, so
+ * `for await`/`.pipe()`/an explicit `.on("error")` still see the same event independently.
  */
 export function makeBunBodyStream(rawRequest: Request): Readable | undefined {
     if (!rawRequest.body) return undefined;
 
     const stream = Readable.fromWeb(rawRequest.body as any);
+    stream.on("error", () => undefined);
     rawRequest.signal?.addEventListener("abort", () => {
         if (!stream.destroyed) {
             stream.destroy(new Error("Request aborted before the body stream was fully read."));

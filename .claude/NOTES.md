@@ -961,3 +961,131 @@ them from the map, so connecting again later re-initialized the stale one with i
   one's `disconnect()` destroys it for both. Not changed.
 - Tests: `test/database/TypeOrmSupport.connect.test.ts` (real better-sqlite3 files). 5 of its 6 tests fail on the old
   code with a no-op `release` stub.
+
+### 2026-09-23 — Streaming-body connection-hang DoS (CRITICAL), pause/resume coincident-EOF fix, and two unrelated
+  adversarial-review findings (scope query-time exfiltration, WS error sanitization)
+
+Urgent follow-up to the streaming-body feature added 2026-09-22 (commit `d556026`, published as `2.2.0`) — a
+round-3 adversarial review found a live-reproducible connection-exhaustion DoS in it, plus a second real bug while
+fixing the first. A separate, parallel review of the rest of the framework turned up two more real findings
+(unrelated to streaming) folded into the same follow-up commit.
+
+**1. [CRITICAL] Undrained declared body left the uWS keep-alive connection open forever.** A `@StreamingBody()`
+route that responds (auth failure, validation error, anything) WITHOUT reading `req.bodyStream` leaves the
+connection open indefinitely if the client's declared `Content-Length` hasn't been fully delivered yet — because
+uWS won't consider a keep-alive connection reusable until it has received every declared body byte, and a plain
+`uwsRes.end()` doesn't change that. Live-reproduced with a raw TCP socket: `POST` with `Content-Length: 50000000000`
+and zero body bytes ever sent → instant 400 response, then the socket sits open with no timeout. Trivially
+cheaper than classic slowloris (no sustained trickle needed — one packet of headers pins a slot forever). Real
+attack surface: any `@StreamingBody()` route with a pre-body-touch check (auth, an early validation error) reachable
+by an anonymous caller.
+  - Fix: `UWSResponse` gets `attachBodyStream(stream)` (called by `Router.ts`'s `handle()` right after
+    `makeBodyStream()` creates the stream); `end()` checks `isBodyStreamFullyReceived(stream)` and, if the
+    declared body was never fully received, calls `uwsRes.close()` (a hard disconnect) INSTEAD of the normal
+    write+`end()`/`endWithoutBody()` sequence — never both (uWS response objects are invalid once `end()`
+    succeeds, so this has to intercept before the real `end()`, not clean up after it).
+  - `isBodyStreamFullyReceived()` deliberately does NOT use the stream's own `readableEnded` — confirmed
+    empirically that Node never sets `readableEnded` true without an active consumer, even for an already-fully-
+    arrived empty body, which would make every unread streaming route force-close unnecessarily. Instead
+    `makeBodyStream()` stamps a marker on the stream the moment `onData`'s `isLast` fires, independent of whether
+    anything ever consumed it — the correct signal is "did uWS finish receiving the declared bytes", not "did our
+    JS code read them".
+  - `uwsRes.close()` conveniently fires the same `onAborted` callback a real disconnect does, so it reuses the
+    existing abort-destroys-the-stream wiring for free.
+  - Bun (`BunRouter`/`BunResponse`) was NOT given the equivalent fix — the finding was uWS-specific and
+    live-reproduced only there; Bun's `Response`-object model exposes no low-level socket-close primitive
+    equivalent to `uwsRes.close()` to intercept with. Whether Bun's own HTTP server has an analogous issue is
+    unconfirmed — flagged as a follow-up, not fixed here.
+  - Tests: `test/http/uWS/Router.streamingBody.test.ts` (real uWS, raw `net.Socket`) — the exact exploit
+    (huge declared length, zero body bytes), a partial-body variant, and confirmation a route that DOES drain the
+    body keeps the normal graceful path. Plus `UWSResponse.attachBodyStream()`/`end()` unit tests in
+    `test/http/uWS/Adapters.test.ts` with a fake uWS response (`makeFullFakeUwsRes()`).
+
+**1b. [found while fixing #1] Destroying an unconsumed body stream crashed the process.** The fix above makes
+  `end()` call `uwsRes.close()`, which fires `onAborted`, which calls `stream.destroy(err)` via the existing
+  abort-cleanup wiring — but a stream nobody ever reads from has no `error` listener, and Node treats a
+  zero-listener `error` event as fatal (throws, kills the process). This was already a latent bug in the original
+  2026-09-22 streaming-body feature (any unread stream destroyed via an unrelated client disconnect would have hit
+  it too) — the #1 fix just makes it trivially reachable. Fixed in both `makeBodyStream()` (uWS) and
+  `makeBunBodyStream()` (Bun) with a permanent no-op `stream.on("error", () => undefined)` — doesn't swallow
+  anything from a real consumer, since EventEmitter calls every registered listener, not just the first.
+
+**2. [MEDIUM-HIGH] `pause()`/`isLast` coincidence permanently unbalanced the pause/resume pairing.** When the SAME
+  `onData` chunk both overflows the buffer (`push()` → `false`) AND is the final chunk, the original code still
+  called `uwsRes.pause()` — but since `push(null)` runs right after, Node's `Readable` never calls `_read()` again
+  (nothing left to read), so the matching `resume()` never fires, leaving the connection paused with nothing to
+  ever un-pause it. Same failure class as the pause/resume non-idempotence gotcha already documented above (search
+  "not simple idempotent throttle toggles"). Fix: skip `pause()` entirely when `isLast` is true — `if (!ok &&
+  !isLast) { paused = true; uwsRes.pause(); }`. Test: `makeBodyStream Tests` in `Adapters.test.ts`, an
+  overflow-sized chunk fired with `isLast: true` in one call, asserting `pauseCount === 0`.
+
+**3. [deferred, lower priority per the review itself] No idle/time-based timeout on `makeBodyStream()`.** Only a
+  byte-count cap is left to the route (by design); nothing trips on a genuine slow-trickle attack (e.g. 1
+  byte/hour) independent of the route's own byte-count limit. Not implemented this session — a real framework
+  improvement (an optional configurable idle-read timeout that destroys the stream) but explicitly marked
+  "if time allows" behind the two items above, and time went to the two additional findings below instead.
+
+**4. [HIGH, unrelated to streaming] `@RequiresScope` was a response-time-only redaction — a scoped field's value
+  was still exfiltrable via search filters/sort/count.** `@rapidrest/core`'s `RequiresScope` (property decorator,
+  `rrst:scopes` metadata) only ever got consulted by `ObjectUtils.deleteScopedProps()`, called by `RepoUtils.ts`
+  AFTER a query already ran. `ModelUtils.ts`'s query-building (`coerceOperand`, `getQueryParamValue*`,
+  `buildSearchQuerySQL`/`buildSearchQueryMongo`) never checked it at all — a real `WHERE`/`$match` condition (and
+  `count()`/a `HEAD` request's `Content-Length`) could be built directly against a field the caller could never
+  actually READ in a response, letting a caller with `LIST`/`COUNT` but not scope access binary-search a scoped
+  numeric field's exact value via `gt()`/`lt()`/`range()`, or read its relative order via `sort`.
+  - Fix: new `ModelUtils.assertFieldScope(modelClass, property, user)`, called from both builders' per-key filter
+    loop (before the value ever reaches `WHERE`/`$match`) and their sort-field loop, throwing 400
+    `SEARCH_SCOPED_FIELD` (new `ApiErrors`/`ApiErrorMessages` entry, `api-023`) when `property` requires a scope
+    `user` doesn't hold — using the exact same `UserUtils.hasScopes()` check `deleteScopedProps()` uses, so
+    query-time rejection and response-time redaction can never disagree about who has access. Applied uniformly to
+    every operator (including `like`/`regex`/`exists`, which bypass `coerceOperand` entirely) since the check sits
+    at the per-key loop, not inside `coerceOperand` itself. `count()`/`exists()`/a `HEAD` request share the same
+    builder, so they're covered for free.
+  - New `ModelUtils.getScopedPropertyNames()` deliberately does NOT reuse `getReadOnlyPropertyNames()`'s
+    prototype-only-walk pattern. Confirmed empirically: a plain `@RequiresScope("x") salary: number = 0` field's
+    metadata IS attached correctly (`Reflect.getMetadata` finds it fine), but `Object.getOwnPropertyNames(class
+    .prototype)` does NOT list `salary` at all — a class field initializer compiles to an own-INSTANCE assignment,
+    never a prototype property, UNLESS the specific decorator applied to it deliberately forces a placeholder onto
+    the prototype the way this repo's OWN `@ReadOnly` does (see that decorator's doc comment: "same technique
+    `@Identifier` uses"). `@rapidrest/core`'s `RequiresScope` has no reason to know about that trick and doesn't do
+    it, so `getReadOnlyPropertyNames()`'s exact pattern silently finds zero scoped properties for any ordinary
+    model field. Fixed by walking an actual constructed INSTANCE's own properties (mirroring
+    `deleteScopedProps()`'s own strategy) unioned with the prototype chain (still needed for a property that IS
+    forced onto the prototype, e.g. one also decorated with `@ReadOnly`). **If adding another metadata-driven
+    property scanner over a model class in the future, don't copy `getReadOnlyPropertyNames()`'s prototype-only
+    pattern without checking whether the decorator in question does the placeholder trick — it usually won't.**
+  - Tests: `test/ModelUtils.test.ts`, new `@RequiresScope query-time enforcement` describe block (`ScopedTestClass`
+    fixture) — rejects every operator uniformly, rejects sort, rejects nested inside `$or`, allows both when the
+    caller holds the scope, doesn't affect an unscoped field, no enforcement when `modelClass` is omitted (matches
+    the existing sort-field heuristic-fallback behavior).
+
+**5. [MEDIUM, unrelated to streaming] WebSocket routes bypassed `Server.ts`'s error sanitization.**
+  `RouteUtils.registerRoute()`'s WS branch builds a separate `wsMiddleware` array for `app.ws()` that never
+  includes `globalMiddleware` (unlike every HTTP route's chain) — so `Server.ts`'s `handleError`/`serializeError()`
+  (which collapses any non-`ApiError`, e.g. a raw DB driver error, to a generic `INTERNAL_ERROR`) never runs for a
+  WS chain. `runChain()`'s own end-of-chain fallback builds the close payload straight from whatever was thrown,
+  with no sanitization — and for a WS route that payload becomes the literal `ws.close(1002, message)` reason,
+  readable by any client via the browser close event's `event.reason`. Reachable via any unexpected non-`ApiError`
+  thrown by a WS route's middleware (e.g. `RateLimiter`/`ACLUtils` hitting a real backend failure).
+  - Fix: new `RouteUtils.sanitizeWsError()` — a 4-arg error-handling middleware appended as the LAST item of every
+    `wsMiddleware` array (mirroring how `Server.ts`'s `handleError` is the last item of `globalMiddleware` for
+    HTTP). Passes an `ApiError` through unchanged; replaces anything else with a generic `INTERNAL_ERROR`
+    `ApiError` before calling `next()`, so by the time `runChain()`'s own fallback builds the close payload it's
+    already sanitized. Deliberately does NOT touch `MiddlewareChain.ts`'s shared fallback itself — that would
+    also change behavior for the (documented, tested) case of `runChain()` being used directly with no error
+    handler in the chain at all, which is intentionally out of scope here.
+  - Tests: `test/routes/RouteUtils.unit.test.ts`, `sanitizeWsError` unit tests plus a `registerRoute()` integration
+    test splicing a raw throw into a real registered WS chain and confirming the close payload never contains the
+    raw message, alongside confirmation a real `ApiError`'s own message/code still passes through unchanged.
+
+**6. [deferred, explicitly optional in the finding] `trackChanges` + `@RequiresScope` on the same model silently
+  discards the scoped field's value on every version bump** — an ordinary GET→edit→PUT round trip from ANY caller
+  (not just an unauthorized one) omits the field since `findOne()` already stripped it before the client ever saw
+  it, and a `trackChanges` model builds its new version as a bare spread, so the value silently vanishes with no
+  error or audit trail. Not implemented this session (explicitly lower priority / "document as a follow-up if time
+  is limited" in the finding itself). Would need the `@ReadOnly`-restoration logic in `RepoUtils.update()` (which
+  already re-applies the existing persisted value for `getReadOnlyPropertyNames()` fields) extended to also cover
+  `@RequiresScope` properties the caller never received.
+
+Verification: full `vitest run --coverage` — all files/tests passed, coverage above the repo's gate (97/92/99/97).
+`tsc --noEmit` and `eslint ./src ./test` clean. See the commit for the exact numbers and hash.
