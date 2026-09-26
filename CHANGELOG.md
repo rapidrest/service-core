@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added a per-route options argument to the WebSocket decorator, `@WebSocket(path?, options?)`, with the exported `WebSocketRouteOptions` interface: `maxPayloadLength` (bytes, default 16 KiB, up to 16 MiB), `maxBackpressure` (bytes, default 64 KiB, up to 64 MiB) and `idleTimeout` (seconds, default 120, `0` or 8 to 960); a route without options behaves exactly as before
+- Added RouteUtils.resolveWebSocketOptions(), which validates the options when the route is registered (finite integers within range, no unknown option names) and throws an Error naming the route, then passes them as the `wsOptions` argument of `app.ws()`
+- Added the MAX_WEBSOCKET_PAYLOAD_LENGTH, MAX_WEBSOCKET_BACKPRESSURE and MAX_WEBSOCKET_IDLE_TIMEOUT constants to RouteDecorators
+- Added tests for the decorator metadata, the validation errors, the option defaults and overrides against a real uWS server and `ws` client, and `@Param()` on a WebSocket route
+
+### Fixed
+- Fixed the uWS router never filling `req.params` for a WebSocket upgrade request, so `@Param("id")` on a `@WebSocket("/relay/:id")` handler was `undefined` (only the Bun router filled it); the upgrade callback now captures and percent-decodes the `:param` segments the same way the HTTP routes do, and a `@RateLimit` route with a `:param` now gets a bucket per resource
+- Fixed a route option left `undefined` in `wsOptions` overwriting the uWS router's default for that field instead of keeping it
+
 ## [2.3.0] - 2026-09-23
 
 ### Added

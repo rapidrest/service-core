@@ -55,6 +55,35 @@ For complete documentation please visit [RapidREST.dev](https://rapidrest.dev).
 - Prometheus metrics out of the box
 - Ready-made admin routes: health/status, live log streaming over WebSocket, static asset serving
 
+## WebSocket routes
+
+Declare a WebSocket endpoint with `@WebSocket(path?, options?)`. It takes the same argument decorators as an HTTP
+route (`@Param()`, `@Query()`, `@User()`, `@Socket`, ...) and the same `@Auth`, `@RequiresRole`, `@RateLimit`
+decorators, and runs on both uWebSockets.js and Bun:
+
+```ts
+@Route("/relay")
+class RelayRoute {
+    @WebSocket("/:id", { maxPayloadLength: 1024 * 1024, maxBackpressure: 8 * 1024 * 1024 })
+    public relay(@Param("id") id: string, @Socket socket: any): void {
+        socket.on("message", (data: Buffer) => socket.send(data));
+    }
+}
+```
+
+The options are all optional. A route without them (or a field left out) keeps the defaults, which are uWebSockets.js'
+own:
+
+| Option             | Unit    | Default | Allowed                | What happens past the limit                                                                                                                                                  |
+| ------------------ | ------- | ------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxPayloadLength` | bytes   | 16 KiB  | 1 to 16 MiB            | A larger incoming message is refused and the connection is closed (uWebSockets.js drops it without a close frame, so clients see code 1006; the Bun router closes with 1009). |
+| `maxBackpressure`  | bytes   | 64 KiB  | 1 to 64 MiB            | Once this much is queued for a slow client, further `send()` calls are dropped instead of buffered. Each connection may hold this much memory.                                |
+| `idleTimeout`      | seconds | 120     | `0` (off), or 8 to 960 | A connection that receives nothing for this long is closed.                                                                                                                  |
+
+Values are checked when the route is registered: anything that is not an integer in range, or an unknown option name,
+throws an Error that names the route. On the Bun router, `idleTimeout` and `maxBackpressure` are server-wide (the
+largest value any route set) while `maxPayloadLength` is enforced per route.
+
 ## Installation
 
 ### NPM

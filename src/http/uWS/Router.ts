@@ -45,6 +45,28 @@ interface InFlightCounter {
     count: number;
 }
 
+/**
+ * Copies a route's `:param` values from the uWS request onto `req.params`, keyed by `paramNames` (see
+ * `extractParamNames()`). Shared by the HTTP handlers and the WebSocket `upgrade` callback. Must be called
+ * synchronously (`uwsReq` is stack-allocated and only valid before the first `await`).
+ *
+ * uWS never decodes route segments itself (unlike the query-string parsing in Adapters.ts), so a
+ * caller-encoded value (e.g. `encodeURIComponent()`-ing an email-address-derived uid before
+ * building the URL, this library's own established convention) would otherwise arrive here still
+ * percent-encoded and fail every downstream uid lookup. Falls back to the raw value on malformed
+ * percent-encoding (e.g. a bare "%"), matching Adapters.ts's identical query-string fallback.
+ */
+function capturePathParams(uwsReq: uWS.HttpRequest, paramNames: string[], req: UWSRequest): void {
+    for (let i = 0; i < paramNames.length; i++) {
+        const raw = uwsReq.getParameter(i) || "";
+        try {
+            req.params[paramNames[i]] = decodeURIComponent(raw);
+        } catch {
+            req.params[paramNames[i]] = raw;
+        }
+    }
+}
+
 /** Options for `makeUWSHandler()`. */
 interface UWSHandlerOptions {
     /** The number of global middleware registered before this route. */
@@ -106,19 +128,7 @@ function makeUWSHandler(
         res.isHead = isHead;
 
         // Capture path params synchronously (uwsReq is stack-allocated, only valid before first await).
-        // uWS never decodes route segments itself (unlike the query-string parsing in Adapters.ts), so a
-        // caller-encoded value (e.g. `encodeURIComponent()`-ing an email-address-derived uid before
-        // building the URL, this library's own established convention) would otherwise arrive here still
-        // percent-encoded and fail every downstream uid lookup. Falls back to the raw value on malformed
-        // percent-encoding (e.g. a bare "%"), matching Adapters.ts's identical query-string fallback.
-        for (let i = 0; i < paramNames.length; i++) {
-            const raw = uwsReq.getParameter(i) || "";
-            try {
-                req.params[paramNames[i]] = decodeURIComponent(raw);
-            } catch {
-                req.params[paramNames[i]] = raw;
-            }
-        }
+        capturePathParams(uwsReq, paramNames, req);
 
         if (streamingBody) {
             // Opted out of buffering (see HttpRouteOptions.streamingBody / @StreamingBody()) — expose
@@ -346,15 +356,27 @@ export class HttpRouter implements IHttpRouter {
         wsOptions?: Partial<uWS.WebSocketBehavior<any>> | WebSocketOptions,
         upgradeAuth?: WsUpgradeAuth,
     ): this {
+        // An option a route leaves `undefined` keeps its default: a plain object spread would let an explicit
+        // `undefined` overwrite the default and hand uWS `undefined` instead. Any other uWS behavior option in
+        // `wsOptions` is passed through untouched.
+        const options: Partial<uWS.WebSocketBehavior<any>> = { ...(wsOptions as Partial<uWS.WebSocketBehavior<any>>) };
+        for (const key of Object.keys(DEFAULT_WS_OPTIONS) as Array<keyof typeof DEFAULT_WS_OPTIONS>) {
+            options[key] = (wsOptions as WebSocketOptions | undefined)?.[key] ?? DEFAULT_WS_OPTIONS[key];
+        }
+        const paramNames: string[] = extractParamNames(routePath);
+        // One behavior object, shared by the plain and the trailing-slash registration below, so both get the same
+        // options.
         const behavior: uWS.WebSocketBehavior<any> = {
             // Explicit defaults, identical to the ones BunRouter applies, so a route behaves the same on both runtimes.
-            ...DEFAULT_WS_OPTIONS,
-            ...(wsOptions as Partial<uWS.WebSocketBehavior<any>>),
+            ...options,
 
             upgrade: (uwsRes, uwsReq, context) => {
                 // Capture all request data synchronously — uWS HttpRequest is stack-allocated
                 const req = new UWSRequest(uwsReq, remoteAddressOf(uwsRes));
                 req.routePattern = routePath;
+                // `:param` segments must be read here: `open` runs after the request object is gone, and the HTTP
+                // handlers' capture (see makeUWSHandler) never runs for an upgrade.
+                capturePathParams(uwsReq, paramNames, req);
                 const secWebSocketKey = uwsReq.getHeader("sec-websocket-key");
                 const secWebSocketProtocol = uwsReq.getHeader("sec-websocket-protocol");
                 const secWebSocketExtensions = uwsReq.getHeader("sec-websocket-extensions");

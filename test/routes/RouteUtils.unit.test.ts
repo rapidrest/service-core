@@ -27,6 +27,9 @@ import {
     Socket,
     StreamingBody,
     WebSocket,
+    MAX_WEBSOCKET_BACKPRESSURE,
+    MAX_WEBSOCKET_IDLE_TIMEOUT,
+    MAX_WEBSOCKET_PAYLOAD_LENGTH,
 } from "../../src/decorators/RouteDecorators";
 
 function makeApp() {
@@ -44,8 +47,8 @@ function makeApp() {
         patch: verbStub("patch"),
         head: verbStub("head"),
         options: verbStub("options"),
-        ws: (path: string, middleware: any, _opts: any, upgradeAuth: any) => {
-            registered[`ws ${path}`] = { middleware, upgradeAuth };
+        ws: (path: string, middleware: any, options: any, upgradeAuth: any) => {
+            registered[`ws ${path}`] = { middleware, upgradeAuth, options };
         },
         use: vi.fn(),
         _registered: registered,
@@ -1169,5 +1172,187 @@ describe("RouteUtils.registerRoute — WS chains get sanitizeWsError() appended"
 
         expect(closePayload.code).toBe(ApiErrors.AUTH_PERMISSION_FAILURE);
         expect(closePayload.message).toBe(ApiErrorMessages.AUTH_PERMISSION_FAILURE);
+    });
+});
+
+describe("RouteUtils.registerRoute — @WebSocket options", () => {
+    function makeRouteUtils(): RouteUtils {
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        return routeUtils;
+    }
+
+    it("passes no options to app.ws() for a route that declares none, so the router defaults stay in force", async () => {
+        @Route("/plain")
+        class PlainRoute {
+            @WebSocket("/connect")
+            public connect(): void {
+                return undefined;
+            }
+        }
+        const app = makeApp();
+        await makeRouteUtils().registerRoute(app, new PlainRoute());
+        expect(app._registered["ws /plain/connect"].options).toBeUndefined();
+    });
+
+    it("passes the declared options to app.ws() as its wsOptions argument", async () => {
+        @Route("/video")
+        class VideoRoute {
+            @WebSocket("/stream", { maxPayloadLength: 1024 * 1024, maxBackpressure: 8 * 1024 * 1024, idleTimeout: 0 })
+            public stream(): void {
+                return undefined;
+            }
+        }
+        const app = makeApp();
+        await makeRouteUtils().registerRoute(app, new VideoRoute());
+        expect(app._registered["ws /video/stream"].options).toEqual({
+            maxPayloadLength: 1024 * 1024,
+            maxBackpressure: 8 * 1024 * 1024,
+            idleTimeout: 0,
+        });
+    });
+
+    it("passes only the fields a route set, leaving out the rest so they keep their defaults", async () => {
+        @Route("/partial")
+        class PartialRoute {
+            @WebSocket("/a", { maxBackpressure: 4 * 1024 * 1024 })
+            public a(): void {
+                return undefined;
+            }
+
+            @WebSocket("/b", { maxPayloadLength: 65536, maxBackpressure: undefined })
+            public b(): void {
+                return undefined;
+            }
+
+            @WebSocket("/c", {})
+            public c(): void {
+                return undefined;
+            }
+        }
+        const app = makeApp();
+        await makeRouteUtils().registerRoute(app, new PartialRoute());
+        expect(app._registered["ws /partial/a"].options).toEqual({ maxBackpressure: 4 * 1024 * 1024 });
+        expect(Object.keys(app._registered["ws /partial/b"].options)).toEqual(["maxPayloadLength"]);
+        expect(app._registered["ws /partial/b"].options).toEqual({ maxPayloadLength: 65536 });
+        expect(app._registered["ws /partial/c"].options).toEqual({});
+    });
+
+    it("gives every base path of the route the same options", async () => {
+        @Route(["/one", "/two"])
+        class TwoPathRoute {
+            @WebSocket("/s", { maxPayloadLength: 32768 })
+            public s(): void {
+                return undefined;
+            }
+        }
+        const app = makeApp();
+        await makeRouteUtils().registerRoute(app, new TwoPathRoute());
+        expect(app._registered["ws /one/s"].options).toEqual({ maxPayloadLength: 32768 });
+        expect(app._registered["ws /two/s"].options).toEqual({ maxPayloadLength: 32768 });
+    });
+
+    it("does not give one route's options to a sibling route in the same class", async () => {
+        @Route("/siblings")
+        class SiblingRoute {
+            @WebSocket("/big", { maxPayloadLength: 1024 * 1024 })
+            public big(): void {
+                return undefined;
+            }
+
+            @WebSocket("/small")
+            public small(): void {
+                return undefined;
+            }
+        }
+        const app = makeApp();
+        await makeRouteUtils().registerRoute(app, new SiblingRoute());
+        expect(app._registered["ws /siblings/big"].options).toEqual({ maxPayloadLength: 1024 * 1024 });
+        expect(app._registered["ws /siblings/small"].options).toBeUndefined();
+    });
+
+    it.each([
+        ["maxPayloadLength", 0],
+        ["maxPayloadLength", -1],
+        ["maxPayloadLength", MAX_WEBSOCKET_PAYLOAD_LENGTH + 1],
+        ["maxPayloadLength", 1.5],
+        ["maxPayloadLength", Infinity],
+        ["maxPayloadLength", NaN],
+        ["maxPayloadLength", "1024"],
+        ["maxPayloadLength", null],
+        ["maxBackpressure", 0],
+        ["maxBackpressure", MAX_WEBSOCKET_BACKPRESSURE + 1],
+        ["maxBackpressure", 0.5],
+        ["idleTimeout", -1],
+        ["idleTimeout", 1],
+        ["idleTimeout", 7],
+        ["idleTimeout", MAX_WEBSOCKET_IDLE_TIMEOUT + 1],
+        ["idleTimeout", 10.5],
+        ["idleTimeout", Infinity],
+    ])("rejects %s = %s at registration with an error naming the route", async (key, value) => {
+        @Route("/bad")
+        class BadRoute {
+            @WebSocket("/socket", { [key]: value } as any)
+            public socket(): void {
+                return undefined;
+            }
+        }
+        const app = makeApp();
+        const promise = makeRouteUtils().registerRoute(app, new BadRoute());
+        await expect(promise).rejects.toThrow(`Invalid WebSocket option ${key} for WS /bad/socket (BadRoute.socket)`);
+        expect(app._registered["ws /bad/socket"]).toBeUndefined();
+    });
+
+    it("rejects an unknown option name instead of silently ignoring it", async () => {
+        @Route("/typo")
+        class TypoRoute {
+            @WebSocket("/socket", { maxPayload: 1024 } as any)
+            public socket(): void {
+                return undefined;
+            }
+        }
+        await expect(makeRouteUtils().registerRoute(makeApp(), new TypoRoute())).rejects.toThrow(
+            'unknown option "maxPayload"',
+        );
+    });
+
+    describe("resolveWebSocketOptions()", () => {
+        it("returns undefined for no options", () => {
+            expect(RouteUtils.resolveWebSocketOptions(undefined, "WS /x")).toBeUndefined();
+            expect(RouteUtils.resolveWebSocketOptions(null as any, "WS /x")).toBeUndefined();
+        });
+
+        it("accepts the documented boundaries", () => {
+            expect(
+                RouteUtils.resolveWebSocketOptions({ maxPayloadLength: 1, maxBackpressure: 1, idleTimeout: 8 }, "WS /x"),
+            ).toEqual({ maxPayloadLength: 1, maxBackpressure: 1, idleTimeout: 8 });
+            expect(
+                RouteUtils.resolveWebSocketOptions(
+                    {
+                        maxPayloadLength: MAX_WEBSOCKET_PAYLOAD_LENGTH,
+                        maxBackpressure: MAX_WEBSOCKET_BACKPRESSURE,
+                        idleTimeout: MAX_WEBSOCKET_IDLE_TIMEOUT,
+                    },
+                    "WS /x",
+                ),
+            ).toEqual({
+                maxPayloadLength: 16 * 1024 * 1024,
+                maxBackpressure: 64 * 1024 * 1024,
+                idleTimeout: 960,
+            });
+            expect(RouteUtils.resolveWebSocketOptions({ idleTimeout: 0 }, "WS /x")).toEqual({ idleTimeout: 0 });
+        });
+
+        it("rejects a value that is not an options object", () => {
+            expect(() => RouteUtils.resolveWebSocketOptions("big" as any, "WS /x")).toThrow(
+                "Invalid WebSocket options for WS /x: expected an object.",
+            );
+            expect(() => RouteUtils.resolveWebSocketOptions([] as any, "WS /x")).toThrow("expected an object");
+        });
+
+        it("does not mutate the options it is given", () => {
+            const options = Object.freeze({ maxPayloadLength: 2048, idleTimeout: undefined });
+            expect(RouteUtils.resolveWebSocketOptions(options, "WS /x")).toEqual({ maxPayloadLength: 2048 });
+        });
     });
 });

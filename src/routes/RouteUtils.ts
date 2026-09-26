@@ -14,7 +14,13 @@ import _ from "lodash-es";
 import { AuthMiddleware } from "../auth/AuthMiddleware.js";
 import type { AuthResult } from "../auth/AuthStrategy.js";
 import { RateLimiter } from "../RateLimiter.js";
-import { RateLimitOptions } from "../decorators/RouteDecorators.js";
+import {
+    MAX_WEBSOCKET_BACKPRESSURE,
+    MAX_WEBSOCKET_IDLE_TIMEOUT,
+    MAX_WEBSOCKET_PAYLOAD_LENGTH,
+    RateLimitOptions,
+    WebSocketRouteOptions,
+} from "../decorators/RouteDecorators.js";
 import { NetUtils } from "../NetUtils.js";
 import { verifyCsrfRequest, ensureCsrfCookie, type CsrfCheckOptions } from "../http/csrf/csrf.js";
 const { Config, Inject, Logger } = ObjectDecorators;
@@ -123,6 +129,62 @@ export class RouteUtils {
                 return next(err);
             }
         };
+    }
+
+    /**
+     * Validates the options of a `@WebSocket()` route and returns the object to pass to `app.ws()` as its
+     * `wsOptions`, or `undefined` when the route has no options (so it gets the router's defaults, exactly as a route
+     * that never had this feature). A field that is `undefined` is left out and keeps its default.
+     *
+     * Every value must be a finite integer: `maxPayloadLength` from 1 to 16 MiB, `maxBackpressure` from 1 to 64 MiB,
+     * and `idleTimeout` `0` (disabled) or from 8 to 960 seconds (uWebSockets.js refuses `1` to `7` and anything over
+     * 960 by aborting while the route is being registered, so those are rejected here with a readable error instead).
+     * An option name that is not one of the three is rejected too, since it would otherwise be silently ignored.
+     *
+     * @param options The options declared on the route, if any.
+     * @param routeName A description of the route (e.g. `WS /relay/:id`), used in the error message.
+     * @throws Error naming the route when an option is invalid.
+     */
+    public static resolveWebSocketOptions(
+        options: WebSocketRouteOptions | undefined,
+        routeName: string,
+    ): WebSocketRouteOptions | undefined {
+        if (options === undefined || options === null) {
+            return undefined;
+        }
+        if (typeof options !== "object" || Array.isArray(options)) {
+            throw new Error(`Invalid WebSocket options for ${routeName}: expected an object.`);
+        }
+        const limits: Record<keyof WebSocketRouteOptions, { min: number; max: number; zero?: boolean }> = {
+            maxPayloadLength: { min: 1, max: MAX_WEBSOCKET_PAYLOAD_LENGTH },
+            maxBackpressure: { min: 1, max: MAX_WEBSOCKET_BACKPRESSURE },
+            idleTimeout: { min: 8, max: MAX_WEBSOCKET_IDLE_TIMEOUT, zero: true },
+        };
+        const resolved: WebSocketRouteOptions = {};
+        for (const key of Object.keys(options)) {
+            if (!Object.prototype.hasOwnProperty.call(limits, key)) {
+                throw new Error(
+                    `Invalid WebSocket options for ${routeName}: unknown option "${key}" (expected ` +
+                        `${Object.keys(limits).join(", ")}).`,
+                );
+            }
+        }
+        for (const key of Object.keys(limits) as Array<keyof WebSocketRouteOptions>) {
+            const value: unknown = options[key];
+            if (value === undefined) {
+                continue;
+            }
+            const { min, max, zero } = limits[key];
+            const range: string = zero ? `0 (disabled) or an integer from ${min} to ${max}` : `an integer from ${min} to ${max}`;
+            if (typeof value !== "number" || !Number.isInteger(value)) {
+                throw new Error(`Invalid WebSocket option ${key} for ${routeName}: ${String(value)} is not ${range}.`);
+            }
+            if (!(zero && value === 0) && (value < min || value > max)) {
+                throw new Error(`Invalid WebSocket option ${key} for ${routeName}: ${value} is not ${range}.`);
+            }
+            resolved[key] = value;
+        }
+        return resolved;
     }
 
     /**
@@ -580,8 +642,16 @@ export class RouteUtils {
                                   ]
                                 : [...middleware, this.sanitizeWsError()];
 
+                            // The route's own `@WebSocket(path, options)` limits, validated here so a bad value fails
+                            // registration with an error naming the route. `undefined` (no options declared) leaves
+                            // the router's defaults exactly as they always were.
+                            const wsOptions: WebSocketRouteOptions | undefined = RouteUtils.resolveWebSocketOptions(
+                                metadata.wsOptions,
+                                `WS ${path} (${route.constructor.name}.${key})`,
+                            );
+
                             // Register with the HttpRouter's ws() method; trailing slash handled internally
-                            app.ws(path, wsMiddleware, undefined, upgradeAuth);
+                            app.ws(path, wsMiddleware, wsOptions, upgradeAuth);
 
                             // Update our OpenAPI spec — WebSocket upgrade is a GET request
                             this.apiSpec.addRoute(key, path, "get", metadata, docs, route, true);

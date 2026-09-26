@@ -1,5 +1,37 @@
 # Release Notes
 
+## Unreleased
+
+Additive, so a minor-level change (2.4.0 when it is released; the version is not bumped here).
+
+### Added
+
+- Added per-route WebSocket options: `@WebSocket(path?, options?)`, where `options` is the new
+  `WebSocketRouteOptions` (`maxPayloadLength`, `maxBackpressure`, `idleTimeout`). Until now every `@WebSocket()` route
+  got the router defaults (16 KiB messages, 64 KiB send backpressure, 120 s idle timeout) with no way to change them,
+  which a route streaming large frames (e.g. video) cannot live with.
+  - `maxPayloadLength`, in bytes, 1 to 16 MiB, default 16 KiB: the largest single message a client may send. A larger
+    one is refused and the connection closed. uWebSockets.js drops the connection without a close frame, so a client
+    sees code 1006; the Bun router closes with 1009.
+  - `maxBackpressure`, in bytes, 1 to 64 MiB, default 64 KiB: how much may be queued for a slow client before
+    further `send()` calls are dropped. Each connection can hold that much memory, so size it for the route.
+  - `idleTimeout`, in seconds, `0` (disabled) or 8 to 960, default 120: how long a connection may receive nothing
+    before it is closed. uWebSockets.js refuses 1 to 7 and anything over 960.
+  - Every field is optional and a route with no options is unchanged. The options are validated when the route is
+    registered, and a bad value (not an integer, out of range, an unknown option name) throws an Error naming the
+    route rather than reaching uWebSockets.js, which aborts the process on a bad `idleTimeout`.
+  - On the Bun router `maxPayloadLength` is enforced per route, but Bun has one WebSocket configuration per server, so
+    `idleTimeout` and `maxBackpressure` use the largest value any route set.
+
+### Fixed
+
+- Fixed the uWS router never filling `req.params` for a WebSocket upgrade request. `@Param("id")` on a
+  `@WebSocket("/relay/:id")` handler was `undefined` on uWS (the Bun router already filled it), because only the
+  HTTP handlers captured the `:param` segments from the uWS request. The upgrade callback now captures them, percent-decoded
+  like the HTTP routes (a malformed encoding keeps the raw segment). A side effect: a `@RateLimit` on such a route now
+  keys its bucket on the real param value instead of an empty one, so different resources no longer share one.
+- Fixed `HttpRouter.ws()` letting an option a route set to `undefined` overwrite the router's default for that field.
+
 ## v2.3.0
 
 ### Security

@@ -17,6 +17,7 @@ import {
     RequiresScope,
     RequiresTrustedRole,
     StreamingBody,
+    WebSocket,
 } from "../src/decorators/RouteDecorators";
 
 describe("RouteDecorators Tests", () => {
@@ -288,6 +289,100 @@ describe("RouteDecorators Tests", () => {
             }
             const args: any = Reflect.getMetadata("rrst:args", Foo.prototype, "handler");
             expect(args[0]).toEqual(["bodyStream"]);
+        });
+    });
+
+    describe("@WebSocket", () => {
+        it("registers a ws route at the given sub-path with no options by default", () => {
+            class Foo {
+                @WebSocket("/bar")
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.methods.get("ws")).toBe("/bar");
+            expect(route.wsOptions).toBeUndefined();
+        });
+
+        it("defaults to an empty sub-path when none is given", () => {
+            class Foo {
+                @WebSocket()
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.methods.get("ws")).toBe("");
+        });
+
+        it("stores the options in the route metadata", () => {
+            class Foo {
+                @WebSocket("/stream", { maxPayloadLength: 1024 * 1024, maxBackpressure: 8 * 1024 * 1024, idleTimeout: 30 })
+                public handler(): void {
+                    return;
+                }
+            }
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.methods.get("ws")).toBe("/stream");
+            expect(route.wsOptions).toEqual({
+                maxPayloadLength: 1024 * 1024,
+                maxBackpressure: 8 * 1024 * 1024,
+                idleTimeout: 30,
+            });
+        });
+
+        it("stores a copy, so mutating the caller's object afterwards does not change the route", () => {
+            const options = { maxPayloadLength: 2048 };
+            class Foo {
+                @WebSocket("/copy", options)
+                public handler(): void {
+                    return;
+                }
+            }
+            options.maxPayloadLength = 999999;
+            const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, "handler");
+            expect(route.wsOptions).toEqual({ maxPayloadLength: 2048 });
+        });
+
+        it("keeps the options when combined with other route decorators, in either order", () => {
+            class Foo {
+                @RequiresRole("admin")
+                @WebSocket("/a", { idleTimeout: 0 })
+                public a(): void {
+                    return;
+                }
+
+                @WebSocket("/b", { idleTimeout: 0 })
+                @RequiresRole("admin")
+                public b(): void {
+                    return;
+                }
+            }
+            for (const name of ["a", "b"]) {
+                const route: any = Reflect.getMetadata("rrst:route", Foo.prototype, name);
+                expect(route.wsOptions).toEqual({ idleTimeout: 0 });
+                expect(route.requiredRoles).toEqual(["admin"]);
+            }
+        });
+
+        it("a subclass re-declaring @WebSocket without options gets the defaults, not the base class's options", () => {
+            class Base {
+                @WebSocket("/x", { maxPayloadLength: 4096 })
+                public handler(): void {
+                    return;
+                }
+            }
+            class Child extends Base {
+                @WebSocket("/x")
+                public override handler(): void {
+                    return;
+                }
+            }
+            expect(Reflect.getMetadata("rrst:route", Base.prototype, "handler").wsOptions).toEqual({
+                maxPayloadLength: 4096,
+            });
+            expect(Reflect.getMetadata("rrst:route", Child.prototype, "handler").wsOptions).toBeUndefined();
         });
     });
 });

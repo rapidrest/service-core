@@ -36,6 +36,21 @@ router.ws("/chat", [
     },
 ]);
 
+// Per-route WebSocket options (@WebSocket(path, options)): a larger message limit than the 16 KiB default, and a :param.
+router.ws(
+    "/big/:id",
+    [
+        (req, _res, next) => {
+            req.websocket.on("message", (msg: Buffer) => {
+                req.websocket.send(`${req.params.id}:${Buffer.byteLength(msg)}`);
+            });
+            req.wsHandled = true;
+            next();
+        },
+    ],
+    { maxPayloadLength: 64 * 1024 },
+);
+
 beforeAll(async () => {
     await router.listen("127.0.0.1", 0);
     baseUrl = `http://127.0.0.1:${router.listenPort}`;
@@ -88,4 +103,33 @@ test("a real WebSocket connection upgrades, exchanges a message, and closes clea
         ws.addEventListener("close", () => resolve(), { once: true });
         ws.close();
     });
+});
+
+/** Opens a client and resolves once connected. */
+async function openWs(path: string): Promise<WebSocket> {
+    const ws = new WebSocket(`ws://127.0.0.1:${router.listenPort}${path}`);
+    await new Promise<void>((resolve, reject) => {
+        ws.addEventListener("open", () => resolve(), { once: true });
+        ws.addEventListener("error", (err) => reject(err), { once: true });
+    });
+    return ws;
+}
+
+test("a WebSocket route without options closes with 1009 for a message over 16 KiB", async () => {
+    const ws = await openWs("/chat");
+    const closed = new Promise<number>((resolve) =>
+        ws.addEventListener("close", (event) => resolve(event.code), { once: true }),
+    );
+    ws.send("x".repeat(16 * 1024 + 1));
+    expect(await closed).toBe(1009);
+});
+
+test("a WebSocket route with a larger maxPayloadLength accepts the message and sees its :param", async () => {
+    const ws = await openWs("/big/abc");
+    const reply = new Promise<string>((resolve) =>
+        ws.addEventListener("message", (event) => resolve(String(event.data)), { once: true }),
+    );
+    ws.send("x".repeat(32 * 1024));
+    expect(await reply).toBe(`abc:${32 * 1024}`);
+    ws.close();
 });

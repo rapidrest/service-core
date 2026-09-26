@@ -357,6 +357,20 @@ describe("HttpRouter", () => {
 
             expect(upgraded.req.routePattern).toBe("/push/:channel");
         });
+
+        it("captures :param values, percent-decoded, on WebSocket upgrade requests", () => {
+            const fakeApp: any = makeFakeUwsApp();
+            const router = new HttpRouter(fakeApp);
+            router.ws("/rooms/:room/peers/:peer", [(_req, _res, next) => next()]);
+            const behavior = fakeApp._wsBehaviors[0];
+            const upgraded: any[] = [];
+            const uwsRes: any = { ...makeUwsRes(), upgrade: (data: any) => upgraded.push(data) };
+
+            behavior.upgrade(uwsRes, makeUwsReq({ params: ["r%401", "100%"] }), {});
+
+            // A malformed percent-encoding falls back to the raw segment, like the HTTP routes.
+            expect(upgraded[0].req.params).toEqual({ room: "r@1", peer: "100%" });
+        });
     });
 
     describe("remote address", () => {
@@ -393,6 +407,42 @@ describe("HttpRouter", () => {
             expect(b.maxPayloadLength).toBe(1024);
             expect(b.idleTimeout).toBe(0);
             expect(b.maxBackpressure).toBe(DEFAULT_WS_OPTIONS.maxBackpressure);
+        });
+
+        it("registers the same behavior object, options included, for the plain and trailing-slash paths", () => {
+            const paths: string[] = [];
+            const fakeApp: any = makeFakeUwsApp();
+            fakeApp.ws = (path: string, behavior: any) => {
+                paths.push(path);
+                fakeApp._wsBehaviors.push(behavior);
+            };
+            const router = new HttpRouter(fakeApp);
+            router.ws("/stream", [], { maxPayloadLength: 1024 * 1024, maxBackpressure: 8 * 1024 * 1024 });
+            router.ws("/already/", [], { idleTimeout: 0 });
+
+            expect(paths).toEqual(["/stream", "/stream/", "/already/"]);
+            const [plain, slash, single] = fakeApp._wsBehaviors;
+            expect(slash).toBe(plain);
+            expect(plain.maxPayloadLength).toBe(1024 * 1024);
+            expect(plain.maxBackpressure).toBe(8 * 1024 * 1024);
+            expect(plain.idleTimeout).toBe(DEFAULT_WS_OPTIONS.idleTimeout);
+            // A path that already ends in a slash is registered once.
+            expect(single.idleTimeout).toBe(0);
+        });
+
+        it("keeps the default for an option a route leaves undefined, and passes other uWS options through", () => {
+            const fakeApp: any = makeFakeUwsApp();
+            const router = new HttpRouter(fakeApp);
+            const opts = { maxPayloadLength: undefined, idleTimeout: undefined, compression: 1 };
+            router.ws("/a", [], opts);
+
+            const behavior = fakeApp._wsBehaviors[0];
+            expect(behavior.maxPayloadLength).toBe(DEFAULT_WS_OPTIONS.maxPayloadLength);
+            expect(behavior.idleTimeout).toBe(DEFAULT_WS_OPTIONS.idleTimeout);
+            expect(behavior.maxBackpressure).toBe(DEFAULT_WS_OPTIONS.maxBackpressure);
+            expect(behavior.compression).toBe(1);
+            // The caller's object is left as it was.
+            expect(opts.maxPayloadLength).toBeUndefined();
         });
 
         it("copies a binary message so it stays valid after uWS neuters the ArrayBuffer", () => {

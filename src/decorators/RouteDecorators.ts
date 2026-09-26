@@ -530,11 +530,70 @@ export function Validate(func: Function | string) {
     };
 }
 
+/** The largest `maxPayloadLength` a `@WebSocket()` route may configure: 16 MiB, in bytes. */
+export const MAX_WEBSOCKET_PAYLOAD_LENGTH: number = 16 * 1024 * 1024;
+
+/** The largest `maxBackpressure` a `@WebSocket()` route may configure: 64 MiB, in bytes. */
+export const MAX_WEBSOCKET_BACKPRESSURE: number = 64 * 1024 * 1024;
+
+/** The largest `idleTimeout` a `@WebSocket()` route may configure: 960 seconds, the most uWebSockets.js accepts. */
+export const MAX_WEBSOCKET_IDLE_TIMEOUT: number = 960;
+
+/**
+ * Per-route WebSocket limits for `@WebSocket()`. Every field is optional; a field left out (or `undefined`) keeps the
+ * framework default (`DEFAULT_WS_OPTIONS` in `http/types.ts`, the same as uWebSockets.js' own), so a route without
+ * options behaves exactly as it always has. The values are checked when the route is registered (see
+ * `RouteUtils.resolveWebSocketOptions()`), and an invalid one throws an Error that names the route.
+ */
+export interface WebSocketRouteOptions {
+    /**
+     * The largest single message the route accepts from a client, in bytes. Integer from `1` to
+     * `MAX_WEBSOCKET_PAYLOAD_LENGTH` (16 MiB). Default `16384` (16 KiB).
+     *
+     * A client message larger than this is not delivered to the route. uWebSockets.js drops the connection at once
+     * without sending a close frame, so the client sees an abnormal closure (code 1006 in browsers and `ws`); the Bun
+     * router closes the socket with code 1009 instead. The limit is per message, so a payload a client splits into
+     * several messages is not bound by it as a whole.
+     */
+    maxPayloadLength?: number;
+    /**
+     * How many bytes the route may have queued to send to a slow client before further sends are dropped, in bytes.
+     * Integer from `1` to `MAX_WEBSOCKET_BACKPRESSURE` (64 MiB). Default `65536` (64 KiB).
+     *
+     * When a client reads more slowly than the route sends, the unsent bytes are buffered per connection. Once the
+     * buffer is over this limit, uWebSockets.js drops further messages (`send()` reports them as dropped) instead of
+     * queuing them. Raise it for a route that streams large frames (e.g. video); each connection may then hold that
+     * much memory. On the Bun router this is server-wide, using the largest value any WebSocket route set.
+     */
+    maxBackpressure?: number;
+    /**
+     * How many seconds the connection may go without receiving any data before the server closes it. `0` disables the
+     * timeout; otherwise an integer from `8` to `MAX_WEBSOCKET_IDLE_TIMEOUT` (960), which is what uWebSockets.js
+     * accepts (it refuses `1` to `7`, and its resolution is about 4 seconds). Default `120`.
+     *
+     * A client that stays connected but silent (no message, and no reply to the server's ping) is closed after this
+     * long. On the Bun router this is server-wide (the largest value any route set, and `0` wins).
+     */
+    idleTimeout?: number;
+}
+
 /**
  * Indicates that the decorated function handles incoming `WebSocket` upgrade requests at the given sub-path.
  *
  * @param path The sub-path that the route will handle requests for.
+ * @param options Optional WebSocket limits for this route (message size, send backpressure, idle timeout). See
+ * `WebSocketRouteOptions`. Omit it to keep the defaults.
  */
-export function WebSocket(path?: string) {
-    return Method("ws", path);
+export function WebSocket(path?: string, options?: WebSocketRouteOptions) {
+    const method = Method("ws", path);
+    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+        method(target, propertyKey, descriptor);
+        // Always assigned, even when `options` is omitted: `getRouteMetadata()` starts from the overridden ancestor
+        // method's metadata, and re-declaring `@WebSocket()` without options on a subclass means "the defaults", not
+        // "whatever the base class set". The options are copied so that a later mutation of the caller's object can't
+        // change a route that has already been declared.
+        const route: any = getRouteMetadata(target, propertyKey);
+        route.wsOptions = options ? { ...options } : undefined;
+        Reflect.defineMetadata("rrst:route", route, target, propertyKey);
+    };
 }
