@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-26
+
+### Added
+- Added per-route WebSocket options and fix @Param on uWS WebSocket routes
+- Added an optional second argument to @WebSocket(path, options), WebSocketRouteOptions with maxPayloadLength, maxBackpressure and idleTimeout, so a route no longer has to live with the 16 KiB message limit and 64 KiB send buffer every WebSocket route was held to. Validate the options at registration in RouteUtils.resolveWebSocketOptions() (finite integers in range, unknown names rejected, idleTimeout 0 or 8 to 960 because uWS terminates the process for anything else) and pass them to app.ws(); a route without options behaves exactly as before. Merge the options per field in the uWS router so an undefined field keeps its default, and register the same options for the trailing-slash path. Export MAX_WEBSOCKET_PAYLOAD_LENGTH, MAX_WEBSOCKET_BACKPRESSURE and MAX_WEBSOCKET_IDLE_TIMEOUT. Fix @Param being undefined on a uWS WebSocket route, since the upgrade callback never captured path parameters, with capturePathParams() shared with the HTTP handler; a @RateLimit on such a route now keys per parameter value. Test the decorator, the validation, the defaults, a message over 16 KiB, the params fix on a real uWS server and Bun, and document the changes in the README, CHANGELOG, release notes and NOTES; this is a minor change.
+
+### Changed
+- Document that a downstream package's release bump level follows its upstream dependency's, minor for minor, patch for patch and major for major, in NOTES
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+- Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+- Updated @rapidrest/core dep
+
+
 ### Added
 - Added a per-route options argument to the WebSocket decorator, `@WebSocket(path?, options?)`, with the exported `WebSocketRouteOptions` interface: `maxPayloadLength` (bytes, default 16 KiB, up to 16 MiB), `maxBackpressure` (bytes, default 64 KiB, up to 64 MiB) and `idleTimeout` (seconds, default 120, `0` or 8 to 960); a route without options behaves exactly as before
 - Added RouteUtils.resolveWebSocketOptions(), which validates the options when the route is registered (finite integers within range, no unknown option names) and throws an Error naming the route, then passes them as the `wsOptions` argument of `app.ws()`
@@ -305,7 +318,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/rapidrest/service-core/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/rapidrest/service-core/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/rapidrest/service-core/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/rapidrest/service-core/compare/v2.1.1...v2.2.0

@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v2.4.0
 
 Additive, so a minor-level change (2.4.0 when it is released; the version is not bumped here).
 
