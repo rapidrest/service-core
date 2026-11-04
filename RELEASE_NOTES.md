@@ -1,5 +1,24 @@
 # Release Notes
 
+## Unreleased
+
+Dependency and CI maintenance only, with no source or API changes.
+
+### Changed
+
+- Upgraded the runtime dependencies: `axios` to `^1.21.0`, `node-schedule` to `^2.1.2` and `ws` to `^8.22.1`.
+- Upgraded the development dependencies, including `@rapidrest/core` to `^6.1.0` (the peer range stays `6.x`),
+  `@rapidrest/cli` to `^2.1.0`, `nock` to `^15`, `unplugin-swc` to `^2`, `eslint-plugin-jsdoc` to `^65`, and minor
+  and patch bumps across the rest. Peer dependency ranges are unchanged.
+- Refreshed `yarn.lock` to the latest versions the pinned ranges allow.
+
+### CI
+
+- The build, test, validate and publish workflows now install Corepack with `npm install --global corepack` before
+  `corepack enable`, since Node 25 and later no longer bundle it.
+- Dropped `REDISMS_DISABLE_POSTINSTALL=true` from the install steps.
+- Removed the `bun-smoke` job from the build workflow.
+
 ## v2.5.0
 
 Contains breaking behaviour changes (admin endpoints, WebSocket Origin check); the version is not bumped here.
@@ -10,22 +29,22 @@ Contains breaking behaviour changes (admin endpoints, WebSocket Origin check); t
   from the CSRF check and the auth cookies are `SameSite=Lax`, so a link opened by a signed-in admin could restart every
   pod or flush the cache. Both now go through the CSRF check and also require a recent elevation: the user's most
   recent elevation must be no older than `admin:elevation_max_age` seconds (default `600`).
-  - Migration: call `POST <base>/restart` and `POST <base>/clear-cache` (cookie-authenticated callers must send the
-    CSRF header; token/API callers are unaffected), from a session that elevated within the window.
-  - The old GET paths answer `405 Method Not Allowed` with `Allow: POST` and a message naming the replacement, and do
-    nothing, so a stale script fails loudly instead of silently no-op'ing. Remove the stubs in a later major.
+    - Migration: call `POST <base>/restart` and `POST <base>/clear-cache` (cookie-authenticated callers must send the
+      CSRF header; token/API callers are unaffected), from a session that elevated within the window.
+    - The old GET paths answer `405 Method Not Allowed` with `Allow: POST` and a message naming the replacement, and do
+      nothing, so a stale script fails loudly instead of silently no-op'ing. Remove the stubs in a later major.
 - **BREAKING (behavioural):** WebSocket upgrades now validate the `Origin` header, closing cross-site WebSocket
   hijacking (a page on any same-site host, such as a sibling subdomain, could open an authenticated socket using the
   visitor's cookies). A handshake is accepted when it has no `Origin` (non-browser clients), when the origin's host is
   the host the request was addressed to, or when the origin exactly matches `websocket:allowedOrigins` (falling back to
   `cors:origins` when unset). Anything else is refused with HTTP `403` before the upgrade. On by default.
-  - A `"*"` in `cors:origins` is deliberately not treated as "allow any"; set `websocket:allowedOrigins: ["*"]` to
-    allow every origin explicitly.
-  - Same-origin compares host and port, not scheme (TLS is usually terminated by a proxy). If a proxy rewrites
-    `Host`, list the public origin in `websocket:allowedOrigins`.
-  - Opt out with `websocket:checkOrigin: false`.
-  - Affected: browser pages on a different origin than the API that connect to a `@WebSocket` route (they must now be
-    in `cors:origins` or `websocket:allowedOrigins`).
+    - A `"*"` in `cors:origins` is deliberately not treated as "allow any"; set `websocket:allowedOrigins: ["*"]` to
+      allow every origin explicitly.
+    - Same-origin compares host and port, not scheme (TLS is usually terminated by a proxy). If a proxy rewrites
+      `Host`, list the public origin in `websocket:allowedOrigins`.
+    - Opt out with `websocket:checkOrigin: false`.
+    - Affected: browser pages on a different origin than the API that connect to a `@WebSocket` route (they must now be
+      in `cors:origins` or `websocket:allowedOrigins`).
 
 ### Added
 
@@ -54,18 +73,18 @@ Additive, so a minor-level change (2.4.0 when it is released; the version is not
   `WebSocketRouteOptions` (`maxPayloadLength`, `maxBackpressure`, `idleTimeout`). Until now every `@WebSocket()` route
   got the router defaults (16 KiB messages, 64 KiB send backpressure, 120 s idle timeout) with no way to change them,
   which a route streaming large frames (e.g. video) cannot live with.
-  - `maxPayloadLength`, in bytes, 1 to 16 MiB, default 16 KiB: the largest single message a client may send. A larger
-    one is refused and the connection closed. uWebSockets.js drops the connection without a close frame, so a client
-    sees code 1006; the Bun router closes with 1009.
-  - `maxBackpressure`, in bytes, 1 to 64 MiB, default 64 KiB: how much may be queued for a slow client before
-    further `send()` calls are dropped. Each connection can hold that much memory, so size it for the route.
-  - `idleTimeout`, in seconds, `0` (disabled) or 8 to 960, default 120: how long a connection may receive nothing
-    before it is closed. uWebSockets.js refuses 1 to 7 and anything over 960.
-  - Every field is optional and a route with no options is unchanged. The options are validated when the route is
-    registered, and a bad value (not an integer, out of range, an unknown option name) throws an Error naming the
-    route rather than reaching uWebSockets.js, which aborts the process on a bad `idleTimeout`.
-  - On the Bun router `maxPayloadLength` is enforced per route, but Bun has one WebSocket configuration per server, so
-    `idleTimeout` and `maxBackpressure` use the largest value any route set.
+    - `maxPayloadLength`, in bytes, 1 to 16 MiB, default 16 KiB: the largest single message a client may send. A larger
+      one is refused and the connection closed. uWebSockets.js drops the connection without a close frame, so a client
+      sees code 1006; the Bun router closes with 1009.
+    - `maxBackpressure`, in bytes, 1 to 64 MiB, default 64 KiB: how much may be queued for a slow client before
+      further `send()` calls are dropped. Each connection can hold that much memory, so size it for the route.
+    - `idleTimeout`, in seconds, `0` (disabled) or 8 to 960, default 120: how long a connection may receive nothing
+      before it is closed. uWebSockets.js refuses 1 to 7 and anything over 960.
+    - Every field is optional and a route with no options is unchanged. The options are validated when the route is
+      registered, and a bad value (not an integer, out of range, an unknown option name) throws an Error naming the
+      route rather than reaching uWebSockets.js, which aborts the process on a bad `idleTimeout`.
+    - On the Bun router `maxPayloadLength` is enforced per route, but Bun has one WebSocket configuration per server, so
+      `idleTimeout` and `maxBackpressure` use the largest value any route set.
 
 ### Fixed
 
@@ -83,20 +102,20 @@ Additive, so a minor-level change (2.4.0 when it is released; the version is not
 - Added CSRF (double-submit cookie) protection, closing a real gap: `@rapidrest/auth`'s `jwt`/`refresh`
   cookies had no CSRF protection at all, and are shared across sibling subdomains (e.g. `auth.example.com`
   and `mail.example.com`) for SSO — cookies `SameSite=Lax` does not protect against, since it only blocks
-  genuinely cross-*site* forgery, not same-site cross-*origin* forgery from a sibling subdomain.
-  - `RouteUtils.checkCsrf()` is wired automatically into every route and applies only to a request whose
-    only credential is the browser-attached `jwt` cookie (`JWTAuthResult.source === "cookie"`, a new
-    field) — a bearer-token/API-key/query-token caller is never affected.
-  - The CSRF cookie (`src/http/csrf/csrf.ts`) is deliberately **host-only** (never `Domain`-scoped), even
-    though the session cookie itself commonly is — a wildcard-domain double-submit cookie can be read via
-    `document.cookie` by any same-site sibling subdomain, which would defeat the whole scheme. A
-    legitimately cross-origin caller (whose JS can never read that host-only cookie) instead relies on an
-    Origin/Referer allow-list check, defaulting to the same origins already configured for CORS.
-  - `src/test/request.ts`'s `agent()` now echoes the CSRF cookie back automatically, so every existing
-    downstream integration test suite keeps working unchanged.
-  - See `@rapidrest/auth`/`@rapidrest/auth-server`/`@rapidmx/react-shared`'s own release notes for the
-    rest of this fix — cookie issuance, the two routes that needed explicit handling, and the browser-side
-    header echo.
+  genuinely cross-_site_ forgery, not same-site cross-_origin_ forgery from a sibling subdomain.
+    - `RouteUtils.checkCsrf()` is wired automatically into every route and applies only to a request whose
+      only credential is the browser-attached `jwt` cookie (`JWTAuthResult.source === "cookie"`, a new
+      field) — a bearer-token/API-key/query-token caller is never affected.
+    - The CSRF cookie (`src/http/csrf/csrf.ts`) is deliberately **host-only** (never `Domain`-scoped), even
+      though the session cookie itself commonly is — a wildcard-domain double-submit cookie can be read via
+      `document.cookie` by any same-site sibling subdomain, which would defeat the whole scheme. A
+      legitimately cross-origin caller (whose JS can never read that host-only cookie) instead relies on an
+      Origin/Referer allow-list check, defaulting to the same origins already configured for CORS.
+    - `src/test/request.ts`'s `agent()` now echoes the CSRF cookie back automatically, so every existing
+      downstream integration test suite keeps working unchanged.
+    - See `@rapidrest/auth`/`@rapidrest/auth-server`/`@rapidmx/react-shared`'s own release notes for the
+      rest of this fix — cookie issuance, the two routes that needed explicit handling, and the browser-side
+      header echo.
 
 ## v2.2.1
 
@@ -133,7 +152,7 @@ Additive, so a minor-level change (2.4.0 when it is released; the version is not
 ### Added
 
 - Added opt-in streaming request bodies. A route can now be registered as `app.post(path, { streamingBody: true },
-  ...handlers)`, or declared with the new `@StreamingBody()` route decorator, to receive the raw request body as a
+...handlers)`, or declared with the new `@StreamingBody()` route decorator, to receive the raw request body as a
   backpressure-aware Node `Readable` on `req.bodyStream` (also injectable directly into a handler parameter with the
   new `@BodyStream()` argument decorator) instead of the framework buffering it into `req.body`/`req.rawBody` first.
   `maxBodySize` enforcement and its 413 rejection are skipped entirely for a streaming route, leaving any size limit

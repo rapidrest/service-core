@@ -135,10 +135,13 @@ describe("HttpRouter streaming responses (real uWS)", () => {
 
             let received = 0;
             socket.on("data", (d) => (received += d.length));
+            // Listen for close before resuming: once the client reads again the rest of the body crosses loopback in
+            // milliseconds, so the socket can close between vi.waitFor's polls and a later listener would never fire.
+            const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
             socket.resume();
             await vi.waitFor(() => expect(state.resumedAfterDrain).toBe(true), { timeout: 10000 });
             expect(state.needDrainAfter).toBe(false);
-            await new Promise<void>((resolve) => socket.on("close", () => resolve()));
+            await closed;
             expect(received).toBeGreaterThanOrEqual(256 * 256 * 1024);
         }, 30000);
 
