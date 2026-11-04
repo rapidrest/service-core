@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v2.5.1
+
 Dependency and CI maintenance only, with no source or API changes.
 
 ### Changed

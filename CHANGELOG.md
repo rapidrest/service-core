@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-11-04
+
+### Changed
+- Upgraded all deps
+- Upgraded @rapidrest/core dep
+- Upgraded lock file with latest pinned versions
+
+### Fixed
+- Fixed CI workflows
+- Fixed race condition in websocket backpressure test
+
 ## [2.5.0] - 2026-11-04
 
 ### Added
@@ -347,7 +358,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/rapidrest/service-core/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/rapidrest/service-core/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/rapidrest/service-core/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/rapidrest/service-core/compare/v2.2.1...v2.3.0
