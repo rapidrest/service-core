@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v2.5.0
 
 Contains breaking behaviour changes (admin endpoints, WebSocket Origin check); the version is not bumped here.
 

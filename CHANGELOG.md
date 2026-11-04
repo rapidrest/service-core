@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-04
+
+### Added
+- Added the missing "Enable corepack" step to the validate job - every other job already has it, and without it yarn runs the container's stock Yarn 1 instead of the packageManager-pinned version, which refuses to run at all against a packageManager field, so validate's yarn npm audit never actually ran regardless of real findings. Confirmed via a real CI failure on rapidmx/server and rapidrest/auth-server; same latent gap across the whole org's shared workflow template
+- Added the rule that the more specific agent model assignment wins where categories overlap
+- Added ElevationWindow as an argument to @RequiresElevation() and RouteUtils.checkElevation(), reading the elevation recency window from configuration
+- Added an Origin check to WebSocket upgrades (websocket:allowedOrigins, falling back to cors:origins; websocket:checkOrigin to opt out), refusing cross-origin handshakes with 403 before the upgrade
+- Added WsUpgradeAuthResult.status and message so a pre-upgrade rejection can use a status other than 401
+- Added response backpressure to the uWS and Bun response adapters: write() returns a boolean, plus waitForDrain(), onDrain(), writableNeedDrain and aborted
+
+### Changed
+- Publish a prerelease version to npm under the next tag, which npm requires, and a release under latest
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+- Publish only from a release tag's own Build, and only once every Build of that commit has finished green
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- Record the standing agent model assignments in the project notes
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- Move the agent model assignments to the top of the project notes, keeping session history at the bottom
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- Update the agent model assignments to JP's revised criteria: Sonnet for general code and review, Opus for architecture, planning, investigation, security and performance, Haiku for simple operations
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- Change BaseAdminRoute restart and clear-cache from GET to POST so they pass the CSRF check, and require an elevation within admin:elevation_max_age seconds (default 600); the old GET paths now answer 405 with Allow: POST
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- Updated @rapidrest/core peer dependency to 6.x
+
+### Fixed
+- Fixed UWSResponse.write() not corking writes made outside the synchronous handler, which logged a uWS warning and cost a syscall per chunk
+
 ## [2.4.0] - 2026-09-26
 
 ### Added
@@ -318,7 +347,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/rapidrest/service-core/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/rapidrest/service-core/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/rapidrest/service-core/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/rapidrest/service-core/compare/v2.2.0...v2.2.1
