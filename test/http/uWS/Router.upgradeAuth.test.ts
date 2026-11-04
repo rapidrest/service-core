@@ -71,6 +71,24 @@ describe("HttpRouter.ws() upgradeAuth handling", () => {
         expect(uwsRes._calls.upgraded).toEqual([]);
     });
 
+    it("rejects with the status and message supplied by upgradeAuth (403 for a refused Origin)", () => {
+        const fakeApp: any = makeFakeUwsApp();
+        const router = new HttpRouter(fakeApp);
+        router.ws("/chat", [(_req, _res, next) => next()], undefined, () => ({
+            reject: true,
+            status: 403,
+            message: "Forbidden",
+        }));
+        const behavior = captureWsBehavior(router);
+
+        const uwsRes = makeUwsRes();
+        behavior.upgrade(uwsRes, makeUwsReq(), {});
+
+        expect(uwsRes._calls.statuses).toEqual(["403 Forbidden"]);
+        expect(JSON.parse(uwsRes._calls.ended[0])).toEqual({ status: 403, message: "Forbidden" });
+        expect(uwsRes._calls.upgraded).toEqual([]);
+    });
+
     it("attaches user/auth info to the upgraded userData when upgradeAuth accepts", () => {
         const fakeApp: any = makeFakeUwsApp();
         const router = new HttpRouter(fakeApp);

@@ -11,14 +11,18 @@ import {
     Auth,
     ContentType,
     Get,
+    Post,
     RequiresElevation,
     RequiresTrustedRole,
+    type ElevationWindow,
+    Response,
     Socket,
     User,
     WebSocket,
 } from "../decorators/RouteDecorators.js";
 import { Redis } from "../decorators/DatabaseDecorators.js";
 import { type IWebSocketShim } from "../http/IWebSocketShim.js";
+import type { HttpResponse } from "../http/types.js";
 import { Description, Returns, Summary } from "../decorators/DocDecorators.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 const { Config, Init, Logger } = ObjectDecorators;
@@ -46,6 +50,9 @@ export class RedisTransport extends Transport {
     }
 }
 
+/** The elevation recency window (config `admin:elevation_max_age`, seconds) required by state-changing admin endpoints. */
+const ADMIN_ELEVATION: ElevationWindow = { config: "admin:elevation_max_age", default: 600 };
+
 /**
  * The `BaseAdminRoute` class provides a base set of endpoints that gives trusted users the ability to perform common adminstrative actions
  * with the server. Note that this route class requires elevated user privileges to perform any action.
@@ -54,10 +61,15 @@ export class RedisTransport extends Transport {
  *
  * | Name | HTTP Method | What it does |
  * | --- | --- | --- |
- * | `clearCache` | `GET /<base_path>/clear-cache` | Clears the Redis-based cache system. |
+ * | `clearCache` | `POST /<base_path>/clear-cache` | Clears the Redis-based cache system. |
  * | `logs` | `UPGRADE /<base_path>/logs` | Live tail the service logs |
  * | `getReleaseNotes` | `GET /<base_path>/release-notes` | Retrieve the server release notes. |
- * | `restart` | `GET /<base_path>/restart` | ` Restart the server |
+ * | `restart` | `POST /<base_path>/restart` | Restart the server |
+ *
+ * `clear-cache` and `restart` change server state, so they are `POST` only (and therefore CSRF-checked) and require a
+ * recent elevation: the user's most recent elevation must be no older than the `admin:elevation_max_age` config value
+ * in seconds (default `600`). The former `GET` variants of both paths are no longer served and answer `405 Method Not
+ * Allowed` (with an `Allow: POST` header) without performing any action.
  *
  * !!Note!! that the `BaseAdminRoute` is not automatically registered with a server by default. You must create
  * your own class that extends `AdminRoute` and apply the desired base path with `@Route()`.
@@ -153,8 +165,9 @@ export class BaseAdminRoute {
     @Summary("{{serviceName}} flush second-level cache")
     @Description("Flushes the second-level cache so that subsequent requests will pull directly from the database.")
     @Auth(["jwt"])
-    @Get("/clear-cache")
+    @Post("/clear-cache")
     @Returns([null])
+    @RequiresElevation(ADMIN_ELEVATION)
     @RequiresTrustedRole()
     public async clearCache(@User user?: JWTUser): Promise<void> {
         if (!user || !UserUtils.hasRoles(user, this.trustedRoles)) {
@@ -170,6 +183,15 @@ export class BaseAdminRoute {
                 await this.cacheClient.unlink(keys);
             }
         }
+    }
+
+    @Summary("{{serviceName}} flush second-level cache (removed GET variant)")
+    @Description("Removed. Clearing the cache is state-changing and now requires `POST /clear-cache`. Always answers 405.")
+    @Auth(["jwt"])
+    @Get("/clear-cache")
+    @Returns([null])
+    public clearCacheMovedToPost(@Response res: HttpResponse): void {
+        BaseAdminRoute.rejectGet(res, "clear-cache");
     }
 
     @Summary("{{serviceName}} websocket to view live logs")
@@ -264,11 +286,21 @@ export class BaseAdminRoute {
         }
     }
 
-    @Summary("{{serviceName}} Restart")
-    @Description("Immediately restarts the service.")
+    @Summary("{{serviceName}} Restart (removed GET variant)")
+    @Description("Removed. Restarting is state-changing and now requires `POST /restart`. Always answers 405.")
     @Auth(["jwt"])
     @Get("/restart")
     @Returns([null])
+    public restartMovedToPost(@Response res: HttpResponse): void {
+        BaseAdminRoute.rejectGet(res, "restart");
+    }
+
+    @Summary("{{serviceName}} Restart")
+    @Description("Immediately restarts the service.")
+    @Auth(["jwt"])
+    @Post("/restart")
+    @Returns([null])
+    @RequiresElevation(ADMIN_ELEVATION)
     @RequiresTrustedRole()
     public restart(@User user?: JWTUser): void {
         if (!user || !UserUtils.hasRoles(user, this.trustedRoles)) {
@@ -278,5 +310,18 @@ export class BaseAdminRoute {
         // Send the restart signal to all services.
         const channelName: string = this.serviceName || "service_admin";
         void this.redisPublisher?.publish(channelName, "RESTART");
+    }
+
+    /**
+     * Throws the `405 Method Not Allowed` returned by the retired `GET` variants of state-changing admin endpoints,
+     * naming the replacement so a stale caller fails loudly instead of silently doing nothing.
+     */
+    private static rejectGet(res: HttpResponse, name: string): never {
+        res.setHeader("Allow", "POST");
+        throw new ApiError(
+            ApiErrors.INVALID_REQUEST,
+            405,
+            `GET /${name} is no longer supported because it changes server state. Use POST /${name} instead.`,
+        );
     }
 }

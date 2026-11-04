@@ -126,7 +126,7 @@ describe("AdminRoute Tests", () => {
     });
 
     it("Cannot clear the cache without a trusted role.", async () => {
-        const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${authToken}`);
+        const result = await request(server).post(`${basePath}/clear-cache`).set("Authorization", `jwt ${authToken}`);
         expect(result.status).toBe(403);
     });
 
@@ -139,7 +139,7 @@ describe("AdminRoute Tests", () => {
         await cacheClient.set("cache.bar", "2");
         await cacheClient.set("unrelated-key", "3");
 
-        const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
+        const result = await request(server).post(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
         expect(result.status).toBe(204);
 
         expect(await cacheClient.get("cache.foo")).toBeNull();
@@ -148,8 +148,73 @@ describe("AdminRoute Tests", () => {
     });
 
     it("Can clear the cache when there are no matching keys.", async () => {
-        const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
+        const result = await request(server).post(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
         expect(result.status).toBe(204);
+    });
+
+    it("Rejects the legacy GET /clear-cache with 405 and does not clear the cache.", async () => {
+        const cacheClient = createClient({ url: "redis://localhost:6379" });
+        await cacheClient.connect();
+        await cacheClient.set("cache.keepme", "1");
+        const result = await request(server).get(`${basePath}/clear-cache`).set("Authorization", `jwt ${adminToken}`);
+        expect(result.status).toBe(405);
+        expect(result.headers["allow"]).toBe("POST");
+        expect(result.body.message).toContain("POST");
+        expect(await cacheClient.get("cache.keepme")).toBe("1");
+        await cacheClient.del("cache.keepme");
+    });
+
+    it("Rejects the legacy GET /restart with 405 and does not restart.", async () => {
+        const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+        try {
+            const result = await request(server).get(`${basePath}/restart`).set("Authorization", `jwt ${adminToken}`);
+            expect(result.status).toBe(405);
+            expect(result.headers["allow"]).toBe("POST");
+            expect(result.body.message).toContain("POST");
+            await new Promise((r) => setTimeout(r, 100));
+            expect(killSpy).not.toHaveBeenCalled();
+        } finally {
+            killSpy.mockRestore();
+        }
+    });
+
+    it("Requires recent elevation to clear the cache or restart.", async () => {
+        const stale = JWTUtils.createTokenSync(config.get("auth"), { ...admin, elevated: Date.now() - 3600 * 1000 });
+        const unelevated = JWTUtils.createTokenSync(config.get("auth"), { ...admin, elevated: undefined });
+        const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+        try {
+            for (const token of [stale, unelevated]) {
+                for (const path of ["clear-cache", "restart"]) {
+                    const result = await request(server).post(`${basePath}/${path}`).set("Authorization", `jwt ${token}`);
+                    expect(result.status).toBe(403);
+                    expect(result.body.code).toBe("api-104");
+                }
+            }
+            await new Promise((r) => setTimeout(r, 100));
+            expect(killSpy).not.toHaveBeenCalled();
+        } finally {
+            killSpy.mockRestore();
+        }
+    });
+
+    it("Honours the admin:elevation_max_age override.", async () => {
+        const aged = JWTUtils.createTokenSync(config.get("auth"), { ...admin, elevated: Date.now() - 120 * 1000 });
+        const ok = await request(server).post(`${basePath}/clear-cache`).set("Authorization", `jwt ${aged}`);
+        expect(ok.status).toBe(204);
+        config.set("admin:elevation_max_age", 60);
+        try {
+            const denied = await request(server).post(`${basePath}/clear-cache`).set("Authorization", `jwt ${aged}`);
+            expect(denied.status).toBe(403);
+        } finally {
+            config.clear("admin:elevation_max_age");
+        }
+    });
+
+    it("Requires a CSRF token for cookie-authenticated POST /clear-cache and /restart.", async () => {
+        for (const path of ["clear-cache", "restart"]) {
+            const result = await request(server).post(`${basePath}/${path}`).set("Cookie", `jwt=${adminToken}`);
+            expect(result.status).toBe(403);
+        }
     });
 
     it("Cannot get release notes without a trusted role.", async () => {
@@ -163,7 +228,7 @@ describe("AdminRoute Tests", () => {
     });
 
     it("Cannot restart without a trusted role.", async () => {
-        const result = await request(server).get(`${basePath}/restart`).set("Authorization", `jwt ${authToken}`);
+        const result = await request(server).post(`${basePath}/restart`).set("Authorization", `jwt ${authToken}`);
         expect(result.status).toBe(403);
     });
 
@@ -174,7 +239,7 @@ describe("AdminRoute Tests", () => {
         // that exercises that code path without actually tearing down the test process.
         const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
         try {
-            const result = await request(server).get(`${basePath}/restart`).set("Authorization", `jwt ${adminToken}`);
+            const result = await request(server).post(`${basePath}/restart`).set("Authorization", `jwt ${adminToken}`);
             expect(result.status).toBe(204);
             await vi.waitFor(() => expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGINT"));
         } finally {

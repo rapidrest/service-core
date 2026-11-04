@@ -170,6 +170,12 @@ export class UWSResponse implements HttpResponse {
     private _abortHandlers: (() => void)[] = [];
     private _finished: boolean = false;
     private _finishHandlers: (() => void | Promise<void>)[] = [];
+    /** True while uWS reports backpressure from a `write()` that has not yet drained. */
+    private _needDrain: boolean = false;
+    /** Whether the single uWS `onWritable` slot has been claimed by this response yet. */
+    private _writableHooked: boolean = false;
+    private _drainHandlers: (() => void)[] = [];
+    private _drainWaiters: ((canWrite: boolean) => void)[] = [];
     /** Set to true for HEAD requests — body bytes must not be sent. */
     public isHead: boolean = false;
     /** Intermediate result passed between middleware. */
@@ -189,6 +195,9 @@ export class UWSResponse implements HttpResponse {
         // uWS only allows one onAborted registration per response, so fan out here.
         uwsRes.onAborted(() => {
             this._aborted = true;
+            this._needDrain = false;
+            // Nothing will ever drain an aborted connection: release anyone waiting so they can stop producing.
+            this._settleDrainWaiters(false);
             for (const handler of this._abortHandlers) handler();
             this._fireFinish();
         });
@@ -215,6 +224,19 @@ export class UWSResponse implements HttpResponse {
 
     public get writableEnded(): boolean {
         return this._writableEnded || this._streaming;
+    }
+
+    /** `true` once the client has aborted the connection. A producer should stop writing and release its resources. */
+    public get aborted(): boolean {
+        return this._aborted;
+    }
+
+    /**
+     * `true` while a previous `write()` returned `false` and the buffered data has not drained yet (the equivalent
+     * of Node's `Writable.writableNeedDrain`). Wait with `waitForDrain()` or `onDrain()` before writing more.
+     */
+    public get writableNeedDrain(): boolean {
+        return this._needDrain;
     }
 
     public status(code: number): this {
@@ -262,6 +284,8 @@ export class UWSResponse implements HttpResponse {
     public end(data?: any): void {
         if (this._aborted || this._writableEnded) return;
         this._writableEnded = true;
+        this._needDrain = false;
+        this._settleDrainWaiters(false);
         this._fireFinish();
 
         if (this._bodyStream && !isBodyStreamFullyReceived(this._bodyStream)) {
@@ -318,11 +342,14 @@ export class UWSResponse implements HttpResponse {
     public flushHeaders(): void {
         if (this._aborted || this._headersSent) return;
         this._streaming = true;
-        this.uwsRes.cork(() => {
-            this.uwsRes.writeStatus(this._statusToString(this._statusCode));
-            this._writeHeaders();
-            this._headersSent = true;
-        });
+        this.uwsRes.cork(() => this._writeHead());
+    }
+
+    /** Writes the status line and buffered headers. Must be called from within a cork. */
+    private _writeHead(): void {
+        this.uwsRes.writeStatus(this._statusToString(this._statusCode));
+        this._writeHeaders();
+        this._headersSent = true;
     }
 
     /**
@@ -343,13 +370,83 @@ export class UWSResponse implements HttpResponse {
     }
 
     /**
-     * Writes a chunk to the response without ending it (streaming / SSE).
-     * Flushes headers on the first call if they haven't been sent yet.
+     * Writes a chunk to the response without ending it (streaming / SSE), corked so it is safe from any async
+     * context. Flushes headers on the first call if they haven't been sent yet.
+     *
+     * Mirrors Node's `Writable.write()`: returns `true` when the data was sent (or buffered below the limit) and
+     * `false` when uWS's buffer is now full. The chunk is still accepted in that case, but the caller should stop
+     * writing until `waitForDrain()` resolves (or an `onDrain()` callback fires). Also returns `false`, and writes
+     * nothing, once the response has ended or the client aborted (see `aborted`).
      */
-    public write(data: string | Buffer): void {
-        if (this._aborted || this._writableEnded) return;
-        if (!this._headersSent) this.flushHeaders();
-        this.uwsRes.write(data);
+    public write(data: string | Buffer): boolean {
+        if (this._aborted || this._writableEnded) return false;
+        let ok = true;
+        // Everything that touches the uWS response runs inside one cork. uWS only implicitly corks the synchronous top
+        // of a request handler; a write made after an `await`, from a stream event or from a timer is outside of it
+        // (uWS logs "writes must be made from within a corked callback" and sends one syscall per call).
+        this.uwsRes.cork(() => {
+            if (!this._headersSent) {
+                this._streaming = true;
+                this._writeHead();
+            }
+            ok = this.uwsRes.write(data) !== false;
+        });
+        if (!ok) {
+            // uWS accepted and buffered the chunk (nothing is lost) but its buffer is over the limit.
+            this._needDrain = true;
+            this._hookWritable();
+        }
+        return ok;
+    }
+
+    /**
+     * Registers a callback fired every time the buffered data of a backpressured `write()` has drained and it is safe
+     * to write again (the equivalent of Node's `'drain'` event). It is never called after the response has ended or
+     * aborted.
+     */
+    public onDrain(callback: () => void): void {
+        this._drainHandlers.push(callback);
+    }
+
+    /**
+     * Resolves once it is safe to write again, so a producer can honour backpressure:
+     *
+     * ```ts
+     * for (const chunk of chunks) {
+     *     if (!res.write(chunk) && !(await res.waitForDrain())) return; // client went away
+     * }
+     * res.end();
+     * ```
+     *
+     * Resolves `true` immediately when there is no pending backpressure, `true` when the data drains, and `false` when
+     * the client aborts or the response ends while waiting, meaning the producer must stop. It never stays pending
+     * for a connection that can no longer drain.
+     */
+    public waitForDrain(): Promise<boolean> {
+        if (this._aborted || this._writableEnded) return Promise.resolve(false);
+        if (!this._needDrain) return Promise.resolve(true);
+        return new Promise<boolean>((resolve) => this._drainWaiters.push(resolve));
+    }
+
+    /** Claims uWS's single `onWritable` slot (once) to learn when a backpressured `write()` has drained. */
+    private _hookWritable(): void {
+        if (this._writableHooked) return;
+        this._writableHooked = true;
+        this.uwsRes.onWritable(() => {
+            if (this._needDrain) {
+                this._needDrain = false;
+                this._settleDrainWaiters(true);
+                for (const handler of this._drainHandlers) handler();
+            }
+            // "Writing nothing is always success" (uWS docs): only a `tryEnd()` caller could report otherwise.
+            return true;
+        });
+    }
+
+    private _settleDrainWaiters(canWrite: boolean): void {
+        const waiters = this._drainWaiters;
+        this._drainWaiters = [];
+        for (const resolve of waiters) resolve(canWrite);
     }
 
     /**

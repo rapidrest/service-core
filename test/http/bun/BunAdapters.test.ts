@@ -239,6 +239,72 @@ describe("BunResponse Tests", () => {
         expect(await response.text()).toBe("first-last");
     });
 
+    it("write() returns true below the high-water mark and false once the queue is over it", async () => {
+        const res = new BunResponse(makeReq());
+        expect(res.write("small")).toBe(true);
+        expect(res.writableNeedDrain).toBe(false);
+        expect(res.write(Buffer.alloc(128 * 1024))).toBe(false);
+        expect(res.writableNeedDrain).toBe(true);
+    });
+
+    it("waitForDrain() and onDrain() are released once the client reads the queue down", async () => {
+        const res = new BunResponse(makeReq());
+        const drained = vi.fn();
+        res.onDrain(drained);
+        await expect(res.waitForDrain()).resolves.toBe(true);
+        res.write(Buffer.alloc(128 * 1024));
+        let resolved: boolean | undefined;
+        const waiting = res.waitForDrain().then((v) => (resolved = v));
+        await new Promise((r) => setTimeout(r, 10));
+        expect(resolved).toBeUndefined();
+
+        const reader = (await res.responseReady).body!.getReader();
+        await reader.read();
+        await waiting;
+        expect(resolved).toBe(true);
+        expect(drained).toHaveBeenCalledTimes(1);
+        expect(res.writableNeedDrain).toBe(false);
+        res.end();
+        await reader.cancel();
+    });
+
+    it("waitForDrain() resolves false when the client cancels the stream or the response ends while waiting", async () => {
+        const res = new BunResponse(makeReq());
+        res.write(Buffer.alloc(128 * 1024));
+        const waiting = res.waitForDrain();
+        const reader = (await res.responseReady).body!.getReader();
+        await reader.cancel();
+        await expect(waiting).resolves.toBe(false);
+        expect(res.aborted).toBe(true);
+        await expect(res.waitForDrain()).resolves.toBe(false);
+
+        const ended = new BunResponse(makeReq());
+        ended.write(Buffer.alloc(128 * 1024));
+        const pending = ended.waitForDrain();
+        ended.end();
+        await expect(pending).resolves.toBe(false);
+    });
+
+    it("waitForDrain() resolves false when the request's AbortSignal fires", async () => {
+        const ac = new AbortController();
+        const res = new BunResponse(new Request("http://localhost/test", { signal: ac.signal }));
+        res.write(Buffer.alloc(128 * 1024));
+        const waiting = res.waitForDrain();
+        ac.abort();
+        await expect(waiting).resolves.toBe(false);
+    });
+
+    it("write() returns false once ended or aborted, and when the controller can no longer accept a chunk", async () => {
+        const res = new BunResponse(makeReq());
+        res.end("first");
+        expect(res.write("ignored")).toBe(false);
+
+        const closed = new BunResponse(makeReq());
+        closed.flushHeaders();
+        (closed as any)._controller.close();
+        expect(closed.write("late")).toBe(false);
+    });
+
     it("write()/end() after writableEnded are no-ops", async () => {
         const res = new BunResponse(makeReq());
         res.end("first");

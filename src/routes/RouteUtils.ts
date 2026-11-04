@@ -18,6 +18,7 @@ import {
     MAX_WEBSOCKET_BACKPRESSURE,
     MAX_WEBSOCKET_IDLE_TIMEOUT,
     MAX_WEBSOCKET_PAYLOAD_LENGTH,
+    ElevationWindow,
     RateLimitOptions,
     WebSocketRouteOptions,
 } from "../decorators/RouteDecorators.js";
@@ -46,6 +47,9 @@ export class RouteUtils {
     @Inject(RateLimiter)
     protected rateLimiter?: RateLimiter;
 
+    @Config()
+    protected config?: any;
+
     @Config("trusted_roles", ["admin"])
     protected trustedRoles: string[] = ["admin"];
 
@@ -58,12 +62,25 @@ export class RouteUtils {
     @Config("cors", {})
     protected corsConfig: any = {};
 
+    @Config("websocket", {})
+    protected wsConfig: any = {};
+
     /**
      * Creates a middleware function that checks if the user has elevated privileges and if not
      * throws the `AUTH_REQUIRES_ELEVATION` error.
      */
-    public checkElevation(lastStart: number = -1): RequestHandler {
+    public checkElevation(window: number | ElevationWindow = -1): RequestHandler {
         return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
+            // A configured window is resolved on every request so a changed value takes effect immediately.
+            let lastStart: number;
+            if (typeof window === "number") {
+                lastStart = window;
+            } else {
+                const configured: unknown = this.config?.get(window.config);
+                const parsed: number = typeof configured === "string" ? Number(configured) : (configured as number);
+                lastStart = typeof parsed === "number" && Number.isFinite(parsed) ? parsed : window.default;
+            }
+
             if (!req.user) {
                 return next(new ApiError(ApiErrors.AUTH_REQUIRED, 401, ApiErrorMessages.AUTH_REQUIRED));
             }
@@ -86,6 +103,64 @@ export class RouteUtils {
 
             return next(err);
         };
+    }
+
+    /**
+     * Decides whether a WebSocket upgrade request may proceed, based on its `Origin` header. Browsers attach the
+     * visitor's cookies to a WebSocket handshake for ANY page, and a sibling subdomain (or the apex) is same-site, so
+     * `SameSite` cookies do not stop it: without this check a page on any such host could open an authenticated
+     * socket in the victim's browser (cross-site WebSocket hijacking). Browsers always send `Origin` on a handshake and
+     * a page cannot forge it, so it is the one reliable signal.
+     *
+     * The upgrade is allowed when:
+     * - the check is disabled with `websocket:checkOrigin: false`; or
+     * - there is no `Origin` header (a non-browser client, which has no ambient cookies to abuse); or
+     * - the origin's host is the host the request was addressed to (same origin); or
+     * - the origin exactly matches an entry of `websocket:allowedOrigins`, or, when that is not set, of `cors:origins`.
+     *
+     * A `"*"` entry from `cors:origins` is NOT honoured (that setting means "any origin, without credentials", the
+     * opposite of what is safe here); `"*"` in `websocket:allowedOrigins` explicitly allows any.
+     *
+     * Same-origin compares host and port only, not scheme, because TLS is commonly terminated by a proxy in front
+     * of the service. If a proxy rewrites `Host`, list the public origin in `websocket:allowedOrigins`.
+     */
+    public checkWebSocketOrigin(req: HttpRequest): boolean {
+        const checkOrigin: unknown = this.wsConfig?.checkOrigin;
+        if (checkOrigin === false || checkOrigin === "false") {
+            return true;
+        }
+
+        const header: string | string[] | undefined = req.headers["origin"];
+        const origin: string | undefined = Array.isArray(header) ? header[0] : header;
+        if (!origin) {
+            return true;
+        }
+
+        const override: unknown = this.wsConfig?.allowedOrigins;
+        const configured: unknown = override ?? this.corsConfig?.origins;
+        const allowed: string[] = (Array.isArray(configured) ? configured : configured ? [configured] : []).filter(
+            (o): o is string => typeof o === "string",
+        );
+        if (allowed.includes(origin)) {
+            return true;
+        }
+        if (override !== undefined && allowed.includes("*")) {
+            return true;
+        }
+
+        const host: string | undefined = req.headers["host"] as string | undefined;
+        if (host) {
+            try {
+                if (new URL(origin).host.toLowerCase() === host.toLowerCase()) {
+                    return true;
+                }
+            } catch {
+                // An unparseable origin (including the literal "null") is never same-origin.
+            }
+        }
+
+        this.logger?.warn(`[WebSocket] Rejected upgrade of ${req.path} from untrusted origin '${origin}'.`);
+        return false;
     }
 
     /**
@@ -604,6 +679,11 @@ export class RouteUtils {
                             // post-upgrade LOGIN message. Browsers that cannot send custom headers
                             // fall through to the message-based authWebSocket flow.
                             const upgradeAuth: WsUpgradeAuth = (req) => {
+                                // Cross-site WebSocket hijacking guard. Runs before anything else, on every
+                                // WebSocket route, including ones that do not require auth.
+                                if (!this.checkWebSocketOrigin(req)) {
+                                    return { reject: true, status: 403, message: "Forbidden" };
+                                }
                                 if (this.authMiddleware) {
                                     try {
                                         const result: AuthResult | undefined = this.authMiddleware.authenticateSync(

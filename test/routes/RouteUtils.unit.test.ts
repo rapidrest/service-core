@@ -118,6 +118,119 @@ describe("RouteUtils.checkElevation", () => {
         handler(makeReq({ user: { uid: "u1", elevated: Date.now() - 61000 } }), makeRes(), next);
         expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
+
+    describe("with a configured ElevationWindow", () => {
+        const window = { config: "admin:elevation_max_age", default: 600 };
+        const run = (configured: unknown, ageSeconds: number, config: any = { get: () => configured }) => {
+            const routeUtils: any = new RouteUtils();
+            routeUtils.config = config;
+            const next = vi.fn();
+            routeUtils.checkElevation(window)(
+                makeReq({ user: { uid: "u1", elevated: Date.now() - ageSeconds * 1000 } }),
+                makeRes(),
+                next,
+            );
+            return next;
+        };
+
+        it("uses the configured number of seconds", () => {
+            expect(run(60, 30)).toHaveBeenCalledWith();
+            expect(run(60, 90)).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("accepts a numeric string from the environment", () => {
+            expect(run("60", 30)).toHaveBeenCalledWith();
+            expect(run("60", 90)).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("falls back to the default when unset or not a number", () => {
+            expect(run(undefined, 500)).toHaveBeenCalledWith();
+            expect(run(undefined, 700)).toHaveBeenCalledWith(expect.any(Error));
+            expect(run("soon", 700)).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("falls back to the default when no config is injected", () => {
+            expect(run(undefined, 500, null)).toHaveBeenCalledWith();
+            expect(run(undefined, 700, null)).toHaveBeenCalledWith(expect.any(Error));
+        });
+    });
+});
+
+describe("RouteUtils.checkWebSocketOrigin", () => {
+    const make = (ws: any = {}, cors: any = {}) => {
+        const routeUtils: any = new RouteUtils();
+        routeUtils.wsConfig = ws;
+        routeUtils.corsConfig = cors;
+        routeUtils.logger = { warn: vi.fn() };
+        return routeUtils as RouteUtils;
+    };
+    const req = (origin?: string | string[], host: string = "api.example.com") =>
+        makeReq({ path: "/ws", headers: { host, ...(origin !== undefined ? { origin } : {}) } });
+
+    it("allows a request with no (or an empty) Origin header", () => {
+        expect(make().checkWebSocketOrigin(req())).toBe(true);
+        expect(make().checkWebSocketOrigin(req(""))).toBe(true);
+    });
+
+    it("allows the own origin of the request regardless of scheme, case and repeated headers", () => {
+        expect(make().checkWebSocketOrigin(req("https://api.example.com"))).toBe(true);
+        expect(make().checkWebSocketOrigin(req("http://API.example.com"))).toBe(true);
+        expect(make().checkWebSocketOrigin(req(["https://api.example.com", "https://evil.com"]))).toBe(true);
+    });
+
+    it("rejects a foreign, sibling, apex, other-port and malformed origin, and logs it", () => {
+        const routeUtils = make();
+        for (const origin of [
+            "https://evil.com",
+            "https://www.example.com",
+            "https://example.com",
+            "https://api.example.com:8443",
+            "null",
+            "not a url",
+        ]) {
+            expect(routeUtils.checkWebSocketOrigin(req(origin))).toBe(false);
+        }
+        expect((routeUtils as any).logger.warn).toHaveBeenCalled();
+    });
+
+    it("rejects a cross-origin request when the request has no Host header", () => {
+        expect(make().checkWebSocketOrigin(makeReq({ path: "/ws", headers: { origin: "https://x.com" } }))).toBe(false);
+    });
+
+    it("allows exact matches of cors:origins, but never treats a cors wildcard or a prefix as a match", () => {
+        const routeUtils = make({}, { origins: ["https://app.example.com"] });
+        expect(routeUtils.checkWebSocketOrigin(req("https://app.example.com"))).toBe(true);
+        expect(routeUtils.checkWebSocketOrigin(req("https://app.example.com.evil.com"))).toBe(false);
+        expect(make({}, { origins: "https://app.example.com" }).checkWebSocketOrigin(req("https://app.example.com"))).toBe(true);
+        expect(make({}, { origins: "*" }).checkWebSocketOrigin(req("https://evil.com"))).toBe(false);
+        expect(make({}, { origins: ["*"] }).checkWebSocketOrigin(req("https://evil.com"))).toBe(false);
+    });
+
+    it("websocket:allowedOrigins replaces cors:origins", () => {
+        const routeUtils = make({ allowedOrigins: ["https://ws.example.com"] }, { origins: ["https://app.example.com"] });
+        expect(routeUtils.checkWebSocketOrigin(req("https://ws.example.com"))).toBe(true);
+        expect(routeUtils.checkWebSocketOrigin(req("https://app.example.com"))).toBe(false);
+        expect(make({ allowedOrigins: "https://ws.example.com" }).checkWebSocketOrigin(req("https://ws.example.com"))).toBe(true);
+    });
+
+    it("an explicit wildcard in websocket:allowedOrigins allows any origin", () => {
+        expect(make({ allowedOrigins: ["*"] }).checkWebSocketOrigin(req("https://evil.com"))).toBe(true);
+    });
+
+    it("websocket:checkOrigin=false (or the string false) disables the check", () => {
+        expect(make({ checkOrigin: false }).checkWebSocketOrigin(req("https://evil.com"))).toBe(true);
+        expect(make({ checkOrigin: "false" }).checkWebSocketOrigin(req("https://evil.com"))).toBe(true);
+        expect(make({ checkOrigin: true }).checkWebSocketOrigin(req("https://evil.com"))).toBe(false);
+    });
+
+    it("tolerates missing config objects and a missing logger", () => {
+        const routeUtils: any = new RouteUtils();
+        routeUtils.wsConfig = undefined;
+        routeUtils.corsConfig = undefined;
+        routeUtils.logger = undefined;
+        expect(routeUtils.checkWebSocketOrigin(req("https://evil.com"))).toBe(false);
+        expect(routeUtils.checkWebSocketOrigin(req())).toBe(true);
+    });
 });
 
 describe("RouteUtils.checkCsrf", () => {

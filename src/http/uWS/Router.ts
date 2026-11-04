@@ -384,11 +384,12 @@ export class HttpRouter implements IHttpRouter {
                 if (upgradeAuth) {
                     const authResult = upgradeAuth(req);
                     if (authResult.reject) {
-                        // Reject before the WebSocket handshake with HTTP 401
+                        // Reject before the WebSocket handshake with HTTP 401 (403 for a refused Origin)
+                        const status = authResult.status ?? 401;
                         uwsRes.cork(() => {
-                            uwsRes.writeStatus("401 Unauthorized");
+                            uwsRes.writeStatus(status === 403 ? "403 Forbidden" : "401 Unauthorized");
                             uwsRes.writeHeader("content-type", "application/json");
-                            uwsRes.end(JSON.stringify({ status: 401, message: "Unauthorized" }));
+                            uwsRes.end(JSON.stringify({ status, message: authResult.message ?? "Unauthorized" }));
                         });
                         return;
                     }

@@ -417,8 +417,9 @@ export class BunRouter implements IHttpRouter {
                 if (wsMatch.upgradeAuth) {
                     const authResult = wsMatch.upgradeAuth(req);
                     if (authResult.reject) {
-                        return new Response(JSON.stringify({ status: 401, message: "Unauthorized" }), {
-                            status: 401,
+                        const status = authResult.status ?? 401;
+                        return new Response(JSON.stringify({ status, message: authResult.message ?? "Unauthorized" }), {
+                            status,
                             headers: { "content-type": "application/json" },
                         });
                     }

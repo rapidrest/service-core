@@ -533,6 +533,20 @@ describe("BunRouter WebSocket upgrade dispatch", () => {
         expect(server.upgrade).not.toHaveBeenCalled();
     });
 
+    it("rejects with the status and message supplied by upgradeAuth (403 for a refused Origin)", async () => {
+        const router = new BunRouter();
+        router.ws("/chat", [(_req, _res, next) => next()], undefined, () => ({
+            reject: true,
+            status: 403,
+            message: "Forbidden",
+        }));
+        const server = makeServer();
+        const res = await dispatch(router, upgradeRequest("/chat"), server);
+        expect(res!.status).toBe(403);
+        expect(await res!.json()).toEqual({ status: 403, message: "Forbidden" });
+        expect(server.upgrade).not.toHaveBeenCalled();
+    });
+
     it("attaches user/auth info from upgradeAuth before upgrading", async () => {
         const router = new BunRouter();
         router.ws("/chat", [(_req, _res, next) => next()], undefined, () => ({

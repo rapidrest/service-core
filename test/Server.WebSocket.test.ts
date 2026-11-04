@@ -24,6 +24,9 @@ describe("Server WebSocket Tests", () => {
     const server: Server = new Server({ config, basePath: "./test/server" });
 
     beforeAll(async () => {
+        // The default test port (3000) is also the one in the stock cors:origins entry, which would make that
+        // entry indistinguishable from the same-origin case, so list a distinct origin for the allow-list tests.
+        config.set("cors:origins", ["https://app.example.com"]);
         await mongod.start();
         await server.start();
     });
@@ -31,6 +34,7 @@ describe("Server WebSocket Tests", () => {
     afterAll(async () => {
         await server.stop();
         await mongod.stop();
+        config.set("cors:origins", ["http://localhost:3000"]);
     });
 
     it("Can connect via unsecured WebSocket [anonymous]", async () => {
@@ -167,5 +171,54 @@ describe("Server WebSocket Tests", () => {
             .expectText("echo pong")
             .close()
             .expectClosed();
+    });
+
+    describe("Origin validation (cross-site WebSocket hijacking)", () => {
+        const sameOrigin = () => `http://localhost:${server.port}`;
+
+        it("accepts an origin on the cors:origins allow-list", async () => {
+            await requestws(server)
+                .ws("/connect", { headers: { Origin: "https://app.example.com" } })
+                .expectText("hello guest")
+                .close()
+                .expectClosed();
+        });
+
+        it("accepts the own origin of the request", async () => {
+            await requestws(server)
+                .ws("/connect", { headers: { Origin: sameOrigin() } })
+                .expectText("hello guest")
+                .close()
+                .expectClosed();
+        });
+
+        it("accepts a request with no Origin header (non-browser client)", async () => {
+            await requestws(server).ws("/connect").expectText("hello guest").close().expectClosed();
+        });
+
+        it("rejects a foreign origin with 403 before upgrade", async () => {
+            await expect(
+                requestws(server)
+                    .ws("/connect", { headers: { Origin: "https://evil.example.com" } })
+                    .expectText("hello guest"),
+            ).rejects.toThrow("403");
+        });
+
+        it("rejects a sibling-subdomain style origin and the literal null origin", async () => {
+            for (const origin of ["http://sibling.localhost:" + server.port, "null"]) {
+                await expect(
+                    requestws(server).ws("/connect", { headers: { Origin: origin } }).expectText("hello guest"),
+                ).rejects.toThrow("403");
+            }
+        });
+
+        it("rejects a foreign origin even when the cookie would authenticate the socket", async () => {
+            const token = JWTUtils.createTokenSync(config.get("auth"), { uid: uuid.v4() });
+            await expect(
+                requestws(server)
+                    .ws("/connect-secure", { headers: { Origin: "https://evil.example.com", Cookie: `jwt=${token}` } })
+                    .expectText("hello"),
+            ).rejects.toThrow("403");
+        });
     });
 });

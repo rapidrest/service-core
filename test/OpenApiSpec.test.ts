@@ -61,7 +61,9 @@ describe("OpenApiSpec Tests", () => {
                     }),
                 ]),
             );
-            expect(apiSpec1.paths["/admin/clear-cache"].get?.summary).toEqual("api_service - flush second-level cache");
+            expect(apiSpec1.paths["/admin/clear-cache"].post?.summary).toEqual("api_service - flush second-level cache");
+            // The retired GET variant stays documented so a stale caller can find out why it now gets a 405.
+            expect(apiSpec1.paths["/admin/clear-cache"].get?.summary).toContain("removed GET variant");
         }
         expect(apiSpec2).toBeDefined();
         if (apiSpec2) {

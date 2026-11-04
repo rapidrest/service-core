@@ -91,6 +91,10 @@ export class BunResponse implements HttpResponse {
     private _abortHandlers: (() => void)[] = [];
     private _finished: boolean = false;
     private _finishHandlers: (() => void | Promise<void>)[] = [];
+    /** True while the response stream's queue is over its high-water mark after a `write()`. */
+    private _needDrain: boolean = false;
+    private _drainHandlers: (() => void)[] = [];
+    private _drainWaiters: ((canWrite: boolean) => void)[] = [];
     /** Set to true for HEAD requests — body bytes must not be sent. */
     public isHead: boolean = false;
     /** Intermediate result passed between middleware. */
@@ -112,6 +116,8 @@ export class BunResponse implements HttpResponse {
         });
         rawRequest.signal?.addEventListener("abort", () => {
             this._aborted = true;
+            this._needDrain = false;
+            this._settleDrainWaiters(false);
             for (const handler of this._abortHandlers) handler();
             this._fireFinish();
         });
@@ -123,6 +129,19 @@ export class BunResponse implements HttpResponse {
 
     public get headersSent(): boolean {
         return this._headersSent;
+    }
+
+    /** `true` once the client has aborted the connection. A producer should stop writing and release its resources. */
+    public get aborted(): boolean {
+        return this._aborted;
+    }
+
+    /**
+     * `true` while a previous `write()` returned `false` and the queued data has not been consumed yet (the equivalent
+     * of Node's `Writable.writableNeedDrain`).
+     */
+    public get writableNeedDrain(): boolean {
+        return this._needDrain;
     }
 
     public get writableEnded(): boolean {
@@ -179,6 +198,8 @@ export class BunResponse implements HttpResponse {
     public end(data?: any): void {
         if (this._aborted || this._writableEnded) return;
         this._writableEnded = true;
+        this._needDrain = false;
+        this._settleDrainWaiters(false);
         this._fireFinish();
 
         if (this._streaming) {
@@ -214,12 +235,23 @@ export class BunResponse implements HttpResponse {
             start: (controller) => {
                 this._controller = controller;
             },
+            // Fires when the queue has dropped back under the high-water mark, i.e. after the client read enough.
+            pull: () => {
+                if (this._needDrain) {
+                    this._needDrain = false;
+                    this._settleDrainWaiters(true);
+                    for (const handler of this._drainHandlers) handler();
+                }
+            },
             cancel: () => {
                 this._aborted = true;
+                this._needDrain = false;
+                this._settleDrainWaiters(false);
                 for (const handler of this._abortHandlers) handler();
                 this._fireFinish();
             },
-        });
+            // Backpressure is measured in bytes (64 KiB) rather than in chunks.
+        }, { highWaterMark: 64 * 1024, size: (chunk) => chunk.byteLength });
         this._resolveReady(this._buildStreamingResponse());
     }
 
@@ -227,10 +259,30 @@ export class BunResponse implements HttpResponse {
      * Writes a chunk to the response without ending it (streaming / SSE).
      * Flushes headers on the first call if they haven't been sent yet.
      */
-    public write(data: string | Buffer): void {
-        if (this._aborted || this._writableEnded) return;
+    public write(data: string | Buffer): boolean {
+        if (this._aborted || this._writableEnded) return false;
         if (!this._headersSent) this.flushHeaders();
-        this._enqueue(data);
+        const ok = this._enqueue(data);
+        if (!ok) this._needDrain = true;
+        return ok;
+    }
+
+    /** See `UWSResponse.onDrain()`. */
+    public onDrain(callback: () => void): void {
+        this._drainHandlers.push(callback);
+    }
+
+    /** See `UWSResponse.waitForDrain()`. */
+    public waitForDrain(): Promise<boolean> {
+        if (this._aborted || this._writableEnded) return Promise.resolve(false);
+        if (!this._needDrain) return Promise.resolve(true);
+        return new Promise<boolean>((resolve) => this._drainWaiters.push(resolve));
+    }
+
+    private _settleDrainWaiters(canWrite: boolean): void {
+        const waiters = this._drainWaiters;
+        this._drainWaiters = [];
+        for (const resolve of waiters) resolve(canWrite);
     }
 
     /**
@@ -285,12 +337,15 @@ export class BunResponse implements HttpResponse {
         }
     }
 
-    private _enqueue(data: string | Buffer): void {
+    /** Enqueues a chunk. Returns `false` when the queue is now over its high-water mark, or the stream is closed. */
+    private _enqueue(data: string | Buffer): boolean {
         const chunk = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
         try {
             this._controller?.enqueue(chunk);
+            return (this._controller?.desiredSize ?? 0) > 0;
         } catch {
             // controller may already be closed/errored if the client disconnected
+            return false;
         }
     }
 

@@ -380,11 +380,30 @@ export function Response(target: any, propertyKey: string, index: number) {
 }
 
 /**
- * Indicates that elevated user permissions is required to perform the action. Optionally, set a `lastStart` which is the number
- * of seconds that the user has most recently confirmed elevation. A negative value indicates until the end of the elevated
- * window. Default is `-1`.
+ * Describes a `@RequiresElevation` recency window that is read from configuration each time a request is checked, so
+ * an operator can tune it without a code change.
  */
-export function RequiresElevation(lastStart: number = -1) {
+export interface ElevationWindow {
+    /** The configuration path (e.g. `"admin:elevation_max_age"`) holding the window, in seconds. */
+    config: string;
+    /** The window in seconds used when the configuration path is unset or not a number. */
+    default: number;
+}
+
+/**
+ * Indicates that elevated user permissions is required to perform the action. The `lastStart` argument is the maximum
+ * age in **seconds** of the user's most recent elevation (`user.elevated`, a millisecond timestamp); an older elevation
+ * is rejected with `AUTH_REQUIRES_ELEVATION` (403), forcing the user to re-confirm. A negative value (the default,
+ * `-1`) means any elevation is accepted regardless of age. Pass an `ElevationWindow` to read the window from
+ * configuration instead of hard-coding it.
+ *
+ * @example
+ * ```ts
+ * @RequiresElevation(300)
+ * @RequiresElevation({ config: "admin:elevation_max_age", default: 600 })
+ * ```
+ */
+export function RequiresElevation(lastStart: number | ElevationWindow = -1) {
     return function (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
         if (propertyKey) {
             let route: any = getRouteMetadata(target, propertyKey);

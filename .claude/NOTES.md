@@ -1187,3 +1187,16 @@ Asked for by a downstream plugin (`@rapidmx/meet-plugin`) that streams video fra
 ### 2026-10-26 - Publish gate: only the tag's own Build, and only once every Build of its commit is green
 
 A release pushes `main` and its tag at the same commit, and each push runs Build. The old Publish ran after *any* green Build of a tagged commit, so a failed tag Build (activesync v1.2.0) or a failed `main` Build (web-client v0.37.0) didn't stop the release, and the second Publish run always failed as a duplicate. `.github/workflows/publish.yml`'s `check` job (ported from activesync 9c0f71d, where it was verified on the 1.2.1 release) now runs only for a tag push's Build (`head_branch` starting with `v`), checks the tag points at the commit on `main`, then polls the Build workflow's runs for that `head_sha` until all have finished, refusing if any did not succeed; a green rerun triggers Publish again. `check` has `actions: read`, `contents: read`; `publish` keeps its own steps and just `needs: check`.
+
+### 2026-11-03 — Admin GET->POST, WebSocket Origin check, response cork/backpressure
+
+- `BaseAdminRoute` `restart`/`clear-cache` are POST + `@RequiresElevation({config:"admin:elevation_max_age",default:600})`;
+  the old GETs are 405 stubs (`Allow: POST`). `@RequiresElevation`'s number is a max age in SECONDS (`user.elevated` is ms);
+  it now also accepts an `ElevationWindow`. A class-level `@RequiresElevation()` is overridden by the method-level one.
+- WebSocket Origin check lives in `RouteUtils.checkWebSocketOrigin()`, called first in the `upgradeAuth` wrapper, so it
+  covers every `@WebSocket` route on both routers. Reject = `{reject, status: 403}`. `cors:origins` `"*"` is intentionally
+  NOT a wildcard here. Config is read once at RouteUtils creation, so Origin override tests need their own Server
+  (see `test/Server.WebSocketOrigin.test.ts`). The default test port 3000 equals the stock `cors:origins` entry, which makes
+  that entry look like same-origin: use a distinct origin when testing the allow-list.
+- uWS `HttpResponse.write()` outside the synchronous handler needs `cork()`; the warning is native stderr output, so
+  the cork regression test runs a child process (`test/helpers/streamingResponseServer.ts`, via tsx) and inspects stderr.

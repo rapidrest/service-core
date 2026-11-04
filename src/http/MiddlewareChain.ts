@@ -105,13 +105,17 @@ export type WsUpgradeAuthResult = {
     user?: any;
     authPayload?: any;
     authToken?: string;
-    /** Set to `true` to reject the connection with HTTP 401 before the WebSocket handshake. */
+    /** Set to `true` to reject the connection with an HTTP error before the WebSocket handshake. */
     reject?: boolean;
+    /** The HTTP status of a rejection. Default `401`; an upgrade refused for its `Origin` uses `403`. */
+    status?: number;
+    /** The `message` of a rejection's JSON body. Default `"Unauthorized"`. */
+    message?: string;
 };
 
 /**
  * Optional pre-upgrade auth function for WebSocket routes. Called synchronously before the
- * WebSocket handshake completes. Returning `{ reject: true }` sends an HTTP 401 and skips the
+ * WebSocket handshake completes. Returning `{ reject: true }` sends an HTTP 401 (or `status`) and skips the
  * upgrade entirely. Returning `{}` falls through to the post-upgrade message-based LOGIN flow.
  * Returning `{ user, ... }` pre-authenticates the connection so clients that can send an
  * Authorization header skip the LOGIN step.

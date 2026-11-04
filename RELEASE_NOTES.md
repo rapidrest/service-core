@@ -1,5 +1,49 @@
 # Release Notes
 
+## Unreleased
+
+Contains breaking behaviour changes (admin endpoints, WebSocket Origin check); the version is not bumped here.
+
+### Security
+
+- **BREAKING:** `BaseAdminRoute`'s `restart` and `clear-cache` endpoints are now `POST`, not `GET`. A GET is exempt
+  from the CSRF check and the auth cookies are `SameSite=Lax`, so a link opened by a signed-in admin could restart every
+  pod or flush the cache. Both now go through the CSRF check and also require a recent elevation: the user's most
+  recent elevation must be no older than `admin:elevation_max_age` seconds (default `600`).
+  - Migration: call `POST <base>/restart` and `POST <base>/clear-cache` (cookie-authenticated callers must send the
+    CSRF header; token/API callers are unaffected), from a session that elevated within the window.
+  - The old GET paths answer `405 Method Not Allowed` with `Allow: POST` and a message naming the replacement, and do
+    nothing, so a stale script fails loudly instead of silently no-op'ing. Remove the stubs in a later major.
+- **BREAKING (behavioural):** WebSocket upgrades now validate the `Origin` header, closing cross-site WebSocket
+  hijacking (a page on any same-site host, such as a sibling subdomain, could open an authenticated socket using the
+  visitor's cookies). A handshake is accepted when it has no `Origin` (non-browser clients), when the origin's host is
+  the host the request was addressed to, or when the origin exactly matches `websocket:allowedOrigins` (falling back to
+  `cors:origins` when unset). Anything else is refused with HTTP `403` before the upgrade. On by default.
+  - A `"*"` in `cors:origins` is deliberately not treated as "allow any"; set `websocket:allowedOrigins: ["*"]` to
+    allow every origin explicitly.
+  - Same-origin compares host and port, not scheme (TLS is usually terminated by a proxy). If a proxy rewrites
+    `Host`, list the public origin in `websocket:allowedOrigins`.
+  - Opt out with `websocket:checkOrigin: false`.
+  - Affected: browser pages on a different origin than the API that connect to a `@WebSocket` route (they must now be
+    in `cors:origins` or `websocket:allowedOrigins`).
+
+### Added
+
+- Added `ElevationWindow` (`{ config, default }`) as an argument to `@RequiresElevation()`, reading the recency window
+  in seconds from configuration on each request. `RouteUtils.checkElevation()` accepts it too.
+- Added `WsUpgradeAuthResult.status` and `.message` so a pre-upgrade rejection can be something other than 401.
+- Added response backpressure to the uWS and Bun response adapters: `write()` now returns a boolean (`false` when the
+  buffer is full, as Node's `Writable`), and `waitForDrain()`, `onDrain()`, `writableNeedDrain` and `aborted` were
+  added. `waitForDrain()` resolves `true` on drain and `false` on client abort or end, so a producer loop is
+  `if (!res.write(c) && !(await res.waitForDrain())) return;`. `write()` returned `void` before; callers that ignored
+  it are unaffected.
+
+### Fixed
+
+- Fixed `UWSResponse.write()` not being corked: streaming from an async context logged
+  `uWS.HttpResponse writes must be made from within a corked callback` for every chunk and cost a syscall each. The
+  status/headers flush and the chunk now go out in a single cork.
+
 ## v2.4.0
 
 Additive, so a minor-level change (2.4.0 when it is released; the version is not bumped here).

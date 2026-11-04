@@ -185,20 +185,39 @@ describe("UWSRequest Tests", () => {
 });
 
 function makeUwsRes() {
-    const calls: any = { headers: [], statuses: [], ended: [], endWithoutBody: [], writes: [] };
+    const calls: any = { headers: [], statuses: [], ended: [], endWithoutBody: [], writes: [], writeCorked: [] };
     let onAbortedCb: (() => void) | undefined;
+    let onWritableCb: (() => boolean) | undefined;
+    let corkDepth = 0;
     const res: any = {
         onAborted: (cb: () => void) => {
             onAbortedCb = cb;
         },
-        cork: (fn: () => void) => fn(),
+        onWritable: vi.fn((cb: () => boolean) => {
+            onWritableCb = cb;
+        }),
+        cork: (fn: () => void) => {
+            corkDepth++;
+            try {
+                fn();
+            } finally {
+                corkDepth--;
+            }
+        },
         writeStatus: (s: string) => calls.statuses.push(s),
         writeHeader: (k: string, v: string) => calls.headers.push([k, v]),
         end: (data?: any) => calls.ended.push(data),
         endWithoutBody: (n?: number) => calls.endWithoutBody.push(n),
-        write: (data: any) => calls.writes.push(data),
+        // Records whether the call happened inside cork(), and returns the programmable uWS result.
+        write: (data: any) => {
+            calls.writes.push(data);
+            calls.writeCorked.push(corkDepth > 0);
+            return res.writeResult;
+        },
+        writeResult: true,
         onData: vi.fn(),
         triggerAbort: () => onAbortedCb?.(),
+        triggerWritable: () => onWritableCb?.(),
         _calls: calls,
     };
     return res;
@@ -406,6 +425,109 @@ describe("UWSResponse Tests", () => {
         uwsRes.triggerAbort();
         res.write("chunk");
         expect(uwsRes._calls.writes).toEqual([]);
+    });
+
+    it("write() runs inside a cork, including the implicit status/header flush", () => {
+        const uwsRes = makeUwsRes();
+        const corkSpy = vi.spyOn(uwsRes, "cork");
+        const res = new UWSResponse(uwsRes);
+        res.write("a");
+        res.write("b");
+        expect(uwsRes._calls.writeCorked).toEqual([true, true]);
+        // One cork per write(): the first one also carries the status line and headers.
+        expect(corkSpy).toHaveBeenCalledTimes(2);
+        expect(uwsRes._calls.statuses).toEqual(["200 OK"]);
+        expect(res.headersSent).toBe(true);
+    });
+
+    it("write() returns true while uWS reports no backpressure", () => {
+        const res = new UWSResponse(makeUwsRes());
+        expect(res.write("a")).toBe(true);
+        expect(res.writableNeedDrain).toBe(false);
+    });
+
+    it("write() returns false under backpressure, still passes the chunk on, and registers onWritable once", async () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        uwsRes.writeResult = false;
+        expect(res.write("a")).toBe(false);
+        expect(res.write("b")).toBe(false);
+        expect(uwsRes._calls.writes).toEqual(["a", "b"]);
+        expect(res.writableNeedDrain).toBe(true);
+        expect(uwsRes.onWritable).toHaveBeenCalledTimes(1);
+    });
+
+    it("waitForDrain() resolves true immediately without backpressure", async () => {
+        const res = new UWSResponse(makeUwsRes());
+        await expect(res.waitForDrain()).resolves.toBe(true);
+    });
+
+    it("waitForDrain() and onDrain() are released when uWS reports the socket writable again", async () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        const drained = vi.fn();
+        res.onDrain(drained);
+        uwsRes.writeResult = false;
+        res.write("a");
+        let resolved: boolean | undefined;
+        const waiting = res.waitForDrain().then((v) => (resolved = v));
+        await Promise.resolve();
+        expect(resolved).toBeUndefined();
+
+        expect(uwsRes.triggerWritable()).toBe(true);
+        await waiting;
+        expect(resolved).toBe(true);
+        expect(drained).toHaveBeenCalledTimes(1);
+        expect(res.writableNeedDrain).toBe(false);
+
+        // A writable event with nothing pending is a harmless no-op that must still report success.
+        expect(uwsRes.triggerWritable()).toBe(true);
+        expect(drained).toHaveBeenCalledTimes(1);
+
+        // And the next round of backpressure drains through the same single onWritable registration.
+        res.write("b");
+        const again = res.waitForDrain();
+        uwsRes.triggerWritable();
+        await expect(again).resolves.toBe(true);
+        expect(uwsRes.onWritable).toHaveBeenCalledTimes(1);
+    });
+
+    it("waitForDrain() resolves false (never hangs) when the client aborts while waiting", async () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        uwsRes.writeResult = false;
+        res.write("a");
+        const waiting = res.waitForDrain();
+        uwsRes.triggerAbort();
+        await expect(waiting).resolves.toBe(false);
+        expect(res.aborted).toBe(true);
+        expect(res.writableNeedDrain).toBe(false);
+        await expect(res.waitForDrain()).resolves.toBe(false);
+    });
+
+    it("waitForDrain() resolves false when the response ends while waiting", async () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        uwsRes.writeResult = false;
+        res.write("a");
+        const waiting = res.waitForDrain();
+        res.end();
+        await expect(waiting).resolves.toBe(false);
+        await expect(res.waitForDrain()).resolves.toBe(false);
+    });
+
+    it("write() returns false and writes nothing once ended or aborted", () => {
+        const ended = makeUwsRes();
+        const endedRes = new UWSResponse(ended);
+        endedRes.end();
+        expect(endedRes.write("x")).toBe(false);
+        expect(ended._calls.writes).toEqual([]);
+
+        const aborted = makeUwsRes();
+        const abortedRes = new UWSResponse(aborted);
+        aborted.triggerAbort();
+        expect(abortedRes.write("x")).toBe(false);
+        expect(aborted._calls.writes).toEqual([]);
     });
 
     it("onAbort() fires all registered handlers exactly once when aborted", () => {
