@@ -35,7 +35,7 @@
         "uWebSockets.js": "uNetworking/uWebSockets.js#v20.69.0"
     },
     "peerDependencies": {
-        "@rapidrest/core": "5.x",
+        "@rapidrest/core": "6.x",
         "lodash-es": "4.x",
         "mongodb": "^7.0.0",
         "openapi3-ts": "4.x",
