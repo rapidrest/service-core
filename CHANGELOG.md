@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-05
+
+### Added
+- Added HttpResponse.destroy() to the uWS and Bun response adapters to terminate a connection abruptly
+- Added tests against real uWS and Bun servers for destroy() and for a route that throws after writing
+
+### Changed
+- Refactor the adapters' abort handling into one idempotent routine shared by client aborts and destroy()
+
+### Fixed
+- Fixed a response that fails after it started streaming ending as a complete 200 with the error JSON appended
+
 ## [2.5.1] - 2026-11-04
 
 ### Changed
@@ -358,7 +370,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/rapidrest/service-core/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/rapidrest/service-core/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/rapidrest/service-core/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/rapidrest/service-core/compare/v2.3.0...v2.4.0

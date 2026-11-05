@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v2.6.0
+
 ### Added
 
 - Added `HttpResponse.destroy(error?)`, implemented by the uWS and Bun response adapters, which terminates the connection
