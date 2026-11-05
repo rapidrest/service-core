@@ -7,6 +7,7 @@
 // `waitForDrain()` must resume after it, and a client abort must let the producer stop.
 import { spawn, type ChildProcess } from "child_process";
 import crypto from "crypto";
+import http from "http";
 import net from "net";
 import path from "path";
 import uWS from "uWebSockets.js";
@@ -159,4 +160,126 @@ describe("HttpRouter streaming responses (real uWS)", () => {
             await vi.waitFor(() => expect(router.inFlightRequests).toBe(0), { timeout: 3000 });
         }, 30000);
     });
+});
+
+describe("UWSResponse.destroy() (real uWS)", () => {
+    const DESTROY_PORT = 37944;
+    let router: HttpRouter;
+    const state: any = {};
+
+    beforeAll(async () => {
+        router = new HttpRouter(uWS.App());
+        router.get("/mid-stream", async (_req: any, res: any) => {
+            Object.assign(state, { abortCallbacks: 0, finished: 0 });
+            res.onAbort(() => state.abortCallbacks++);
+            res.onFinish(() => state.finished++);
+            res.status(200).setHeader("content-type", "text/plain");
+            res.write("first,");
+            await new Promise((r) => setTimeout(r, 20));
+            res.write("second");
+            await new Promise((r) => setTimeout(r, 20));
+            res.destroy();
+            res.destroy(); // idempotent
+            state.aborted = res.aborted;
+            state.writeAfter = res.write("never sent");
+            state.waitAfter = await res.waitForDrain();
+            res.end("never sent either");
+            res.destroy(new Error("again")); // still a no-op, with a reason
+        });
+        router.get("/before-write", (_req: any, res: any) => {
+            res.destroy();
+        });
+        router.get("/after-end", (_req: any, res: any) => {
+            res.status(200).setHeader("content-type", "text/plain");
+            res.end("complete");
+            res.destroy();
+            state.afterEndAborted = res.aborted;
+        });
+        router.get("/pending-drain", async (_req: any, res: any) => {
+            Object.assign(state, { pendingResult: undefined, pendingAborts: 0 });
+            res.onAbort(() => state.pendingAborts++);
+            await new Promise((r) => setTimeout(r, 5));
+            res.status(200);
+            const chunk = Buffer.alloc(256 * 1024, 7);
+            // A client that is not reading makes write() report backpressure sooner or later.
+            for (let i = 0; i < 256; i++) {
+                if (!res.write(chunk)) {
+                    const pending = res.waitForDrain();
+                    res.destroy();
+                    state.pendingResult = await pending;
+                    return;
+                }
+            }
+            res.end();
+        });
+        await router.listen("127.0.0.1", DESTROY_PORT);
+    });
+
+    afterAll(async () => {
+        await router.shutdown(2000);
+    });
+
+    /** Issues a GET and reports how the transfer ended. */
+    const fetchResponse = (urlPath: string) =>
+        new Promise<{ status: number; body: string; complete: boolean; aborted: boolean; error?: string }>((resolve) => {
+            let responded = false;
+            const req = http.get({ host: "127.0.0.1", port: DESTROY_PORT, path: urlPath }, (res) => {
+                responded = true;
+                const result = { status: res.statusCode ?? 0, body: "", complete: false, aborted: false, error: undefined as string | undefined };
+                res.on("data", (d) => (result.body += d.toString()));
+                res.on("aborted", () => (result.aborted = true));
+                res.on("error", (e: any) => (result.error = e.code));
+                res.on("close", () => resolve({ ...result, complete: res.complete }));
+            });
+            // Also raised for a response that failed part way, which is reported through the response instead.
+            req.on("error", (e: any) => !responded && resolve({ status: 0, body: "", complete: false, aborted: true, error: e.code }));
+        });
+
+    it("cuts the connection mid-stream: the client gets what was sent, then a failed transfer", async () => {
+        const result = await fetchResponse("/mid-stream");
+        expect(result.status).toBe(200);
+        expect(result.body).toBe("first,second");
+        expect(result.complete).toBe(false);
+        expect(result.aborted || result.error !== undefined).toBe(true);
+    });
+
+    it("runs the abort bookkeeping once, however often it is called, and leaves later writes inert", async () => {
+        await fetchResponse("/mid-stream");
+        await vi.waitFor(() => expect(state.waitAfter).toBeDefined());
+        expect(state.aborted).toBe(true);
+        expect(state.abortCallbacks).toBe(1);
+        expect(state.writeAfter).toBe(false);
+        expect(state.waitAfter).toBe(false);
+        await vi.waitFor(() => expect(state.finished).toBe(1));
+    });
+
+    it("drops the connection when nothing was sent yet, too", async () => {
+        const result = await fetchResponse("/before-write");
+        expect(result.status).toBe(0);
+        expect(result.body).toBe("");
+        expect(result.error).toBeDefined();
+    });
+
+    it("is a no-op once the response has ended", async () => {
+        const result = await fetchResponse("/after-end");
+        expect(result.status).toBe(200);
+        expect(result.body).toBe("complete");
+        expect(result.complete).toBe(true);
+        expect(state.afterEndAborted).toBe(false);
+    });
+
+    it("resolves a pending waitForDrain() with false", async () => {
+        // The client reads nothing, so the server's buffers fill up and write() reports backpressure.
+        const socket = net.connect(DESTROY_PORT, "127.0.0.1", () => {
+            socket.write("GET /pending-drain HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+            socket.pause();
+        });
+        try {
+            await vi.waitFor(() => expect(state.pendingResult).toBeDefined(), { timeout: 10000 });
+            expect(state.pendingResult).toBe(false);
+            expect(state.pendingAborts).toBe(1);
+        } finally {
+            socket.destroy();
+        }
+    }, 30000);
 });

@@ -369,6 +369,16 @@ describe("makeWsStubResponse Tests", () => {
         expect(res.send("data")).toBeUndefined();
     });
 
+    it("destroy() ends the stub and fires onFinish handlers, as there is no connection behind it to terminate", async () => {
+        const res = makeWsStubResponse();
+        const finished = vi.fn();
+        res.onFinish(finished);
+        res.destroy();
+        expect(res.writableEnded).toBe(true);
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(finished).toHaveBeenCalledTimes(1);
+    });
+
     it("sets writableEnded and fires onFinish handlers when end() is called", async () => {
         const res = makeWsStubResponse();
         let called = false;

@@ -1200,3 +1200,22 @@ A release pushes `main` and its tag at the same commit, and each push runs Build
   that entry look like same-origin: use a distinct origin when testing the allow-list.
 - uWS `HttpResponse.write()` outside the synchronous handler needs `cork()`; the warning is native stderr output, so
   the cork regression test runs a child process (`test/helpers/streamingResponseServer.ts`, via tsx) and inspects stderr.
+
+### 2026-11-04 — `HttpResponse.destroy()`: a response that fails after it started streaming is aborted, not "completed"
+
+- `Server.handleError()` used to skip `res.status()` once `headersSent` and then call `res.json(error)`, which ended the chunked
+  body normally: the client saw a clean `200` with the truncated payload plus the error JSON. MeetCarter's blob download
+  (10 MB stream, disk read fails at 4 MB) therefore produced a silently corrupted file. Now, when `headersSent`, it logs and
+  calls `res.destroy(err)` for all three branches (string, `BulkError`, other); before headers nothing changed.
+- `HttpResponse.destroy(error?)` (Node's `ServerResponse.destroy()` naming): uWS calls `uwsRes.close()` (try/catch, like
+  `end()`'s body-stream guard) and then `_handleAbort()`; Bun errors the stream controller. Both go through a new idempotent
+  `_handleAbort()` (sets `aborted`, settles `waitForDrain()` waiters with `false`, fires `onAbort`/`onFinish` once), which the
+  client-abort path now shares. No-op after `end()`/after an abort; safe to call twice. `makeWsStubResponse()` got a stub.
+- Bun cannot drop a connection before it has a Response (`Response.error()` is rejected: "status 0"), so `destroy()` before
+  the first write resolves a `500` with an already-errored body, which real Bun ends as an empty body. `abortStream()` now
+  delegates to `destroy()` when streaming.
+- Real-server tests: `test/Server.StreamAbort.test.ts` (route writes then throws: no JSON appended, `res.complete === false`),
+  `Router.streamingResponse.test.ts` ("UWSResponse.destroy() (real uWS)"), and `test/http/bun/BunRouter.destroy.test.ts`, which
+  drives a real `Bun.serve()` through `test/helpers/bunDestroyServer.ts` in a child process and skips itself without `bun` on
+  PATH. In a Node `http` client the request's own `'error'` can fire before the response's `'close'`: don't let it mask the
+  response in a test helper.

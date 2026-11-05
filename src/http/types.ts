@@ -93,6 +93,20 @@ export interface HttpResponse {
     send(data?: any): void;
     end(data?: any): void;
     /**
+     * Terminates the connection abruptly, so the client sees a failed transfer rather than a response that ended
+     * normally (the equivalent of Node's `ServerResponse.destroy()`). Use it when a response that has already started
+     * streaming (`headersSent`) can no longer be completed, such as a read that fails part way: ending it normally would
+     * present the truncated body as a complete one. Nothing further is sent, and the usual abort bookkeeping runs as for a
+     * client that went away: `aborted` becomes `true`, `onAbort()` listeners and `onFinish()` handlers fire, and any
+     * pending `waitForDrain()` resolves `false`.
+     *
+     * A no-op once the response has ended (`end()`, `json()` and `send()` included) or been aborted, so it is safe to call
+     * more than once.
+     *
+     * @param error Optional reason, for runtimes that can carry one to their stream (it is not sent to the client).
+     */
+    destroy(error?: Error): void;
+    /**
      * Registers a callback fired exactly once when the response actually completes — either a
      * normal end() or client/stream abort. Does not delay or await end(). Used to persist
      * request-scoped state (e.g. session data) after downstream handlers finish mutating it.

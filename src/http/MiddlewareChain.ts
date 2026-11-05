@@ -204,6 +204,11 @@ export function makeWsStubResponse(onUnhandledError?: (status: number, payload: 
             this.writableEnded = true;
             fireFinish();
         },
+        destroy() {
+            // There is no HTTP connection behind this stub to terminate; the WebSocket is closed by its own owner.
+            this.writableEnded = true;
+            fireFinish();
+        },
         onFinish(handler: () => void | Promise<void>) {
             if (finished) {
                 void handler();

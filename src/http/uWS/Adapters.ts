@@ -193,14 +193,21 @@ export class UWSResponse implements HttpResponse {
         this.uwsRes = uwsRes;
         // Track connection abort so we don't attempt writes on a closed socket.
         // uWS only allows one onAborted registration per response, so fan out here.
-        uwsRes.onAborted(() => {
-            this._aborted = true;
-            this._needDrain = false;
-            // Nothing will ever drain an aborted connection: release anyone waiting so they can stop producing.
-            this._settleDrainWaiters(false);
-            for (const handler of this._abortHandlers) handler();
-            this._fireFinish();
-        });
+        uwsRes.onAborted(() => this._handleAbort());
+    }
+
+    /**
+     * Records that the connection is gone, whether the client closed it or `destroy()` did, and tells everyone watching.
+     * Runs its notifications only once, however many times it is reached (`uwsRes.close()` fires `onAborted` itself).
+     */
+    private _handleAbort(): void {
+        if (this._aborted) return;
+        this._aborted = true;
+        this._needDrain = false;
+        // Nothing will ever drain an aborted connection: release anyone waiting so they can stop producing.
+        this._settleDrainWaiters(false);
+        for (const handler of this._abortHandlers) handler();
+        this._fireFinish();
     }
 
     /**
@@ -332,6 +339,24 @@ export class UWSResponse implements HttpResponse {
                 this.uwsRes.end(data);
             }
         });
+    }
+
+    /**
+     * Terminates the connection abruptly, so the client sees a failed transfer (a reset or a truncated chunked body)
+     * instead of a response that ended normally. See `HttpResponse.destroy()`.
+     *
+     * Closes the uWS response with `close()`, as `end()` does for an unfinished streaming-body request, and then runs
+     * the abort bookkeeping itself in case `close()` did not (it is skipped when the uWS response is already invalid).
+     * The reason is accepted for parity with other runtimes and is not used: uWS cannot carry one to the client.
+     */
+    public destroy(_error?: Error): void {
+        if (this._aborted || this._writableEnded) return;
+        try {
+            this.uwsRes.close();
+        } catch {
+            // Already invalid/closed — nothing left to close.
+        }
+        this._handleAbort();
     }
 
     /**

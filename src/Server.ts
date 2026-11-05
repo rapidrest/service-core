@@ -533,26 +533,29 @@ export class Server {
                 this.logger.debug(err);
             }
 
-            if (typeof err === "string") {
-                if (!res.headersSent) {
-                    res.status(500);
-                }
-                res.json({ message: "Internal Server Error", status: 500 });
-            } else if (err instanceof BulkError) {
+            if (err instanceof BulkError) {
                 // Log the individual non-ApiError failures, since only a generic error is sent for them.
                 for (const item of err.errors) {
                     if (item && !(item instanceof ApiError)) {
                         this.logger.error(item);
                     }
                 }
-                if (!res.headersSent) {
-                    res.status(err.status);
-                }
+            }
+
+            if (res.headersSent) {
+                // The response already started streaming, so its status and headers are on the wire and the error can no
+                // longer be reported to the client. Sending the error JSON as the last chunk would end the body normally,
+                // with the truncated content and the error text passed off as a complete 200. Abort the connection so the
+                // client sees a failed transfer instead. A response that has already ended is left as it is.
+                res.destroy(err instanceof Error ? err : undefined);
+            } else if (typeof err === "string") {
+                res.status(500);
+                res.json({ message: "Internal Server Error", status: 500 });
+            } else if (err instanceof BulkError) {
+                res.status(err.status);
                 res.json(err.errors.map((e) => (e ? this.serializeError(e) : e)));
             } else {
-                if (!res.headersSent) {
-                    res.status(err instanceof ApiError ? err.status : 500);
-                }
+                res.status(err instanceof ApiError ? err.status : 500);
                 res.json(this.serializeError(err));
             }
 

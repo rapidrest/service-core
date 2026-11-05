@@ -215,6 +215,8 @@ function makeUwsRes() {
             return res.writeResult;
         },
         writeResult: true,
+        // Like the real thing, closing the response fires the same onAborted callback a client disconnect would.
+        close: vi.fn(() => onAbortedCb?.()),
         onData: vi.fn(),
         triggerAbort: () => onAbortedCb?.(),
         triggerWritable: () => onWritableCb?.(),
@@ -988,5 +990,108 @@ describe("UWSResponse.attachBodyStream() / end() force-close on undrained body (
         res.attachBodyStream(stream);
 
         expect(() => res.status(400).end()).not.toThrow();
+    });
+});
+
+describe("UWSResponse.destroy() Tests", () => {
+    it("closes the connection instead of ending it, and marks the response aborted", () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        res.write("partial");
+
+        res.destroy();
+
+        expect(uwsRes.close).toHaveBeenCalledTimes(1);
+        expect(res.aborted).toBe(true);
+        // Nothing that would terminate the chunked body normally was written.
+        expect(uwsRes._calls.ended).toEqual([]);
+        expect(uwsRes._calls.endWithoutBody).toEqual([]);
+    });
+
+    it("fires onAbort listeners and onFinish handlers once, and resolves pending waitForDrain() waiters with false", async () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        const onAbort = vi.fn();
+        const onFinish = vi.fn();
+        res.onAbort(onAbort);
+        res.onFinish(onFinish);
+        uwsRes.writeResult = false; // backpressure: waitForDrain() stays pending
+        res.write("partial");
+        const pending = res.waitForDrain();
+
+        res.destroy();
+
+        await expect(pending).resolves.toBe(false);
+        expect(onAbort).toHaveBeenCalledTimes(1);
+        await Promise.resolve();
+        expect(onFinish).toHaveBeenCalledTimes(1);
+        expect(res.writableNeedDrain).toBe(false);
+        await expect(res.waitForDrain()).resolves.toBe(false);
+    });
+
+    it("is idempotent", () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        const onAbort = vi.fn();
+        res.onAbort(onAbort);
+
+        res.destroy();
+        res.destroy(new Error("again"));
+
+        expect(uwsRes.close).toHaveBeenCalledTimes(1);
+        expect(onAbort).toHaveBeenCalledTimes(1);
+    });
+
+    it("is a no-op after end()", () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        const onAbort = vi.fn();
+        res.onAbort(onAbort);
+        res.end("done");
+
+        res.destroy();
+
+        expect(uwsRes.close).not.toHaveBeenCalled();
+        expect(res.aborted).toBe(false);
+        expect(onAbort).not.toHaveBeenCalled();
+        expect(uwsRes._calls.ended).toEqual(["done"]);
+    });
+
+    it("is a no-op once the client has already aborted", () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        uwsRes.triggerAbort();
+
+        res.destroy();
+
+        expect(uwsRes.close).not.toHaveBeenCalled();
+    });
+
+    it("leaves later writes and end() inert", () => {
+        const uwsRes = makeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        res.write("partial");
+        res.destroy();
+
+        expect(res.write("more")).toBe(false);
+        res.end("late");
+
+        expect(uwsRes._calls.writes).toEqual(["partial"]);
+        expect(uwsRes._calls.ended).toEqual([]);
+    });
+
+    it("still marks the response aborted when close() throws or does not fire onAborted itself", () => {
+        const uwsRes = makeUwsRes();
+        uwsRes.close = vi.fn(() => {
+            throw new Error("invalid access of closed uWS.HttpResponse");
+        });
+        const res = new UWSResponse(uwsRes);
+        const onAbort = vi.fn();
+        res.onAbort(onAbort);
+
+        expect(() => res.destroy()).not.toThrow();
+
+        expect(res.aborted).toBe(true);
+        expect(onAbort).toHaveBeenCalledTimes(1);
     });
 });

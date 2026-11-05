@@ -114,13 +114,20 @@ export class BunResponse implements HttpResponse {
         this.responseReady = new Promise<Response>((resolve) => {
             this._resolveReady = resolve;
         });
-        rawRequest.signal?.addEventListener("abort", () => {
-            this._aborted = true;
-            this._needDrain = false;
-            this._settleDrainWaiters(false);
-            for (const handler of this._abortHandlers) handler();
-            this._fireFinish();
-        });
+        rawRequest.signal?.addEventListener("abort", () => this._handleAbort());
+    }
+
+    /**
+     * Records that the connection is gone, whether the client closed it or `destroy()` did, and tells everyone watching.
+     * Runs its notifications only once, however many times it is reached.
+     */
+    private _handleAbort(): void {
+        if (this._aborted) return;
+        this._aborted = true;
+        this._needDrain = false;
+        this._settleDrainWaiters(false);
+        for (const handler of this._abortHandlers) handler();
+        this._fireFinish();
     }
 
     public get statusCode(): number {
@@ -243,13 +250,7 @@ export class BunResponse implements HttpResponse {
                     for (const handler of this._drainHandlers) handler();
                 }
             },
-            cancel: () => {
-                this._aborted = true;
-                this._needDrain = false;
-                this._settleDrainWaiters(false);
-                for (const handler of this._abortHandlers) handler();
-                this._fireFinish();
-            },
+            cancel: () => this._handleAbort(),
             // Backpressure is measured in bytes (64 KiB) rather than in chunks.
         }, { highWaterMark: 64 * 1024, size: (chunk) => chunk.byteLength });
         this._resolveReady(this._buildStreamingResponse());
@@ -322,19 +323,39 @@ export class BunResponse implements HttpResponse {
     }
 
     /**
+     * Terminates the response abruptly, so the client sees a failed transfer instead of a response that ended normally.
+     * See `HttpResponse.destroy()`.
+     *
+     * A response that is streaming has its stream errored, which makes Bun abort the connection part way through the
+     * body (the client's read of it fails). Bun has no way to drop a connection before any response was handed to it
+     * (`Response.error()` is rejected as a status 0 response), so one that has not started yet is answered with a 500
+     * and an empty body: the client sees a failure status, never the response the handler was building.
+     * The reason is only what the stream errors with on the server side, and is not sent to the client.
+     */
+    public destroy(error?: Error): void {
+        if (this._aborted || this._writableEnded) return;
+        this._writableEnded = true;
+        const reason = error ?? new Error("Response destroyed");
+        if (this._streaming) {
+            try {
+                this._controller?.error(reason);
+            } catch {
+                // already closed
+            }
+        } else {
+            this._headersSent = true;
+            const broken = new ReadableStream<Uint8Array>({ start: (controller) => controller.error(reason) });
+            this._resolveReady(new Response(broken, { status: 500 }));
+        }
+        this._handleAbort();
+    }
+
+    /**
      * Errors the underlying stream if it's still open. Used when a middleware chain throws after
      * streaming has already started and the `Response` has already been handed back to the client.
      */
     public abortStream(err: any): void {
-        if (this._streaming && !this._writableEnded) {
-            try {
-                this._controller?.error(err);
-            } catch {
-                // already closed
-            }
-            this._writableEnded = true;
-            this._fireFinish();
-        }
+        if (this._streaming) this.destroy(err);
     }
 
     /** Enqueues a chunk. Returns `false` when the queue is now over its high-water mark, or the stream is closed. */

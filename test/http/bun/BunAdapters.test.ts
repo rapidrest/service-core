@@ -400,6 +400,92 @@ describe("BunResponse Tests", () => {
         const res = new BunResponse(makeReq());
         expect(() => res.abortStream(new Error("boom"))).not.toThrow();
     });
+
+    describe("destroy()", () => {
+        it("errors a streaming response's body, so the client's read of it fails", async () => {
+            const res = new BunResponse(makeReq());
+            res.write("partial");
+            const reader = (await res.responseReady).body!.getReader();
+            expect((await reader.read()).done).toBe(false);
+
+            res.destroy(new Error("disk failure"));
+
+            await expect(reader.read()).rejects.toThrow("disk failure");
+            expect(res.aborted).toBe(true);
+            expect(res.writableEnded).toBe(true);
+        });
+
+        it("fires onAbort listeners and onFinish handlers once, and resolves pending waitForDrain() waiters with false", async () => {
+            const res = new BunResponse(makeReq());
+            const onAbort = vi.fn();
+            const onFinish = vi.fn();
+            res.onAbort(onAbort);
+            res.onFinish(onFinish);
+            res.write(Buffer.alloc(128 * 1024));
+            const pending = res.waitForDrain();
+
+            res.destroy();
+
+            await expect(pending).resolves.toBe(false);
+            expect(onAbort).toHaveBeenCalledTimes(1);
+            await Promise.resolve();
+            expect(onFinish).toHaveBeenCalledTimes(1);
+            expect(res.writableNeedDrain).toBe(false);
+            expect(res.write("more")).toBe(false);
+        });
+
+        it("is idempotent", async () => {
+            const res = new BunResponse(makeReq());
+            const onAbort = vi.fn();
+            res.onAbort(onAbort);
+            res.write("partial");
+
+            res.destroy();
+            expect(() => res.destroy(new Error("again"))).not.toThrow();
+
+            expect(onAbort).toHaveBeenCalledTimes(1);
+        });
+
+        it("is a no-op after end(), and after the client has already aborted", async () => {
+            const ended = new BunResponse(makeReq());
+            const onAbort = vi.fn();
+            ended.onAbort(onAbort);
+            ended.end("done");
+            ended.destroy();
+            expect(ended.aborted).toBe(false);
+            expect(onAbort).not.toHaveBeenCalled();
+            expect(await (await ended.responseReady).text()).toBe("done");
+
+            const ac = new AbortController();
+            const gone = new BunResponse(new Request("http://localhost/test", { signal: ac.signal }));
+            gone.write("partial");
+            const reader = (await gone.responseReady).body!.getReader();
+            ac.abort();
+            gone.destroy();
+            // Still readable: destroy() did not error the stream of a connection that was already gone.
+            expect((await reader.read()).done).toBe(false);
+        });
+
+        it("tolerates a stream that is already closed", async () => {
+            const res = new BunResponse(makeReq());
+            res.write("partial");
+            (res as any)._controller.close();
+            expect(() => res.destroy()).not.toThrow();
+        });
+
+        it("answers a response that has not started with a 500 whose body is already errored", async () => {
+            const res = new BunResponse(makeReq());
+            res.status(200);
+            res.destroy();
+
+            const response = await res.responseReady;
+            expect(response.status).toBe(500);
+            // Node's Response rejects a read of the errored stream; Bun ends it as an empty body (see BunRouter.destroy.test.ts).
+            await expect(response.text()).rejects.toThrow("Response destroyed");
+            expect(res.headersSent).toBe(true);
+            expect(res.aborted).toBe(true);
+        });
+    });
 });
 
 describe("readBunBody Tests", () => {

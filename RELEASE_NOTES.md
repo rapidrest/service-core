@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- Added `HttpResponse.destroy(error?)`, implemented by the uWS and Bun response adapters, which terminates the connection
+  abruptly so the client sees a failed transfer instead of a response that ended normally (the equivalent of Node's
+  `ServerResponse.destroy()`). It runs the same bookkeeping as a client that went away: `aborted` becomes `true`,
+  `onAbort()` listeners and `onFinish()` handlers fire, and a pending `waitForDrain()` resolves `false`. It is a no-op
+  after `end()` and when called more than once. On Bun, a response that is streaming has its body stream errored; one
+  that has not started is answered with a `500` and an empty body, since Bun cannot drop a connection before it has a
+  response. Custom `HttpResponse` implementations need to add the method.
+
+### Fixed
+
+- **A route that streamed a response and then threw ended with a normal, complete-looking `200`.** `Server.handleError()`
+  skipped the status once headers were sent and then called `res.json()` with the error, which ended the chunked body
+  normally: the client received the truncated content with `{"message":…,"status":500}` appended and had no way to tell
+  the transfer had failed (a download whose disk read failed part way was saved as a corrupted file). Once the response
+  has started, `handleError()` now logs the error and calls `res.destroy()`, so the client sees an aborted transfer.
+  Before the first write nothing changes: the client still receives the status and JSON of the error.
+
 ## v2.5.1
 
 Dependency and CI maintenance only, with no source or API changes.

@@ -226,6 +226,7 @@ describe("Server error responses", () => {
             return res;
         });
         res.json = vi.fn();
+        res.destroy = vi.fn();
         return res;
     }
 
@@ -274,10 +275,10 @@ describe("Server error responses", () => {
             process.env.NODE_ENV = "development";
             const item: any = new ApiError(ApiErrors.INVALID_REQUEST, 400, "bad item");
             Object.defineProperty(item, "stack", { value: "at secret.ts:1", enumerable: true });
-            const res = makeRes(true);
+            const res = makeRes();
             server.handleError(new BulkError([item], ApiErrors.BULK_CREATE_FAILURE, 400), {}, res, vi.fn());
 
-            expect(res.status).not.toHaveBeenCalled();
+            expect(res.status).toHaveBeenCalledWith(400);
             expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain("secret.ts");
         } finally {
             process.env.NODE_ENV = original;
@@ -296,18 +297,51 @@ describe("Server error responses", () => {
         });
     });
 
-    it("keeps an ApiError's own fields, strips color codes from level, and skips status once headers are sent", () => {
-        const res = makeRes(true);
+    it("keeps an ApiError's own fields and strips color codes from level", () => {
+        const res = makeRes();
         const err: any = new ApiError(ApiErrors.NOT_FOUND, 404, "missing");
         err.level = "[31merror[39m";
         server.handleError(err, {}, res, vi.fn());
 
-        expect(res.status).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.destroy).not.toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith({
             code: ApiErrors.NOT_FOUND,
             status: 404,
             level: "error",
             message: "missing",
+        });
+    });
+
+    describe("once the response has started streaming (headers sent)", () => {
+        it.each([
+            ["an ApiError", () => new ApiError(ApiErrors.NOT_FOUND, 404, "missing")],
+            ["a plain Error", () => new Error("the disk read failed")],
+            ["a BulkError", () => new BulkError([new Error("one"), null], ApiErrors.BULK_CREATE_FAILURE, 400)],
+            ["a thrown string", () => "boom"],
+        ])("aborts the connection for %s, and sends neither a status nor any JSON", (_name, make) => {
+            const res = makeRes(true);
+            const next = vi.fn();
+
+            server.handleError(make(), {}, res, next);
+
+            expect(res.destroy).toHaveBeenCalledTimes(1);
+            expect(res.status).not.toHaveBeenCalled();
+            expect(res.json).not.toHaveBeenCalled();
+            expect(next).toHaveBeenCalled();
+            // The error is still logged, since the client can no longer be told about it.
+            expect(server.logger.error.mock.calls.length + server.logger.debug.mock.calls.length).toBeGreaterThan(0);
+        });
+
+        it("passes the error to destroy() as the reason, unless it is not an Error", () => {
+            const res = makeRes(true);
+            const err = new Error("the disk read failed");
+            server.handleError(err, {}, res, vi.fn());
+            expect(res.destroy).toHaveBeenCalledWith(err);
+
+            const other = makeRes(true);
+            server.handleError("boom", {}, other, vi.fn());
+            expect(other.destroy).toHaveBeenCalledWith(undefined);
         });
     });
 
