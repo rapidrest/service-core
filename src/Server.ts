@@ -350,15 +350,25 @@ export class Server {
                 // cors
                 const corsConfig: any = this.config.get("cors") || {};
                 const corsOrigins: string | string[] | undefined = corsConfig.origins;
+                // `cors.allowedHeaders` appends to the built-in list; `cors.exposedHeaders` is sent as
+                // `Access-Control-Expose-Headers` so browsers let scripts read those response headers.
+                const extraList = (value: unknown): string[] =>
+                    (Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [])
+                        .map((v) => String(v).trim())
+                        .filter((v) => v.length > 0);
                 const corsAllowedHeaders = [
-                    "Accept",
-                    "Authorization",
-                    "Content-Type",
-                    "Location",
-                    "Origin",
-                    "Set-Cookie",
-                    "X-Requested-With",
+                    ...new Set([
+                        "Accept",
+                        "Authorization",
+                        "Content-Type",
+                        "Location",
+                        "Origin",
+                        "Set-Cookie",
+                        "X-Requested-With",
+                        ...extraList(corsConfig.allowedHeaders),
+                    ]),
                 ].join(", ");
+                const corsExposedHeaders = extraList(corsConfig.exposedHeaders).join(", ");
                 this.app.use((req: HttpRequest, res: HttpResponse, next: NextFunction) => {
                     const origin = (req.headers["origin"] as string) || "";
                     // When no allow-list is configured, permit all origins without credentials.
@@ -378,6 +388,9 @@ export class Server {
                         }
                         res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS,PUT,PATCH,POST,DELETE");
                         res.setHeader("access-control-allow-headers", corsAllowedHeaders);
+                        if (corsExposedHeaders) {
+                            res.setHeader("access-control-expose-headers", corsExposedHeaders);
+                        }
                     }
                     // A real, app-registered `OPTIONS` route (e.g. an EAS route's `MS-ASProtocolVersions`
                     // capability-discovery response) gets a chance to run instead of the blanket preflight
