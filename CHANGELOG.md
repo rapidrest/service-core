@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-11-08
+
+### Added
+- Added the cors.allowedHeaders option, appended to the built-in list of request headers a cross-origin request may send
+- Added the cors.exposedHeaders option, sent as Access-Control-Expose-Headers to an allowed origin so browsers let scripts read those response headers
+- Added tests of both options against a real server
+
 ## [2.6.0] - 2026-11-05
 
 ### Added
@@ -370,7 +377,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/rapidrest/service-core/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/rapidrest/service-core/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/rapidrest/service-core/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/rapidrest/service-core/compare/v2.4.0...v2.5.0
