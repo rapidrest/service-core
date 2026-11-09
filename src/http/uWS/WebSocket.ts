@@ -7,6 +7,7 @@ import { Duplex } from "stream";
 import type { WebSocket } from "uWebSockets.js";
 import type { HttpRequest } from "../types.js";
 import type { IWebSocketShim } from "../IWebSocketShim.js";
+import { WebSocketDrainTracker } from "../WebSocketDrain.js";
 
 /**
  * HTTP request type for handling WebSocket upgrade requests.
@@ -42,10 +43,45 @@ export interface RequestWS extends HttpRequest {
 export class UWSWebSocketShim extends EventEmitter implements IWebSocketShim {
     private readonly _ws: WebSocket<any>;
     public readyState: number = 1; // OPEN
+    private readonly _drain: WebSocketDrainTracker = new WebSocketDrainTracker(() => this.bufferedAmount);
 
     constructor(ws: WebSocket<any>) {
         super();
         this._ws = ws;
+    }
+
+    /** Bytes queued for the client and not yet written to the socket. `0` once the socket has closed. */
+    public get bufferedAmount(): number {
+        try {
+            return this._ws.getBufferedAmount();
+        } catch {
+            return 0; // Socket already closed
+        }
+    }
+
+    /** `true` after a `send()` met backpressure, until the socket reports it drained. */
+    public get writableNeedDrain(): boolean {
+        return this._drain.writableNeedDrain;
+    }
+
+    /** Registers a callback fired each time the backpressured socket has fully drained. */
+    public onDrain(callback: () => void): void {
+        this._drain.onDrain(callback);
+    }
+
+    /** Resolves `true` when it is safe to send more, `false` if the socket closes first. */
+    public waitForDrain(): Promise<boolean> {
+        return this._drain.waitForDrain();
+    }
+
+    /** Called by the router's `drain` handler. @internal */
+    public notifyDrain(): void {
+        this._drain.handleDrain();
+    }
+
+    /** Called by the router's `close` handler. @internal */
+    public notifyClosed(): void {
+        this._drain.handleClose();
     }
 
     /**
@@ -58,6 +94,7 @@ export class UWSWebSocketShim extends EventEmitter implements IWebSocketShim {
             // uWS returns 1 (sent), 0 (backpressure built up, but the message is queued and will still be delivered)
             // or 2 (dropped because the backpressure limit was reached). Only a dropped message is an error.
             const status = this._ws.send(typeof data === "string" ? data : Buffer.from(data), typeof data !== "string");
+            if (status !== 1) this._drain.markBackpressure();
             if (cb) cb(status === 2 ? new Error("uWS backpressure limit reached: message dropped") : undefined);
         } catch (err: any) {
             if (cb) cb(err);

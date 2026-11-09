@@ -165,3 +165,77 @@ describe("createWebSocketStream Tests", () => {
         expect(ws.end).toHaveBeenCalledWith(1000, undefined);
     });
 });
+
+describe("UWSWebSocketShim send backpressure", () => {
+    function make(buffered: { value: number }, sendStatus = 1) {
+        const ws = {
+            ...makeFakeWs({ send: vi.fn().mockReturnValue(sendStatus) }),
+            getBufferedAmount: () => buffered.value,
+        };
+        return { ws, shim: new UWSWebSocketShim(ws as any) };
+    }
+
+    it("reports bufferedAmount from uWS, and 0 when the socket is gone", () => {
+        const { shim } = make({ value: 123 });
+        expect(shim.bufferedAmount).toBe(123);
+        const gone = new UWSWebSocketShim({
+            getBufferedAmount: () => {
+                throw new Error("Invalid access of closed uWS.WebSocket");
+            },
+        } as any);
+        expect(gone.bufferedAmount).toBe(0);
+    });
+
+    it("waitForDrain() resolves true at once when nothing is queued", async () => {
+        const { shim } = make({ value: 0 });
+        shim.send("a");
+        expect(shim.writableNeedDrain).toBe(false);
+        await expect(shim.waitForDrain()).resolves.toBe(true);
+    });
+
+    it.each([0, 2])("flags writableNeedDrain after a send that returned %s, until drain", async (status) => {
+        const buffered = { value: 500 };
+        const { shim } = make(buffered, status);
+        const drained = vi.fn();
+        shim.onDrain(drained);
+        shim.send("a");
+        expect(shim.writableNeedDrain).toBe(true);
+        const waiting = shim.waitForDrain();
+        // A drain event while data is still queued does not release anyone.
+        shim.notifyDrain();
+        expect(shim.writableNeedDrain).toBe(true);
+        expect(drained).not.toHaveBeenCalled();
+        buffered.value = 0;
+        shim.notifyDrain();
+        await expect(waiting).resolves.toBe(true);
+        expect(shim.writableNeedDrain).toBe(false);
+        expect(drained).toHaveBeenCalledTimes(1);
+        // A drain with nobody waiting fires nothing.
+        shim.notifyDrain();
+        expect(drained).toHaveBeenCalledTimes(1);
+    });
+
+    it("waits when data is queued even without a flagged send, and releases on drain", async () => {
+        const buffered = { value: 10 };
+        const { shim } = make(buffered);
+        const waiting = shim.waitForDrain();
+        buffered.value = 0;
+        shim.notifyDrain();
+        await expect(waiting).resolves.toBe(true);
+    });
+
+    it("resolves pending and later waiters false once the socket closes, and never fires onDrain", async () => {
+        const { shim } = make({ value: 10 }, 0);
+        const drained = vi.fn();
+        shim.onDrain(drained);
+        shim.send("a");
+        const waiting = shim.waitForDrain();
+        shim.notifyClosed();
+        await expect(waiting).resolves.toBe(false);
+        await expect(shim.waitForDrain()).resolves.toBe(false);
+        shim.send("b");
+        expect(shim.writableNeedDrain).toBe(false);
+        shim.notifyDrain();
+        expect(drained).not.toHaveBeenCalled();
+    });
+});

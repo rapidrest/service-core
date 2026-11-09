@@ -12,6 +12,7 @@ import net from "net";
 import os from "os";
 import path from "path";
 import uWS from "uWebSockets.js";
+import { UNREAD_BODY_DRAIN } from "../../../src/http/uWS/Adapters";
 import { HttpRouter } from "../../../src/http/uWS/Router";
 
 const PORT = 37941;
@@ -208,9 +209,12 @@ describe("HttpRouter streaming body (real uWS)", () => {
 
     // A streaming route that rejects the request with a partially-sent (but still undelivered in
     // full) body must be treated the same way — the client sent SOME bytes, but not all of the
-    // declared Content-Length, and never sends the rest.
+    // declared Content-Length, and never sends the rest. The rest is small enough to wait for (see
+    // UNREAD_BODY_DRAIN), so the connection closes once the drain timeout runs out, shortened here.
     it("closes the connection when only part of the declared body ever arrives before the route rejects", async () => {
-        const result = await new Promise<{ closed: boolean; elapsedMs: number }>((resolve) => {
+        const defaultTimeout = UNREAD_BODY_DRAIN.timeoutMs;
+        UNREAD_BODY_DRAIN.timeoutMs = 300;
+        const result = await new Promise<{ closed: boolean; elapsedMs: number; responseText: string }>((resolve) => {
             const socket = net.connect(PORT, "127.0.0.1", () => {
                 socket.write(
                     `POST /reject HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 1000000\r\nConnection: keep-alive\r\n\r\n`,
@@ -219,11 +223,14 @@ describe("HttpRouter streaming body (real uWS)", () => {
             });
             const start = Date.now();
             let settled = false;
+            let responseText = "";
             const settle = (closed: boolean) => {
                 if (settled) return;
                 settled = true;
-                resolve({ closed, elapsedMs: Date.now() - start });
+                resolve({ closed, elapsedMs: Date.now() - start, responseText });
             };
+            // Reading is also what lets the client see the server's FIN: a socket nobody reads stays paused.
+            socket.on("data", (chunk) => (responseText += chunk.toString()));
             // A force-close on a socket that still has unread/unacked data queued can surface to the
             // client as a hard reset (ECONNRESET) rather than a clean FIN — both mean the same thing
             // here: the connection was actually terminated, not left hanging.
@@ -236,7 +243,10 @@ describe("HttpRouter streaming body (real uWS)", () => {
                 }
             }, 3000);
         });
+        UNREAD_BODY_DRAIN.timeoutMs = defaultTimeout;
 
+        // The client gets the answer first, then the close.
+        expect(result.responseText).toMatch(/^HTTP\/1\.1 400 /);
         expect(result.closed).toBe(true);
         expect(result.elapsedMs).toBeLessThan(1000);
     });

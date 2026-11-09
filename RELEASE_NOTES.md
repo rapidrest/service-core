@@ -2,7 +2,52 @@
 
 ## Unreleased
 
+### Added
+
+- Added send backpressure to the WebSocket shim. `IWebSocketShim` gains the optional `bufferedAmount`,
+  `writableNeedDrain`, `onDrain()` and `waitForDrain()`, named after and behaving like the HTTP response adapters'
+  drain API, and the uWS and Bun shims implement them. `waitForDrain()` resolves `true` at once when nothing is queued
+  or once the queue drains, and `false` if the socket closes first. `onDrain()` handlers never fire after close. All
+  four members are optional, so custom shims still compile; treat `undefined` as "unknown". A producer loop is
+  `if ((ws.bufferedAmount ?? 0) > limit && !(await ws.waitForDrain?.())) return;`.
+- Added three `@WebSocket(path, options)` options that control a failed **required** authentication. Their defaults
+  keep today's behaviour exactly:
+    - `loginFallback` (default `true`). When `false`, the route doesn't wait `auth:socketTimeout` for a `LOGIN` frame
+      and doesn't read the client's first frame. The strategies are tried once against the upgrade request, and a
+      failed required auth closes the socket at once. With optional auth, the connection goes ahead anonymously.
+    - `authCloseCode` (default `1002`) is the close code for every failed required auth after the upgrade: a missing
+      credential, a bad `LOGIN` token or a malformed frame. It must be an integer from 1000 to 4999, other than 1005,
+      1006 and 1015.
+    - `authCloseReason` (default: the existing error text) is the close reason, at most 123 UTF-8 bytes.
+
+  Invalid values throw when the route is registered. `AuthMiddleware.authWebSocket()` takes the matching
+  `WebSocketAuthOptions` as an optional third argument.
+- Added the `UNREAD_BODY_DRAIN` export (`{ maxBytes: 16 MiB, timeoutMs: 30000 }`), the limits for discarding a request
+  body that a response was sent before reading (see Fixed). It is read on each such response, so an application can
+  change it at startup. `maxBytes: 0` answers and closes at once.
+- `makeBodyStream(uwsRes, res, contentLength?)` takes an optional declared length.
+
 ### Fixed
+
+- **A response sent before a streamed request body was read never reached the client (uWS).** When a
+  `@StreamingBody()` route, or middleware in front of it such as an auth 401, a rate-limit 429 or a size-limit 413,
+  answered before reading the body, `UWSResponse.end()` called `uwsRes.close()`. The client saw a dropped connection
+  instead of the answer. Closing after the response isn't enough either: the client's unsent body then hits a closed
+  socket, and the TCP reset makes the client discard the answer. `end()` now:
+    1. destroys `req.bodyStream` with the error "The response was sent before the request body was fully read.", so a
+       consumer still reading it doesn't hang;
+    2. lifts any pause still owed;
+    3. reads and discards the rest of the body within `UNREAD_BODY_DRAIN`, without buffering it;
+    4. sends the response on a connection that stays open.
+
+  When the declared `Content-Length` leaves more than `maxBytes` to come, or the byte or time limit is reached, the
+  response goes out with `Connection: close` and the connection closes. That keeps the 2026-09-23 fix for a declared
+  but never-sent body. Nothing is sent if the client leaves first. A stream that `makeBodyStream()` didn't create is
+  left alone and closed after the response. Bun was not affected.
+- **A keep-alive connection stalled after a large streamed request body (uWS).** When the body stream's buffer
+  filled, `makeBodyStream()` paused the socket. uWS can still deliver buffered chunks after `pause()`, including the
+  last one. After the stream ended, nothing called `resume()`, so the next request on the connection was never read.
+  The last chunk now lifts a pause that is still owed. Bun was not affected.
 
 - **Two concurrent creates with the same `@Identifier` value could both succeed.** `RepoUtils.create()` rejects a
   record whose identifier matches an existing one, but it checks and inserts in separate steps, and nothing in the
@@ -34,6 +79,13 @@
   documents with a different `version`. Code or test data that stores a second document with the same identifier
   under another version is now rejected.
 - On a large collection, building the new unique indexes adds time to the first startup after the upgrade.
+- **On uWS, an early answer to a streamed upload now arrives after the rest of the body,** up to the
+  `UNREAD_BODY_DRAIN` limits, rather than as an immediate close. A client that keeps sending past `maxBytes` after the
+  answer can still see a connection reset instead of the response; that is the cost of bounding the drain.
+- **A route that answers while it is still reading `req.bodyStream`** now sees the stream error with "The response
+  was sent before the request body was fully read." Handle the error, or stop reading once you've answered.
+- A `Connection: close` header added only to work around the dropped early answer or the keep-alive stall can be
+  removed.
 
 ## v2.6.1
 

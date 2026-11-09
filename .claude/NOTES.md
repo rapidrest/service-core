@@ -161,7 +161,9 @@ Review (Sonnet) for security and performance topics.
   closure-local `paused` boolean: `pause()` is only called when `push()` returns `false`, and
   `resume()` is only called from `_read()` when that local flag is currently `true` (then reset to
   `false`). Same pairing discipline applies to any other code that touches uWS's `pause()`/`resume()`
-  directly — never call `resume()` "just in case."
+  directly — never call `resume()` "just in case." The reverse also bites: uWS can still deliver buffered
+  chunks after `pause()`, the `isLast` one included, so a `pause()` still owed at `isLast` must be resumed right
+  there (Node never calls `_read()` after `push(null)`), or the keep-alive connection stalls (2026-11-09).
 
 ## Open / in-progress design threads
 
@@ -1219,3 +1221,26 @@ A release pushes `main` and its tag at the same commit, and each push runs Build
   drives a real `Bun.serve()` through `test/helpers/bunDestroyServer.ts` in a child process and skips itself without `bun` on
   PATH. In a Node `http` client the request's own `'error'` can fire before the response's `'close'`: don't let it mask the
   response in a test helper.
+
+### 2026-11-09 — Early responses on a streaming body reach the client; keep-alive no longer stalls after a large body
+
+Reported by MeetCarter's api-services (`POST /imports`, `@StreamingBody()`), which sent `Connection: close` as a workaround.
+- **Stall:** `makeBodyStream()` paused on a full buffer, then uWS delivered the already-buffered last chunk; `push(null)` meant
+  `_read()` never ran again, so the `resume()` was never paid and the next keep-alive request was never read (an ~11 s stall
+  and reset). The `isLast` branch now resumes a pause it still owes.
+- **Early answer lost:** the 2026-09-23 fix made `end()` call `uwsRes.close()` when the body wasn't fully received, so the client
+  got no answer at all. `end(data, true)` alone isn't enough either: uWS closes right after writing, and data the client is
+  still sending then gets a reset that makes it drop the unread answer. uWS can't close a response after `end()` (the object
+  is invalid), so `end()` now defers: it destroys the stream, lifts any owed pause, reads and discards the rest of the body
+  within `UNREAD_BODY_DRAIN` (`maxBytes` 16 MiB remaining by `Content-Length` or counted, `timeoutMs` 30 s), then sends
+  normally (keep-alive kept). Past a limit (or a declared length beyond it, at once) it sends with `end(..., true)`: uWS
+  writes `Connection: close` and closes. A client still sending past the limit can still see a reset; that is the bound.
+- `makeBodyStream(uwsRes, res, contentLength?)` gets the declared length from `Router.ts`. A stream not made by it is left
+  alone (`done(false)`): destroying a foreign stream with an error and no listener crashes the process.
+- A raw `net.Socket` test client must read (`on('data')`) to see the server's FIN; one that never reads only noticed the old
+  `close()`'s reset.
+- Bun has neither issue (`test/http/bun/BunRouter.bodyConnection.test.ts`); a declared-but-never-sent body is closed by
+  Bun's own idle timeout (~10 s). Tests: `test/http/uWS/Router.bodyConnection.test.ts`, `Adapters.test.ts`.
+- `Server`-based tests listen on the default port 3000. If another local app already holds `127.0.0.1:3000` (e.g. a
+  Next.js dev server), the requests reach that app and every such test 404s, on committed code too. Run with `PORT=3457`
+  (nconf reads it).

@@ -679,3 +679,107 @@ describe("AuthMiddleware.register", () => {
         expect(mw.strategies.get("test")).toBe(strategy);
     });
 });
+
+describe("AuthMiddleware.authWebSocket options", () => {
+    const token = () => JWTUtils.createTokenSync(config.get("auth"), { uid: "u1" });
+    const reqFor = (sock: any, headers: Record<string, string> = {}): any => ({ headers, socket: {}, websocket: sock });
+
+    it("uses the configured close code and reason when the LOGIN token is bad", async () => {
+        const mw = makeJwtMiddleware();
+        const handler = mw.authWebSocket(true, ["jwt"], { closeCode: 4001, closeReason: "auth required" });
+        const next = vi.fn();
+        const sock = makeSocket();
+        handler(reqFor(sock), {} as any, next);
+        sock.emit("message", JSON.stringify({ id: 1, type: "LOGIN", data: "bad" }), false);
+        await flush();
+        expect(sock.close).toHaveBeenCalledWith(4001, "auth required");
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it("uses the configured code with the default reason for a binary frame", () => {
+        const mw = makeJwtMiddleware();
+        const sock = makeSocket();
+        mw.authWebSocket(true, ["jwt"], { closeCode: 4001 })(reqFor(sock), {} as any, vi.fn());
+        sock.emit("message", Buffer.from([1]), true);
+        expect(sock.close).toHaveBeenCalledWith(4001, expect.any(String));
+    });
+
+    describe("loginFallback: false", () => {
+        it("closes at once with the configured code, without a timer or a message listener", async () => {
+            const mw = makeJwtMiddleware();
+            const handler = mw.authWebSocket(true, ["jwt"], {
+                loginFallback: false,
+                closeCode: 4001,
+                closeReason: "auth required",
+            });
+            const next = vi.fn();
+            const sock = makeSocket();
+            const onceSpy = vi.spyOn(sock, "once");
+            const timerSpy = vi.spyOn(globalThis, "setTimeout");
+            try {
+                handler(reqFor(sock), {} as any, next);
+                await flush();
+                expect(timerSpy.mock.calls.some((call) => call[1] === 2000)).toBe(false);
+            } finally {
+                timerSpy.mockRestore();
+            }
+            expect(onceSpy).not.toHaveBeenCalled();
+            expect(sock.close).toHaveBeenCalledWith(4001, "auth required");
+            expect(next).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("uses the default close code and the error's text when none is configured", async () => {
+            const mw = makeJwtMiddleware();
+            const sock = makeSocket();
+            mw.authWebSocket(true, ["jwt"], { loginFallback: false })(reqFor(sock), {} as any, vi.fn());
+            await flush();
+            expect(sock.close).toHaveBeenCalledWith(1002, expect.any(String));
+        });
+
+        it("closes when a credential is invalid", async () => {
+            const mw = makeJwtMiddleware();
+            const sock = makeSocket();
+            const next = vi.fn();
+            mw.authWebSocket(true, ["jwt"], { loginFallback: false, closeCode: 4001 })(
+                reqFor(sock, { authorization: "jwt not-a-token" }),
+                {} as any,
+                next,
+            );
+            await flush();
+            expect(sock.close).toHaveBeenCalledWith(4001, expect.any(String));
+            expect(next).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        it("authenticates from the upgrade request", async () => {
+            const mw = makeJwtMiddleware();
+            const sock = makeSocket();
+            const next = vi.fn();
+            const req = reqFor(sock, { authorization: `jwt ${token()}` });
+            mw.authWebSocket(true, ["jwt"], { loginFallback: false })(req, {} as any, next);
+            await flush();
+            expect(next).toHaveBeenCalledWith();
+            expect(req.user.uid).toBe("u1");
+            expect(sock.close).not.toHaveBeenCalled();
+        });
+
+        it("proceeds anonymously at once when auth is optional, with or without a bad credential", async () => {
+            const mw = makeJwtMiddleware();
+            const next = vi.fn();
+            const sock = makeSocket();
+            mw.authWebSocket(false, ["jwt"], { loginFallback: false })(reqFor(sock), {} as any, next);
+            await flush();
+            expect(next).toHaveBeenCalledWith();
+            const next2 = vi.fn();
+            const sock2 = makeSocket();
+            mw.authWebSocket(false, ["jwt"], { loginFallback: false })(
+                reqFor(sock2, { authorization: "jwt nope" }),
+                {} as any,
+                next2,
+            );
+            await flush();
+            expect(next2).toHaveBeenCalledWith();
+            expect(sock.close).not.toHaveBeenCalled();
+            expect(sock2.close).not.toHaveBeenCalled();
+        });
+    });
+});

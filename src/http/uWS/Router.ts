@@ -138,12 +138,12 @@ function makeUWSHandler(
             // check applies here: buffering is exactly what a streaming route opted out of, so there's
             // nothing to buffer or cap up front — enforcing a limit, if desired, is left to the
             // handler consuming req.bodyStream.
-            req.bodyStream = makeBodyStream(uwsRes, res);
-            // See UWSResponse.end() / isBodyStreamFullyReceived(): lets end() force-close the
-            // connection instead of hanging it if the response finalizes before the declared body
-            // has actually arrived (e.g. a route rejecting the request without ever reading the
-            // stream — an auth failure, a validation error, or a client that never sends the body
-            // it declared at all).
+            req.bodyStream = makeBodyStream(uwsRes, res, req.headers["content-length"]);
+            // See UWSResponse.end() / isBodyStreamFullyReceived(): lets end() drain the rest of the
+            // body, or close the connection after the response, instead of hanging it if the response
+            // finalizes before the declared body has actually arrived (e.g. a route rejecting the
+            // request without ever reading the stream — an auth failure, a validation error, or a
+            // client that never sends the body it declared at all).
             res.attachBodyStream(req.bodyStream);
         } else {
             // Body must be read before any middleware runs. If it exceeds maxBodySize, readBody() has
@@ -460,9 +460,14 @@ export class HttpRouter implements IHttpRouter {
                 );
             },
 
+            drain: (ws) => {
+                (ws.getUserData() as { shim?: UWSWebSocketShim }).shim?.notifyDrain?.();
+            },
+
             close: (ws, code, message) => {
                 const userData = ws.getUserData() as { shim?: UWSWebSocketShim };
                 userData.shim?.readyState !== undefined && (userData.shim.readyState = 3); // CLOSED
+                userData.shim?.notifyClosed?.();
                 userData.shim?.emit("close", code, Buffer.from(message).toString());
             },
         };

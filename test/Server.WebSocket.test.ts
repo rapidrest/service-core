@@ -173,6 +173,94 @@ describe("Server WebSocket Tests", () => {
             .expectClosed();
     });
 
+    describe("Required auth options (loginFallback, authCloseCode, authCloseReason)", () => {
+        it("closes at once with the route's code and reason when loginFallback is off [anonymous]", async () => {
+            const started = Date.now();
+            await requestws(server).ws("/connect-strict").expectClosed(4001, "auth required");
+            expect(Date.now() - started).toBeLessThan(1500); // well under the 2 s LOGIN wait
+        });
+
+        it("does not read a LOGIN frame when loginFallback is off", async () => {
+            const user: any = { uid: uuid.v4() };
+            const token = JWTUtils.createTokenSync(config.get("auth"), user);
+            await requestws(server)
+                .ws("/connect-strict")
+                .sendJson({ id: 0, type: "LOGIN", data: token })
+                .expectClosed(4001, "auth required");
+        });
+
+        it("closes with 4001 for an invalid token in the header", async () => {
+            await requestws(server)
+                .ws("/connect-strict", { headers: { Authorization: "jwt not-a-token" } })
+                .expectClosed(4001, "auth required");
+        });
+
+        it("accepts a valid header when loginFallback is off", async () => {
+            const user: any = { uid: uuid.v4() };
+            const token = JWTUtils.createTokenSync(config.get("auth"), user);
+            await requestws(server)
+                .ws("/connect-strict", { headers: { Authorization: `jwt ${token}` } })
+                .expectText("hello " + user.uid)
+                .sendText("ping")
+                .expectText("echo ping")
+                .close()
+                .expectClosed();
+        });
+
+        it("keeps the LOGIN fallback by default and still accepts a LOGIN with a custom code set", async () => {
+            const user: any = { uid: uuid.v4() };
+            const token = JWTUtils.createTokenSync(config.get("auth"), user);
+            await requestws(server)
+                .ws("/connect-code")
+                .sendJson({ id: 0, type: "LOGIN", data: token })
+                .expectJson({ id: 0, type: "LOGIN_RESPONSE", success: true })
+                .expectText("hello " + user.uid)
+                .close()
+                .expectClosed();
+        });
+
+        it("uses the custom code when a LOGIN token is bad, and the default code elsewhere", async () => {
+            await requestws(server)
+                .ws("/connect-code")
+                .sendJson({ id: 0, type: "LOGIN", data: "bad" })
+                .expectClosed(4001);
+            // Unchanged default route: 1002
+            await requestws(server).ws("/connect-secure").expectClosed(1002);
+        });
+    });
+
+    describe("Send backpressure", () => {
+        it("reports bufferedAmount and drain for a slow client", async () => {
+            const { WebSocket } = await import("ws");
+            const client = new WebSocket(`ws://localhost:${server.port}/connect-flood`);
+            const ready = new Promise<void>((resolve) => client.once("message", () => resolve()));
+            await new Promise<void>((resolve, reject) => {
+                client.once("open", () => resolve());
+                client.once("error", reject);
+            });
+            // The route's optional auth waits for a LOGIN frame first, so wait for its greeting before sending.
+            await ready;
+            // Stop reading so the server's frames pile up in its send buffer.
+            (client as any)._socket.pause();
+            const status = new Promise<string>((resolve) => {
+                client.on("message", (data, isBinary) => {
+                    if (!isBinary) resolve(data.toString());
+                });
+            });
+            client.send("flood");
+            await new Promise((r) => setTimeout(r, 500));
+            (client as any)._socket.resume();
+            const text = await Promise.race([
+                status,
+                new Promise<string>((_, rej) => setTimeout(() => rej(new Error("no status")), 20000)),
+            ]);
+            client.terminate();
+            expect(text).toContain("buffered=true needDrain=true");
+            expect(text).toContain("onDrain");
+            expect(text).toContain("drained=true buffered=0 needDrain=false");
+        });
+    });
+
     describe("Origin validation (cross-site WebSocket hijacking)", () => {
         const sameOrigin = () => `http://localhost:${server.port}`;
 

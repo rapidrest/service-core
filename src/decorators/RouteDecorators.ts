@@ -594,6 +594,30 @@ export interface WebSocketRouteOptions {
      * long. On the Bun router this is server-wide (the largest value any route set, and `0` wins).
      */
     idleTimeout?: number;
+    /**
+     * Whether a connection whose upgrade request did not authenticate may still authenticate afterwards with a
+     * `LOGIN` message. Default `true`.
+     *
+     * Applies to a route with required auth (`@Auth([...], true)`). By default the route waits (`auth:socketTimeout`,
+     * 2 s) for a `LOGIN` message, which consumes the client's first frame, and closes the connection when none
+     * arrives or the token is bad. Set it to `false` for a route whose clients always authenticate with the upgrade
+     * request (header, cookie or query parameter): the strategies are then run against the upgrade request only, and
+     * when none authenticates the connection is closed at once (see `authCloseCode`) without reading any frame. For a
+     * route with optional auth it makes an unauthenticated connection proceed anonymously immediately.
+     */
+    loginFallback?: boolean;
+    /**
+     * The close code used when required authentication fails after the upgrade: no credential, an invalid `LOGIN`
+     * token, or a malformed `LOGIN` frame. An integer from `1000` to `4999`, except `1005`, `1006` and `1015`, which
+     * can't be sent in a close frame. Default `1002`. Use an application code (`3000` to `4999`, e.g. `4001`) so a
+     * client can tell an auth failure from a protocol error.
+     */
+    authCloseCode?: number;
+    /**
+     * The close reason sent with a failed required authentication, at most 123 bytes of UTF-8. Default: the
+     * framework's short error text, as before (e.g. "Authentication failed.").
+     */
+    authCloseReason?: string;
 }
 
 /**

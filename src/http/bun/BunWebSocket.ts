@@ -4,6 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 import { EventEmitter } from "events";
 import type { IWebSocketShim } from "../IWebSocketShim.js";
+import { WebSocketDrainTracker } from "../WebSocketDrain.js";
 
 /**
  * Minimal structural slice of Bun's `ServerWebSocket` used by this shim. Deliberately NOT typed as
@@ -16,6 +17,8 @@ import type { IWebSocketShim } from "../IWebSocketShim.js";
 export interface WebSocketSendTarget {
     send(data: string | Uint8Array): number;
     close(code?: number, reason?: string): void;
+    /** Bun's `ServerWebSocket.getBufferedAmount()`. Optional so older stand-ins still satisfy the interface. */
+    getBufferedAmount?(): number;
 }
 
 /**
@@ -27,10 +30,45 @@ export interface WebSocketSendTarget {
 export class BunWebSocketShim extends EventEmitter implements IWebSocketShim {
     private readonly _ws: WebSocketSendTarget;
     public readyState: number = 1; // OPEN
+    private readonly _drain: WebSocketDrainTracker = new WebSocketDrainTracker(() => this.bufferedAmount);
 
     constructor(ws: WebSocketSendTarget) {
         super();
         this._ws = ws;
+    }
+
+    /** Bytes queued for the client and not yet written to the socket. `0` once the socket has closed. */
+    public get bufferedAmount(): number {
+        try {
+            return this._ws.getBufferedAmount?.() ?? 0;
+        } catch {
+            return 0; // Socket already closed
+        }
+    }
+
+    /** `true` after a `send()` met backpressure, until the socket reports it drained. */
+    public get writableNeedDrain(): boolean {
+        return this._drain.writableNeedDrain;
+    }
+
+    /** Registers a callback fired each time the backpressured socket has fully drained. */
+    public onDrain(callback: () => void): void {
+        this._drain.onDrain(callback);
+    }
+
+    /** Resolves `true` when it is safe to send more, `false` if the socket closes first. */
+    public waitForDrain(): Promise<boolean> {
+        return this._drain.waitForDrain();
+    }
+
+    /** Called by the router's `drain` handler. @internal */
+    public notifyDrain(): void {
+        this._drain.handleDrain();
+    }
+
+    /** Called by the router's `close` handler. @internal */
+    public notifyClosed(): void {
+        this._drain.handleClose();
     }
 
     /**
@@ -44,6 +82,7 @@ export class BunWebSocketShim extends EventEmitter implements IWebSocketShim {
             // Bun's ws.send returns bytes sent on success, 0 when the message was dropped due to
             // backpressure, or a negative number when it was queued to be sent once backpressure
             // clears (not itself a failure) — only treat 0 as an actual send failure.
+            if (result <= 0) this._drain.markBackpressure();
             if (cb) cb(result === 0 ? new Error("Bun backpressure: send dropped") : undefined);
         } catch (err: any) {
             if (cb) cb(err);

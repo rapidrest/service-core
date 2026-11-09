@@ -761,6 +761,34 @@ describe("BunRouter websocketConfig lifecycle", () => {
             const ws = makeFakeWs({ data: {} });
             expect(() => (router as any).websocketConfig.close(ws, 1000, "bye")).not.toThrow();
         });
+
+        it("tells the shim the socket closed so pending drain waiters are released", () => {
+            const router = new BunRouter();
+            const ws = makeFakeWs();
+            const shim = { emit: vi.fn(), readyState: 1, notifyClosed: vi.fn() };
+            ws.data.shim = shim;
+            (router as any).websocketConfig.close(ws, 1000, "bye");
+            expect(shim.notifyClosed).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe("drain", () => {
+        it("forwards Bun's drain callback to the shim", () => {
+            const router = new BunRouter();
+            const ws = makeFakeWs();
+            const shim = { notifyDrain: vi.fn() };
+            ws.data.shim = shim;
+            (router as any).websocketConfig.drain(ws);
+            expect(shim.notifyDrain).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not throw when the shim is unset or does not implement it", () => {
+            const router = new BunRouter();
+            expect(() => (router as any).websocketConfig.drain(makeFakeWs({ data: {} }))).not.toThrow();
+            const ws = makeFakeWs();
+            ws.data.shim = {};
+            expect(() => (router as any).websocketConfig.drain(ws)).not.toThrow();
+        });
     });
 });
 

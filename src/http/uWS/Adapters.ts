@@ -295,27 +295,30 @@ export class UWSResponse implements HttpResponse {
         this._settleDrainWaiters(false);
         this._fireFinish();
 
+        // A streaming-body route answering before uWS has received the whole declared request body: the handler
+        // responded without draining req.bodyStream (an auth or validation failure, a rate limit, a size limit hit part
+        // way), a slow client hasn't finished sending, or a client declared a huge Content-Length it never intends to
+        // send. A plain uwsRes.end() now would leave the connection in uWS's keep-alive machinery waiting for bytes that
+        // may never arrive, indefinitely, for the cost of one request's headers, and uWS gives no way to close it once
+        // the response has ended. Closing it now instead (uwsRes.close(), or end(..., closeConnection = true), which
+        // closes as soon as the response is written) resets a connection the client is still sending on, and the reset
+        // makes the client drop the answer: it sees a network error instead of a 401 or a 429. So the rest of the body
+        // is read and discarded first, within UNREAD_BODY_DRAIN's limits, and the response is then sent normally. When
+        // the limits don't allow that, it is sent with `Connection: close` (written by uWS) and uWS closes the
+        // connection right after it.
         if (this._bodyStream && !isBodyStreamFullyReceived(this._bodyStream)) {
-            // This is a streaming-body route finalizing its response before uWS has received the
-            // whole declared request body — whether because the handler responded without draining
-            // req.bodyStream (an auth/validation failure, typically), a slow-but-legitimate client
-            // hasn't finished sending yet, or (the exploit this specifically defends against) the
-            // client declared a huge Content-Length and never intends to send it. A graceful
-            // uwsRes.end() here would leave the connection sitting in uWS's keep-alive machinery
-            // waiting for bytes that may never arrive — indefinitely, for the cost of a single
-            // request's worth of headers. Force the connection closed instead: uWS won't accept
-            // further writes/reads on it either way once this response is finalizing, so there's
-            // nothing lost by not attempting a graceful end() here that keep-alive could have reused.
-            // uwsRes.close() also fires the onAborted callback already registered in the constructor,
-            // which destroys req.bodyStream (via makeBodyStream()'s res.onAbort() hookup) for us.
-            try {
-                this.uwsRes.close();
-            } catch {
-                // Already invalid/closed — nothing left to do.
-            }
+            const cancel = drainBodyStream(this._bodyStream, (fullyReceived) => {
+                if (!this._aborted) this._send(data, !fullyReceived);
+            });
+            // A client that goes away first gets nothing, and its timer must not outlive it.
+            this.onAbort(cancel);
             return;
         }
+        this._send(data, false);
+    }
 
+    /** Writes the status, the headers (unless already sent) and `data`, and ends the uWS response. */
+    private _send(data: any, closeConnection: boolean): void {
         this.uwsRes.cork(() => {
             // Write status line (uWS expects "200 OK" format)
             if (!this._headersSent) {
@@ -332,11 +335,12 @@ export class UWSResponse implements HttpResponse {
                 // without sending body bytes. Allows doCount/doExists to report a count via
                 // content-length without triggering the duplicate-header bug.
                 const cl = this._headers.get("content-length");
-                this.uwsRes.endWithoutBody(typeof cl === "string" ? parseInt(cl, 10) : undefined);
+                this.uwsRes.endWithoutBody(typeof cl === "string" ? parseInt(cl, 10) : undefined, closeConnection);
             } else if (data === undefined || data === null) {
-                this.uwsRes.end();
+                if (closeConnection) this.uwsRes.end("", true);
+                else this.uwsRes.end();
             } else {
-                this.uwsRes.end(data);
+                this.uwsRes.end(data, closeConnection);
             }
         });
     }
@@ -345,9 +349,9 @@ export class UWSResponse implements HttpResponse {
      * Terminates the connection abruptly, so the client sees a failed transfer (a reset or a truncated chunked body)
      * instead of a response that ended normally. See `HttpResponse.destroy()`.
      *
-     * Closes the uWS response with `close()`, as `end()` does for an unfinished streaming-body request, and then runs
-     * the abort bookkeeping itself in case `close()` did not (it is skipped when the uWS response is already invalid).
-     * The reason is accepted for parity with other runtimes and is not used: uWS cannot carry one to the client.
+     * Closes the uWS response with `close()`, and then runs the abort bookkeeping itself in case `close()` did not (it
+     * is skipped when the uWS response is already invalid). The reason is accepted for parity with other runtimes and
+     * is not used: uWS cannot carry one to the client.
      */
     public destroy(_error?: Error): void {
         if (this._aborted || this._writableEnded) return;
@@ -650,34 +654,111 @@ export function readBody(
 export const STREAMING_BODY_HIGH_WATER_MARK = 1024 * 1024;
 
 /**
- * Internal marker set on every `Readable` returned by `makeBodyStream()`, tracking whether uWS has
- * delivered the final chunk of the request body (`onData`'s `isLast`) yet. Deliberately independent
- * of the stream's own `readableEnded` — Node only flips `readableEnded` once a consumer has actually
- * read all the way to the end, so a stream nobody ever reads from (e.g. a route that rejects the
- * request before touching `req.bodyStream` at all) would stay `readableEnded === false` forever even
- * for a request with an already-fully-arrived, zero-byte body. `isBodyStreamFullyReceived()` reads
- * this marker instead — see its own doc comment and `UWSResponse.end()`, which uses it to decide
- * between a graceful `end()` and a forced `close()`.
+ * Limits on how much of a request body uWS reads and throws away after a streaming-body route has answered before the
+ * body was fully received (see `UWSResponse.end()`). Reading the rest first is what lets the client receive the answer:
+ * a connection closed while the client is still sending is reset, and a reset makes the client discard the response it
+ * has not read yet, so the client would see a network error instead of, say, a 401 or a 429.
+ *
+ * A body read to the end this way leaves the connection open for the next request, as after any other response. Past
+ * either limit, the answer is sent with `Connection: close` and the connection is closed right after it. Both values are
+ * read each time such a response is sent, so an application can change them at startup.
  */
-const FULLY_RECEIVED = Symbol("uwsBodyStreamFullyReceived");
+export const UNREAD_BODY_DRAIN: { maxBytes: number; timeoutMs: number } = {
+    /**
+     * The most body bytes still to come (by the declared `Content-Length`, or counted as they arrive for a chunked body)
+     * that are read and discarded. When more remain, the answer is sent at once. 0 turns draining off.
+     */
+    maxBytes: 16 * 1024 * 1024,
+    /** The longest, in milliseconds, the answer waits for the rest of the body (a slow or stalled client). */
+    timeoutMs: 30_000,
+};
+
+/** Internal state of a stream made by `makeBodyStream()`, stored on it under `BODY_STATE`. */
+interface BodyStreamState {
+    /**
+     * Whether uWS has delivered the final chunk (`onData`'s `isLast`). Deliberately independent of the stream's own
+     * `readableEnded`: Node only sets that once a consumer has read to the end, so a stream nobody reads (a route that
+     * rejects the request before touching `req.bodyStream`) would never report an already-fully-arrived body.
+     */
+    fullyReceived: boolean;
+    /** The body length the request declared (`Content-Length`), or `undefined` when it did not (chunked). */
+    declaredLength?: number;
+    /** The body bytes uWS has delivered so far, read or not. */
+    receivedBytes: number;
+    /** Resumes the connection if, and only if, this stream paused it and still owes the matching `resume()`. */
+    releasePause(): void;
+    /** Called after every chunk uWS delivers, once the stream has handled it (see `drainBodyStream()`). */
+    onChunk?: () => void;
+}
+
+const BODY_STATE = Symbol("uwsBodyStreamState");
+
+function bodyStateOf(stream: Readable): BodyStreamState | undefined {
+    return (stream as any)[BODY_STATE];
+}
 
 /**
  * Returns `true` once uWS has delivered the final chunk of `stream`'s request body — i.e. it is safe
  * to let the underlying connection return to uWS's keep-alive pool — regardless of whether anything
  * has actually consumed the stream. Returns `true` for `undefined` (nothing to wait for) so callers
- * can pass `req.bodyStream` directly without an existence check first.
+ * can pass `req.bodyStream` directly without an existence check first, and `false` for a stream
+ * `makeBodyStream()` did not make.
  *
  * See `UWSResponse.end()`: a streaming route's handler can legitimately respond (an auth failure, a
  * validation error, anything) without ever reading `req.bodyStream`. If the client declared a large
  * `Content-Length` and hasn't actually sent it all yet — or, in the malicious case, never intends to
  * — a plain `uwsRes.end()` at that point leaves the keep-alive connection open indefinitely: uWS
  * won't consider it clean for reuse until it has received every byte of the declared body, and nothing
- * in that scenario ever makes that happen. `end()` uses this check to force the connection closed
- * instead whenever it would otherwise leave that promise unfulfilled.
+ * in that scenario ever makes that happen. `end()` uses this check to drain the rest of the body
+ * within `UNREAD_BODY_DRAIN`'s limits first, or to close the connection after the response.
  */
 export function isBodyStreamFullyReceived(stream: Readable | undefined): boolean {
     if (!stream) return true;
-    return (stream as any)[FULLY_RECEIVED] === true;
+    return bodyStateOf(stream)?.fullyReceived === true;
+}
+
+/**
+ * Discards the rest of a request body the response no longer needs, and calls `done` once: with `true` when the whole
+ * body has arrived (the connection can stay open), or with `false` (the response must close the connection) straight
+ * away when the declared length leaves more than `UNREAD_BODY_DRAIN.maxBytes` to come, or later when that many bytes
+ * have arrived or `UNREAD_BODY_DRAIN.timeoutMs` runs out. When the client goes away first, `done` is never called; the
+ * caller sees the abort itself.
+ *
+ * The stream is destroyed, so a consumer still reading it gets an error instead of waiting forever, and a `pause()` the
+ * stream still owes a `resume()` for is lifted so the rest of the body can arrive. A stream `makeBodyStream()` did not
+ * make is left alone, and `done(false)` is called at once.
+ *
+ * @returns A function that stops waiting without calling `done`, for when the client has gone away.
+ */
+function drainBodyStream(stream: Readable, done: (fullyReceived: boolean) => void): () => void {
+    const state = bodyStateOf(stream);
+    if (!state) {
+        // Not a stream makeBodyStream() made: nothing here can tell when its body ends.
+        done(false);
+        return () => undefined;
+    }
+    if (!stream.destroyed) stream.destroy(new Error("The response was sent before the request body was fully read."));
+    state.releasePause();
+    const { maxBytes, timeoutMs } = UNREAD_BODY_DRAIN;
+    const limit = state.receivedBytes + maxBytes;
+    if (maxBytes <= 0 || (state.declaredLength !== undefined && state.declaredLength > limit)) {
+        done(false);
+        return () => undefined;
+    }
+    const stop = (): void => {
+        clearTimeout(timer);
+        state.onChunk = undefined;
+    };
+    const settle = (fullyReceived: boolean): void => {
+        stop();
+        done(fullyReceived);
+    };
+    const timer = setTimeout(() => settle(false), timeoutMs);
+    state.onChunk = () => {
+        if (state.fullyReceived) settle(true);
+        else if (state.receivedBytes > limit) settle(false);
+    };
+    return stop;
 }
 
 /**
@@ -702,20 +783,22 @@ export function isBodyStreamFullyReceived(stream: Readable | undefined): boolean
  * The same pairing discipline also applies to the final chunk: when a chunk that overflows the
  * buffer also happens to be the last one (`isLast`), `pause()` is skipped entirely — the stream is
  * about to signal EOF via `push(null)` regardless, so Node's `Readable` never calls `_read()` again
- * to issue the matching `resume()`, which would otherwise leave uWS's connection paused forever with
- * nothing left in this function to ever un-pause it.
+ * to issue the matching `resume()`. For that same reason, a `pause()` still owed a `resume()` when
+ * the last chunk arrives is resumed right there: uWS can still deliver chunks it had already
+ * buffered after `pause()` ("some buffered data may still be sent to onData"), the last one
+ * included, and a connection left paused never reads the next keep-alive request on it.
  *
  * The stream is destroyed with an error if the client disconnects mid-upload (wired through the
  * existing single `onAborted` fan-out via `res.onAbort()`, matching `readBody()`'s own abort
  * handling) so a handler awaiting `for await (const chunk of req.bodyStream)` sees a thrown error
  * instead of hanging forever, and can clean up (e.g. delete a partial temp file) in its own
  * `catch`/`finally`. A route that never reads `req.bodyStream` at all can still hit this path — e.g.
- * `UWSResponse.end()` itself calls `uwsRes.close()` (which fires `onAborted`) when finalizing a
- * response before the body was fully received — so a permanent no-op `error` listener is attached
- * below as well: a `Readable` with no active consumer still emits `error` on `destroy(err)`, and
- * Node treats an `error` event with zero listeners as fatal (crashes the process). This listener
- * doesn't swallow anything from a real consumer — `for await`/`.pipe()`/an explicit `.on("error")`
- * all still see the same event; EventEmitter calls every registered listener, not just the first.
+ * `UWSResponse.end()` destroys the stream when the response is sent before the body was fully
+ * received — so a permanent no-op `error` listener is attached below as well: a `Readable` with no
+ * active consumer still emits `error` on `destroy(err)`, and Node treats an `error` event with zero
+ * listeners as fatal (crashes the process). This listener doesn't swallow anything from a real
+ * consumer — `for await`/`.pipe()`/an explicit `.on("error")` all still see the same event;
+ * EventEmitter calls every registered listener, not just the first.
  *
  * Must be called synchronously, before any `await`, in the same tick as request handling begins —
  * uWS requires `onData`/`onAborted` to be registered before any asynchronous operation, matching the
@@ -724,12 +807,31 @@ export function isBodyStreamFullyReceived(stream: Readable | undefined): boolean
  * @param uwsRes The uWS HttpResponse to read the body from.
  * @param res Used only to register the abort callback through the framework's existing single
  * `onAborted` slot (see `UWSResponse.onAbort()`) — never written to otherwise.
+ * @param contentLength The request's `Content-Length` header, if any. Lets `UWSResponse.end()` tell at once whether
+ * the rest of an unread body is small enough to drain (see `UNREAD_BODY_DRAIN`); without it, bytes are counted as they
+ * arrive.
  */
-export function makeBodyStream(uwsRes: UWSHttpResponse, res: { onAbort: (callback: () => void) => void }): Readable {
+export function makeBodyStream(
+    uwsRes: UWSHttpResponse,
+    res: { onAbort: (callback: () => void) => void },
+    contentLength?: string | string[],
+): Readable {
     // Tracks whether THIS function called uwsRes.pause() and is therefore the one that owes it a
     // matching resume() — see the doc comment above for why resume() must never be called
     // speculatively.
     let paused = false;
+    const state: BodyStreamState = {
+        fullyReceived: false,
+        declaredLength:
+            typeof contentLength === "string" && /^\d+$/.test(contentLength) ? Number(contentLength) : undefined,
+        receivedBytes: 0,
+        releasePause: () => {
+            if (paused) {
+                paused = false;
+                uwsRes.resume();
+            }
+        },
+    };
 
     const stream = new Readable({
         highWaterMark: STREAMING_BODY_HIGH_WATER_MARK,
@@ -737,16 +839,13 @@ export function makeBodyStream(uwsRes: UWSHttpResponse, res: { onAbort: (callbac
             // `stream.destroyed` is set synchronously the moment destroy() is called (Node
             // guarantees this before this `_destroy` implementation even runs), so this check can't
             // race a concurrent destroy from the onAbort handler below.
-            if (paused && !stream.destroyed) {
-                paused = false;
-                uwsRes.resume();
-            }
+            if (!stream.destroyed) state.releasePause();
         },
         destroy(err, callback) {
             callback(err);
         },
     });
-    (stream as any)[FULLY_RECEIVED] = false;
+    (stream as any)[BODY_STATE] = state;
     // Safety net against an unhandled 'error' event crashing the process when nobody ever consumes
     // this stream — see the doc comment above for the full rationale. A real consumer (for await,
     // .pipe(), or its own .on("error")) still observes the same event independently of this listener.
@@ -758,28 +857,32 @@ export function makeBodyStream(uwsRes: UWSHttpResponse, res: { onAbort: (callbac
     });
 
     uwsRes.onData((chunk, isLast) => {
-        // The stream was already destroyed (consumer error, or the connection aborted) — nothing
-        // downstream wants any more chunks. uWS keeps delivering onData for the remainder of the
-        // body regardless (there's no way to tell it to stop mid-request), so this must stay a
-        // silent no-op rather than pushing into a destroyed stream (which throws).
-        if (stream.destroyed) return;
-
-        if (chunk.byteLength > 0) {
-            // `chunk` is a raw ArrayBuffer uWS reuses/detaches once this callback returns — see the
-            // identical, more detailed comment in readBody() above for why `.slice(0)` is required.
-            const ok = stream.push(Buffer.from(chunk.slice(0)));
-            // Never pause on the final chunk — see the doc comment above for why that would leave
-            // the connection paused with no matching resume() ever coming.
-            if (!ok && !isLast) {
-                paused = true;
-                uwsRes.pause();
-            }
-        }
-
+        state.receivedBytes += chunk.byteLength;
         if (isLast) {
-            (stream as any)[FULLY_RECEIVED] = true;
-            stream.push(null);
+            state.fullyReceived = true;
+            // A pause() may still be owed its resume() here: see the doc comment above.
+            state.releasePause();
         }
+
+        // A destroyed stream (a consumer error, an abort, or a response sent before the body was read) wants no more
+        // chunks. uWS keeps delivering onData for the rest of the body regardless (there's no way to tell it to stop
+        // mid-request), so they are dropped here rather than pushed into a destroyed stream (which throws).
+        if (!stream.destroyed) {
+            if (chunk.byteLength > 0) {
+                // `chunk` is a raw ArrayBuffer uWS reuses/detaches once this callback returns — see the
+                // identical, more detailed comment in readBody() above for why `.slice(0)` is required.
+                const ok = stream.push(Buffer.from(chunk.slice(0)));
+                // Never pause on the final chunk — see the doc comment above for why that would leave
+                // the connection paused with no matching resume() ever coming.
+                if (!ok && !isLast) {
+                    paused = true;
+                    uwsRes.pause();
+                }
+            }
+            if (isLast) stream.push(null);
+        }
+
+        state.onChunk?.();
     });
 
     return stream;

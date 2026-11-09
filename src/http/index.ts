@@ -45,7 +45,7 @@ export type { CsrfCheckOptions, CsrfCookieOptions } from "./csrf/csrf.js";
 // `uWebSockets.js` at module load, which does not work under Bun. Consumers that only annotate with
 // the type stay safe on every runtime; constructing one is done internally by Server.ts via a
 // dynamic import gated on `isBunRuntime()`.
-export { UWSRequest, UWSResponse, makeBodyStream, readBody } from "./uWS/Adapters.js";
+export { UNREAD_BODY_DRAIN, UWSRequest, UWSResponse, makeBodyStream, readBody } from "./uWS/Adapters.js";
 export type { HttpRouter } from "./uWS/Router.js";
 export type { RequestWS } from "./uWS/WebSocket.js";
 export { UWSWebSocketShim, createWebSocketStream } from "./uWS/WebSocket.js";

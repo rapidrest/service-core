@@ -11,6 +11,7 @@ import {
     parseQueryString,
     readBody,
     STREAMING_BODY_HIGH_WATER_MARK,
+    UNREAD_BODY_DRAIN,
     UWSRequest,
     UWSResponse,
 } from "../../../src/http/uWS/Adapters";
@@ -907,9 +908,20 @@ describe("isBodyStreamFullyReceived Tests", () => {
 
 /** A fake uWS HttpResponse combining everything both UWSResponse and makeBodyStream() need: status/
  * header/end/endWithoutBody/write tracking (from makeUwsRes()) plus onData/pause/resume/close (from
- * makeUwsResForStream()) — used only by the force-close integration tests below. */
+ * makeUwsResForStream()) — used only by the unread-body tests below. `endArgs` records each end()'s
+ * `closeConnection` argument alongside its body. */
 function makeFullFakeUwsRes() {
-    const calls: any = { headers: [], statuses: [], ended: [], endWithoutBody: [], writes: [], closed: [] };
+    const calls: any = {
+        headers: [],
+        statuses: [],
+        ended: [],
+        endArgs: [],
+        endWithoutBody: [],
+        writes: [],
+        closed: [],
+        pauses: 0,
+        resumes: 0,
+    };
     let onAbortedCb: (() => void) | undefined;
     let onDataCb: ((chunk: ArrayBuffer, isLast: boolean) => void) | undefined;
     const res: any = {
@@ -919,14 +931,19 @@ function makeFullFakeUwsRes() {
         cork: (fn: () => void) => fn(),
         writeStatus: (s: string) => calls.statuses.push(s),
         writeHeader: (k: string, v: string) => calls.headers.push([k, v]),
-        end: (data?: any) => calls.ended.push(data),
-        endWithoutBody: (n?: number) => calls.endWithoutBody.push(n),
+        end: (data?: any, closeConnection?: boolean) => {
+            calls.ended.push(data);
+            calls.endArgs.push([data, closeConnection]);
+        },
+        endWithoutBody: (n?: number, closeConnection?: boolean) => calls.endWithoutBody.push([n, closeConnection]),
         write: (data: any) => calls.writes.push(data),
         close: () => {
             calls.closed.push(1);
             // uwsRes.close() fires the same onAborted callback a real client disconnect would.
             onAbortedCb?.();
         },
+        pause: () => calls.pauses++,
+        resume: () => calls.resumes++,
         onData: (cb: (chunk: ArrayBuffer, isLast: boolean) => void) => {
             onDataCb = cb;
         },
@@ -934,39 +951,188 @@ function makeFullFakeUwsRes() {
             const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
             onDataCb?.(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), isLast);
         },
+        abort: () => onAbortedCb?.(),
         _calls: calls,
     };
     return res;
 }
 
-describe("UWSResponse.attachBodyStream() / end() force-close on undrained body (2026-09-23 fix)", () => {
-    it("force-closes the connection instead of writing a normal response when the body was never fully received", () => {
-        const uwsRes = makeFullFakeUwsRes();
-        const res = new UWSResponse(uwsRes);
-        const stream = makeBodyStream(uwsRes, res);
-        res.attachBodyStream(stream);
+/** A UWSResponse for a streaming-body route whose request declared `contentLength` (none when `undefined`). */
+function makeStreamingResponse(contentLength?: string) {
+    const uwsRes = makeFullFakeUwsRes();
+    const res = new UWSResponse(uwsRes);
+    const stream = makeBodyStream(uwsRes, res, contentLength);
+    res.attachBodyStream(stream);
+    return { uwsRes, res, stream };
+}
 
-        // The route rejects the request without ever reading req.bodyStream, and uWS hasn't
-        // delivered isLast yet (e.g. the client declared a huge Content-Length and never sent it).
-        res.status(400).json({ error: "rejected" });
+describe("UWSResponse.end() before the streaming body was fully received", () => {
+    const defaults = { ...UNREAD_BODY_DRAIN };
+    afterEach(() => {
+        Object.assign(UNREAD_BODY_DRAIN, defaults);
+        vi.useRealTimers();
+    });
 
-        expect(uwsRes._calls.closed).toEqual([1]);
+    it("reads the rest of a small body first, then answers normally on a connection that stays open", () => {
+        const { uwsRes, res, stream } = makeStreamingResponse("10");
+        uwsRes.fireData("abc", false);
+
+        // The route rejects the request without reading req.bodyStream.
+        res.status(401).json({ error: "unauthorized" });
+        expect(res.writableEnded).toBe(true);
+        expect(stream.destroyed).toBe(true);
+        expect(uwsRes._calls.statuses).toEqual([]);
+        expect(uwsRes._calls.ended).toEqual([]);
+
+        uwsRes.fireData("defg", false);
+        expect(uwsRes._calls.ended).toEqual([]);
+        uwsRes.fireData("hij", true);
+
+        expect(uwsRes._calls.closed).toEqual([]);
+        expect(uwsRes._calls.statuses).toEqual(["401 Unauthorized"]);
+        expect(uwsRes._calls.endArgs).toEqual([[JSON.stringify({ error: "unauthorized" }), false]]);
+    });
+
+    it("answers at once and closes when the declared body leaves more than maxBytes to read", () => {
+        UNREAD_BODY_DRAIN.maxBytes = 5;
+        const { uwsRes, res } = makeStreamingResponse("10");
+        uwsRes.fireData("abcd", false); // 6 bytes still to come
+
+        res.status(429).json({ error: "slow down" });
+
+        expect(uwsRes._calls.closed).toEqual([]);
+        expect(uwsRes._calls.statuses).toEqual(["429 Too Many Requests"]);
+        expect(uwsRes._calls.endArgs).toEqual([[JSON.stringify({ error: "slow down" }), true]]);
+    });
+
+    it("waits for a body that is exactly maxBytes from the end", () => {
+        UNREAD_BODY_DRAIN.maxBytes = 6;
+        const { uwsRes, res } = makeStreamingResponse("10");
+        uwsRes.fireData("abcd", false);
+
+        res.status(401).end();
+        expect(uwsRes._calls.ended).toEqual([]);
+        uwsRes.fireData("efghij", true);
+
+        expect(uwsRes._calls.endArgs).toEqual([[undefined, undefined]]);
+    });
+
+    it("answers at once and closes when draining is turned off (maxBytes 0)", () => {
+        UNREAD_BODY_DRAIN.maxBytes = 0;
+        const { uwsRes, res } = makeStreamingResponse();
+
+        res.status(401).end();
+
+        // No body and a connection to close: uWS is given an empty body so it can be told to close.
+        expect(uwsRes._calls.endArgs).toEqual([["", true]]);
+    });
+
+    it("answers and closes once a body without a declared length runs past maxBytes", () => {
+        UNREAD_BODY_DRAIN.maxBytes = 8;
+        const { uwsRes, res } = makeStreamingResponse();
+        uwsRes.fireData("abc", false);
+
+        res.status(401).send("no");
+        uwsRes.fireData("12345678", false);
+        expect(uwsRes._calls.ended).toEqual([]);
+        uwsRes.fireData("9", false);
+
+        expect(uwsRes._calls.endArgs).toEqual([["no", true]]);
+        // Later chunks change nothing.
+        uwsRes.fireData("more", true);
+        expect(uwsRes._calls.endArgs).toHaveLength(1);
+    });
+
+    it("answers and closes when the rest of the body does not arrive within timeoutMs", () => {
+        vi.useFakeTimers();
+        UNREAD_BODY_DRAIN.timeoutMs = 1000;
+        const { uwsRes, res } = makeStreamingResponse("100");
+
+        res.status(401).send("no");
+        vi.advanceTimersByTime(999);
+        expect(uwsRes._calls.ended).toEqual([]);
+        vi.advanceTimersByTime(1);
+
+        expect(uwsRes._calls.endArgs).toEqual([["no", true]]);
+        // The rest of the body arriving afterwards changes nothing.
+        uwsRes.fireData(Buffer.alloc(100), true);
+        expect(uwsRes._calls.endArgs).toHaveLength(1);
+    });
+
+    it("sends nothing when the client goes away while the rest of the body is read", () => {
+        vi.useFakeTimers();
+        const { uwsRes, res } = makeStreamingResponse("100");
+
+        res.status(401).send("no");
+        expect(vi.getTimerCount()).toBe(1);
+        uwsRes.abort();
+        // The drain timer is cleared, so it does not keep the process alive.
+        expect(vi.getTimerCount()).toBe(0);
+        vi.runAllTimers();
+
+        expect(res.aborted).toBe(true);
         expect(uwsRes._calls.ended).toEqual([]);
         expect(uwsRes._calls.statuses).toEqual([]);
-        expect(uwsRes._calls.headers).toEqual([]);
+    });
+
+    it("resumes a connection the stream had paused, so the rest of the body can arrive", () => {
+        const { uwsRes, res } = makeStreamingResponse(String(STREAMING_BODY_HIGH_WATER_MARK + 11));
+        // Nothing reads the stream, so this fills it and pauses the connection.
+        uwsRes.fireData(Buffer.alloc(STREAMING_BODY_HIGH_WATER_MARK + 1, 1), false);
+        expect(uwsRes._calls.pauses).toBe(1);
+
+        res.status(413).end();
+        expect(uwsRes._calls.resumes).toBe(1);
+
+        uwsRes.fireData(Buffer.alloc(10, 1), true);
+        expect(uwsRes._calls.endArgs).toEqual([[undefined, undefined]]);
+        // The resume() was owed once and paid once.
+        expect(uwsRes._calls.resumes).toBe(1);
+    });
+
+    it("errors a consumer still reading the stream instead of leaving it waiting", async () => {
+        const { uwsRes, res, stream } = makeStreamingResponse("100");
+        uwsRes.fireData("abc", false);
+        const reading = (async () => {
+            for await (const _chunk of stream) {
+                // Keeps reading.
+            }
+        })();
+
+        res.status(400).end();
+
+        await expect(reading).rejects.toThrow("The response was sent before the request body was fully read.");
+    });
+
+    it("tells uWS to close after a HEAD response too", () => {
+        UNREAD_BODY_DRAIN.maxBytes = 0;
+        const { uwsRes, res } = makeStreamingResponse();
+        res.isHead = true;
+        res.setHeader("content-length", "42");
+
+        res.status(200).end();
+
+        expect(uwsRes._calls.endWithoutBody).toEqual([[42, true]]);
+    });
+
+    it("answers and closes when the attached stream is not one makeBodyStream() made", () => {
+        const uwsRes = makeFullFakeUwsRes();
+        const res = new UWSResponse(uwsRes);
+        res.attachBodyStream(new Readable({ read: () => undefined }));
+
+        res.status(400).send("no");
+
+        expect(uwsRes._calls.endArgs).toEqual([["no", true]]);
     });
 
     it("ends normally when the attached body stream was fully received before end() is called", () => {
-        const uwsRes = makeFullFakeUwsRes();
-        const res = new UWSResponse(uwsRes);
-        const stream = makeBodyStream(uwsRes, res);
-        res.attachBodyStream(stream);
+        const { uwsRes, res } = makeStreamingResponse("0");
 
         uwsRes.fireData(Buffer.alloc(0), true); // empty body, fully received immediately
         res.status(200).json({ ok: true });
 
         expect(uwsRes._calls.closed).toEqual([]);
-        expect(uwsRes._calls.ended).toEqual([JSON.stringify({ ok: true })]);
+        expect(uwsRes._calls.endArgs).toEqual([[JSON.stringify({ ok: true }), false]]);
         expect(uwsRes._calls.statuses).toEqual(["200 OK"]);
     });
 
@@ -977,19 +1143,37 @@ describe("UWSResponse.attachBodyStream() / end() force-close on undrained body (
         res.status(204).end();
 
         expect(uwsRes._calls.closed).toEqual([]);
-        expect(uwsRes._calls.ended).toEqual([undefined]);
+        expect(uwsRes._calls.endArgs).toEqual([[undefined, undefined]]);
     });
 
-    it("swallows a throw from uwsRes.close() (already invalid/closed) rather than propagating it", () => {
-        const uwsRes = makeFullFakeUwsRes();
-        uwsRes.close = () => {
-            throw new Error("invalid access of closed uWS.HttpResponse");
-        };
-        const res = new UWSResponse(uwsRes);
-        const stream = makeBodyStream(uwsRes, res);
-        res.attachBodyStream(stream);
+    it("ignores a Content-Length that is not a plain number and counts the bytes instead", () => {
+        UNREAD_BODY_DRAIN.maxBytes = 4;
+        const { uwsRes, res } = makeStreamingResponse("1e9");
 
-        expect(() => res.status(400).end()).not.toThrow();
+        res.status(401).end();
+        expect(uwsRes._calls.ended).toEqual([]);
+        uwsRes.fireData("12345", false);
+
+        expect(uwsRes._calls.endArgs).toEqual([["", true]]);
+    });
+});
+
+describe("makeBodyStream() and a pause() still owed at the last chunk", () => {
+    it("resumes the connection when the last chunk arrives after a pause()", async () => {
+        const uwsRes = makeFullFakeUwsRes();
+        const stream = makeBodyStream(uwsRes, { onAbort: () => undefined });
+
+        uwsRes.fireData(Buffer.alloc(STREAMING_BODY_HIGH_WATER_MARK + 1, 1), false);
+        expect(uwsRes._calls.pauses).toBe(1);
+        // uWS delivers a chunk it had already buffered, the last one, after pause().
+        uwsRes.fireData(Buffer.alloc(10, 1), true);
+
+        expect(uwsRes._calls.resumes).toBe(1);
+        let size = 0;
+        for await (const chunk of stream) size += chunk.length;
+        expect(size).toBe(STREAMING_BODY_HIGH_WATER_MARK + 11);
+        // Reading to the end does not resume a second time.
+        expect(uwsRes._calls.resumes).toBe(1);
     });
 });
 

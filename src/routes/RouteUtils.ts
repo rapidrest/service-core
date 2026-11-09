@@ -11,7 +11,7 @@ import { OpenApiSpec } from "../OpenApiSpec.js";
 import { ApiErrorMessages, ApiErrors } from "../ApiErrors.js";
 import { ACLAction, ACLUtils, type AccessControlList } from "../security/index.js";
 import _ from "lodash-es";
-import { AuthMiddleware } from "../auth/AuthMiddleware.js";
+import { AuthMiddleware, type WebSocketAuthOptions } from "../auth/AuthMiddleware.js";
 import type { AuthResult } from "../auth/AuthStrategy.js";
 import { RateLimiter } from "../RateLimiter.js";
 import {
@@ -25,6 +25,9 @@ import {
 import { NetUtils } from "../NetUtils.js";
 import { verifyCsrfRequest, ensureCsrfCookie, type CsrfCheckOptions } from "../http/csrf/csrf.js";
 const { Config, Inject, Logger } = ObjectDecorators;
+
+/** The `@WebSocket()` options that configure authentication rather than the router's limits. */
+const WS_AUTH_OPTION_KEYS: string[] = ["loginFallback", "authCloseCode", "authCloseReason"];
 
 /**
  * Provides a set of utilities for converting Route classes to HTTP middleware.
@@ -230,13 +233,17 @@ export class RouteUtils {
         if (typeof options !== "object" || Array.isArray(options)) {
             throw new Error(`Invalid WebSocket options for ${routeName}: expected an object.`);
         }
-        const limits: Record<keyof WebSocketRouteOptions, { min: number; max: number; zero?: boolean }> = {
+        const limits: Record<"maxPayloadLength" | "maxBackpressure" | "idleTimeout", { min: number; max: number; zero?: boolean }> = {
             maxPayloadLength: { min: 1, max: MAX_WEBSOCKET_PAYLOAD_LENGTH },
             maxBackpressure: { min: 1, max: MAX_WEBSOCKET_BACKPRESSURE },
             idleTimeout: { min: 8, max: MAX_WEBSOCKET_IDLE_TIMEOUT, zero: true },
         };
         const resolved: WebSocketRouteOptions = {};
         for (const key of Object.keys(options)) {
+            // The auth options are validated by `resolveWebSocketAuthOptions()` and never reach the router.
+            if (WS_AUTH_OPTION_KEYS.includes(key)) {
+                continue;
+            }
             if (!Object.prototype.hasOwnProperty.call(limits, key)) {
                 throw new Error(
                     `Invalid WebSocket options for ${routeName}: unknown option "${key}" (expected ` +
@@ -244,7 +251,7 @@ export class RouteUtils {
                 );
             }
         }
-        for (const key of Object.keys(limits) as Array<keyof WebSocketRouteOptions>) {
+        for (const key of Object.keys(limits) as Array<keyof typeof limits>) {
             const value: unknown = options[key];
             if (value === undefined) {
                 continue;
@@ -260,6 +267,61 @@ export class RouteUtils {
             resolved[key] = value;
         }
         return resolved;
+    }
+
+    /**
+     * Validates the authentication options of a `@WebSocket()` route (`loginFallback`, `authCloseCode`,
+     * `authCloseReason`) and returns them for `AuthMiddleware.authWebSocket()`. A field that is `undefined` is left
+     * out and keeps its default, so a route without them behaves exactly as before.
+     *
+     * @param options The options declared on the route, if any.
+     * @param routeName A description of the route, used in the error message.
+     * @throws Error naming the route when an option is invalid.
+     */
+    public static resolveWebSocketAuthOptions(
+        options: WebSocketRouteOptions | undefined,
+        routeName: string,
+    ): WebSocketAuthOptions | undefined {
+        if (!options || typeof options !== "object") {
+            return undefined;
+        }
+        const resolved: WebSocketAuthOptions = {};
+        if (options.loginFallback !== undefined) {
+            if (typeof options.loginFallback !== "boolean") {
+                throw new Error(
+                    `Invalid WebSocket option loginFallback for ${routeName}: ${String(options.loginFallback)} is not a boolean.`,
+                );
+            }
+            resolved.loginFallback = options.loginFallback;
+        }
+        if (options.authCloseCode !== undefined) {
+            const code: unknown = options.authCloseCode;
+            if (
+                typeof code !== "number" ||
+                !Number.isInteger(code) ||
+                code < 1000 ||
+                code > 4999 ||
+                code === 1005 ||
+                code === 1006 ||
+                code === 1015
+            ) {
+                throw new Error(
+                    `Invalid WebSocket option authCloseCode for ${routeName}: ${String(code)} is not an integer from ` +
+                        `1000 to 4999 (other than 1005, 1006 and 1015).`,
+                );
+            }
+            resolved.closeCode = code;
+        }
+        if (options.authCloseReason !== undefined) {
+            const reason: unknown = options.authCloseReason;
+            if (typeof reason !== "string" || Buffer.byteLength(reason, "utf8") > 123) {
+                throw new Error(
+                    `Invalid WebSocket option authCloseReason for ${routeName}: expected a string of at most 123 bytes.`,
+                );
+            }
+            resolved.closeReason = reason;
+        }
+        return Object.keys(resolved).length > 0 ? resolved : undefined;
     }
 
     /**
@@ -714,9 +776,12 @@ export class RouteUtils {
                             // is appended last so it sits closest to runChain()'s own end-of-chain fallback —
                             // see its doc comment for why WS routes need this even though HTTP routes don't
                             // (globalMiddleware, which is where HTTP gets this from, is never given to ws()).
+                            const wsRouteName: string = `WS ${path} (${route.constructor.name}.${key})`;
+                            const wsAuthOptions: WebSocketAuthOptions | undefined =
+                                RouteUtils.resolveWebSocketAuthOptions(metadata.wsOptions, wsRouteName);
                             const wsMiddleware: Array<RequestHandler> = this.authMiddleware
                                 ? [
-                                      this.authMiddleware.authWebSocket(authRequired, authStrategies),
+                                      this.authMiddleware.authWebSocket(authRequired, authStrategies, ...(wsAuthOptions ? [wsAuthOptions] : [])),
                                       ...middleware,
                                       this.sanitizeWsError(),
                                   ]

@@ -12,6 +12,23 @@ import { JWTStrategy } from "./JWTStrategy.js";
 const { Config, Init } = ObjectDecorators;
 
 /**
+ * Per-route behaviour of `AuthMiddleware.authWebSocket()`. Every field is optional; the defaults are the framework's
+ * long-standing behaviour. Set from the `@WebSocket()` options `loginFallback`, `authCloseCode` and `authCloseReason`.
+ */
+export interface WebSocketAuthOptions {
+    /**
+     * Wait for a `LOGIN` message when the upgrade request did not authenticate. Default `true`. When `false`, no
+     * frame is read and no timer started: the strategies are tried against the upgrade request only, and a failure is
+     * handled at once.
+     */
+    loginFallback?: boolean;
+    /** Close code used when required auth fails after the upgrade. Default `1002`. */
+    closeCode?: number;
+    /** Close reason used when required auth fails after the upgrade. Default: the error's short text. */
+    closeReason?: string;
+}
+
+/**
  * A set of common utilities for performing authentication using one or more strategies.
  *
  * @author Jean-Philippe Steinmetz <rapidrests@gmail.com>
@@ -172,8 +189,16 @@ export class AuthMiddleware {
      *
      * @param required Set to `true` to indicate that auth is required, otherwise `false`.
      * @param strategies The strategy names to authenticate with. Defaults to `["jwt"]`, matching `RouteUtils`.
+     * @param options Optional per-route behaviour: turn the `LOGIN` fallback off and set the close code and reason
+     * of a failed required auth. Omitted, the behaviour is unchanged.
      */
-    public authWebSocket(required: boolean, strategies: string[] = ["jwt"]): RequestHandler {
+    public authWebSocket(
+        required: boolean,
+        strategies: string[] = ["jwt"],
+        options: WebSocketAuthOptions = {},
+    ): RequestHandler {
+        const loginFallback: boolean = options.loginFallback ?? true;
+        const closeCode: number = options.closeCode ?? 1002;
         return (req: HttpRequest, _res: HttpResponse, next: NextFunction) => {
             const sock: any = (req as RequestWS).websocket || req.socket;
             const user: JWTUser | undefined = req.user;
@@ -209,19 +234,45 @@ export class AuthMiddleware {
                 if (id !== undefined) {
                     sock.send(JSON.stringify({ id, type: "LOGIN_RESPONSE", success: false, data: error.message }));
                 }
-                sock.close(1002, error.message);
+                sock.close(closeCode, options.closeReason ?? error.message);
                 next(error);
             };
 
             const rejectInvalid = () => {
                 if (required) {
                     const error = new ApiError(ApiErrors.INVALID_REQUEST, 400, ApiErrorMessages.INVALID_REQUEST);
-                    sock.close(1002, error.code);
+                    sock.close(closeCode, options.closeReason ?? error.code);
                     next(error);
                 } else {
                     next();
                 }
             };
+
+            if (!loginFallback) {
+                // No LOGIN handshake: decide from the upgrade request alone, without reading any frame. The router
+                // closes the connection if the socket is already gone, so no listener is needed here.
+                this.authenticate(strategies, req).then(
+                    (result) => {
+                        if (result?.user?.uid) {
+                            req.user = result.user;
+                            req.auth = result;
+                            next();
+                        } else if (required) {
+                            rejectAuth();
+                        } else {
+                            next();
+                        }
+                    },
+                    () => {
+                        if (required) {
+                            rejectAuth();
+                        } else {
+                            next();
+                        }
+                    },
+                );
+                return;
+            }
 
             const onClose = () => {
                 // Socket closed before auth completed — unblock runChain so the open handler can

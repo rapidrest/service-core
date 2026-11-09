@@ -548,9 +548,14 @@ export class BunRouter implements IHttpRouter {
             data.shim?.emit("message", isBinary ? Buffer.from(message as any) : message, isBinary);
         },
 
+        drain: (ws: any) => {
+            (ws.data as WsSocketData).shim?.notifyDrain?.();
+        },
+
         close: (ws: any, code: number, reason: string) => {
             const data = ws.data as WsSocketData;
             if (data.shim) data.shim.readyState = 3; // CLOSED
+            data.shim?.notifyClosed?.();
             data.shim?.emit("close", code, reason);
         },
     };

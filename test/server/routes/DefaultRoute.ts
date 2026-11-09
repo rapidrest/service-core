@@ -121,6 +121,45 @@ class DefaultRoute {
         });
         ws.send(`hello ${user && user.uid ? user.uid : "guest"}`);
     }
+
+    @Summary("Request")
+    @Auth(["jwt"])
+    @WebSocket("connect-strict", { loginFallback: false, authCloseCode: 4001, authCloseReason: "auth required" })
+    @Description("A secured socket that refuses an unauthenticated upgrade at once with close code 4001.")
+    protected wsConnectStrict(@Socket ws: ws, @User user?: any): void {
+        ws.on("message", (msg) => {
+            ws.send(`echo ${msg}`);
+        });
+        ws.send(`hello ${user.uid}`);
+    }
+
+    @Summary("Request")
+    @Auth(["jwt"])
+    @WebSocket("connect-code", { authCloseCode: 4001 })
+    @Description("A secured socket that keeps the LOGIN fallback but closes with 4001 when auth fails.")
+    protected wsConnectCode(@Socket ws: ws, @User user?: any): void {
+        ws.send(`hello ${user.uid}`);
+    }
+
+    @Summary("Request")
+    @WebSocket("connect-flood", { maxBackpressure: 32 * 1024 * 1024, maxPayloadLength: 1024 })
+    @Description("On `flood` sends large frames until the socket reports buffered data, then waits for the drain.")
+    protected wsConnectFlood(@Socket ws: any): void {
+        ws.send("ready");
+        ws.on("message", async (msg: any) => {
+            if (msg.toString() !== "flood") return;
+            const chunk = Buffer.alloc(256 * 1024, 1);
+            const events: string[] = [];
+            ws.onDrain(() => events.push("onDrain"));
+            for (let i = 0; i < 400 && ws.bufferedAmount < 1024 * 1024; i++) {
+                ws.send(chunk);
+            }
+            events.push(`buffered=${ws.bufferedAmount > 0} needDrain=${ws.writableNeedDrain}`);
+            const drained = await ws.waitForDrain();
+            events.push(`drained=${drained} buffered=${ws.bufferedAmount} needDrain=${ws.writableNeedDrain}`);
+            ws.send(`status ${events.join(" ")}`);
+        });
+    }
 }
 
 export default DefaultRoute;

@@ -1469,3 +1469,78 @@ describe("RouteUtils.registerRoute — @WebSocket options", () => {
         });
     });
 });
+
+describe("RouteUtils @WebSocket auth options", () => {
+    function makeRouteUtils(authMiddleware?: any): RouteUtils {
+        const routeUtils: any = new RouteUtils();
+        routeUtils.logger = makeLogger();
+        if (authMiddleware) routeUtils.authMiddleware = authMiddleware;
+        return routeUtils;
+    }
+
+    it("passes the auth options to authWebSocket() and keeps them away from app.ws()", async () => {
+        @Route("/wsauth")
+        class WsAuthRoute {
+            @Auth(["jwt"])
+            @WebSocket("/socket", {
+                loginFallback: false,
+                authCloseCode: 4001,
+                authCloseReason: "auth required",
+                maxBackpressure: 1024,
+            })
+            public socket(): void {
+                return undefined;
+            }
+        }
+        const authMiddleware = { authenticateSync: vi.fn(), authWebSocket: vi.fn().mockReturnValue(vi.fn()) };
+        const app = makeApp();
+        await makeRouteUtils(authMiddleware).registerRoute(app, new WsAuthRoute());
+        expect(authMiddleware.authWebSocket).toHaveBeenCalledWith(true, ["jwt"], {
+            loginFallback: false,
+            closeCode: 4001,
+            closeReason: "auth required",
+        });
+        expect(app._registered["ws /wsauth/socket"].options).toEqual({ maxBackpressure: 1024 });
+    });
+
+    describe("resolveWebSocketAuthOptions()", () => {
+        it("returns undefined when none of the auth options is set", () => {
+            expect(RouteUtils.resolveWebSocketAuthOptions(undefined, "WS /x")).toBeUndefined();
+            expect(RouteUtils.resolveWebSocketAuthOptions({ maxBackpressure: 1 }, "WS /x")).toBeUndefined();
+        });
+
+        it("accepts the boundaries", () => {
+            expect(
+                RouteUtils.resolveWebSocketAuthOptions(
+                    { loginFallback: true, authCloseCode: 1000, authCloseReason: "" },
+                    "WS /x",
+                ),
+            ).toEqual({ loginFallback: true, closeCode: 1000, closeReason: "" });
+            expect(RouteUtils.resolveWebSocketAuthOptions({ authCloseCode: 4999 }, "WS /x")).toEqual({
+                closeCode: 4999,
+            });
+        });
+
+        it.each([
+            ["loginFallback", "no"],
+            ["authCloseCode", 999],
+            ["authCloseCode", 5000],
+            ["authCloseCode", 1006],
+            ["authCloseCode", 1005],
+            ["authCloseCode", 1015],
+            ["authCloseCode", 4001.5],
+            ["authCloseCode", "4001"],
+            ["authCloseReason", 12],
+            ["authCloseReason", "x".repeat(124)],
+            ["authCloseReason", "é".repeat(62)],
+        ])("rejects %s = %s", (key, value) => {
+            expect(() => RouteUtils.resolveWebSocketAuthOptions({ [key]: value } as any, "WS /x")).toThrow(
+                `Invalid WebSocket option ${key} for WS /x`,
+            );
+        });
+    });
+
+    it("resolveWebSocketOptions() ignores the auth options", () => {
+        expect(RouteUtils.resolveWebSocketOptions({ loginFallback: false, authCloseCode: 4001 }, "WS /x")).toEqual({});
+    });
+});

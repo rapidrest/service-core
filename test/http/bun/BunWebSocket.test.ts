@@ -125,3 +125,54 @@ describe("BunWebSocketShim Tests", () => {
         expect(received).toEqual([{ a: 1 }]);
     });
 });
+
+describe("BunWebSocketShim send backpressure", () => {
+    function make(buffered: { value: number }, sendResult = 5) {
+        const target = makeFakeTarget({ send: vi.fn().mockReturnValue(sendResult) });
+        target.getBufferedAmount = () => buffered.value;
+        return new BunWebSocketShim(target);
+    }
+
+    it("reports bufferedAmount, 0 when unsupported or the socket is gone", () => {
+        expect(make({ value: 42 }).bufferedAmount).toBe(42);
+        expect(new BunWebSocketShim(makeFakeTarget()).bufferedAmount).toBe(0);
+        const target = makeFakeTarget();
+        target.getBufferedAmount = () => {
+            throw new Error("closed");
+        };
+        expect(new BunWebSocketShim(target).bufferedAmount).toBe(0);
+    });
+
+    it("does not flag a send that went out directly", async () => {
+        const shim = make({ value: 0 });
+        shim.send("a");
+        expect(shim.writableNeedDrain).toBe(false);
+        await expect(shim.waitForDrain()).resolves.toBe(true);
+    });
+
+    it.each([0, -1])("flags a send that returned %s until drain, then releases waiters and onDrain", async (result) => {
+        const buffered = { value: 100 };
+        const shim = make(buffered, result);
+        const drained = vi.fn();
+        shim.onDrain(drained);
+        shim.send("a");
+        expect(shim.writableNeedDrain).toBe(true);
+        const waiting = shim.waitForDrain();
+        shim.notifyDrain();
+        expect(drained).not.toHaveBeenCalled();
+        buffered.value = 0;
+        shim.notifyDrain();
+        await expect(waiting).resolves.toBe(true);
+        expect(shim.writableNeedDrain).toBe(false);
+        expect(drained).toHaveBeenCalledTimes(1);
+    });
+
+    it("resolves waiters false when the socket closes", async () => {
+        const shim = make({ value: 100 }, -1);
+        shim.send("a");
+        const waiting = shim.waitForDrain();
+        shim.notifyClosed();
+        await expect(waiting).resolves.toBe(false);
+        await expect(shim.waitForDrain()).resolves.toBe(false);
+    });
+});
