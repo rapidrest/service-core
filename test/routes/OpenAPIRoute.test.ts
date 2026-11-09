@@ -76,8 +76,9 @@ describe("OpenAPIRoute Tests", () => {
         // Grew from 31 as new fixture routes were added: VersionedItemRoute (test/server/routes) plus
         // DefaultRoute's /error500, /error-raw, /error-string (used by the RepoUtils SQL trackChanges
         // and Server.ts global-error-middleware coverage tests) and /capabilities (an OPTIONS route,
-        // used by Server.test.ts's app-registered-OPTIONS-vs-CORS-preflight coverage test).
-        expect(Object.keys(result.body.paths).length).toBe(38);
+        // used by Server.test.ts's app-registered-OPTIONS-vs-CORS-preflight coverage test), then
+        // /connect-strict, /connect-code and /connect-flood (the @WebSocket auth options and backpressure tests).
+        expect(Object.keys(result.body.paths).length).toBe(41);
         const schemas = Object.keys(result.body.components.schemas);
         const parameters = Object.keys(result.body.components.parameters);
         expect(result.body.servers[0].url).toBe(config.get("cluster_url"));
