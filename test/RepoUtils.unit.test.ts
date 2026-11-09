@@ -104,7 +104,7 @@ describe("RepoUtils.count()", () => {
 
     class RecoverableMongoItem extends RecoverableBaseMongoEntity {}
     class RecoverableVersionedMongoItem extends RecoverableBaseMongoEntity {}
-    (RecoverableVersionedMongoItem as any).trackChanges = 0;
+    (RecoverableVersionedMongoItem as any).trackChanges = -1;
     class RecoverableSqlItem extends RecoverableBaseEntity {}
 
     it("passes the active transaction's session to a simple (non-aggregate) Mongo count query", async () => {
@@ -155,16 +155,17 @@ describe("RepoUtils.count()", () => {
         expect(matchArg).not.toHaveProperty("deleted");
     });
 
-    it("includes soft-deleted rows when includeDeleted is set (aggregate Mongo query for a trackChanges model)", async () => {
+    it("includes soft-deleted rows when includeDeleted is set (Mongo query for a trackChanges model)", async () => {
         const fakeRepo: any = Object.create(MongoRepository.prototype);
-        const cursor: any = { next: vi.fn().mockResolvedValue({ count: 7 }) };
-        fakeRepo.aggregate = vi.fn().mockReturnValue(cursor);
+        fakeRepo.count = vi.fn().mockResolvedValue(7);
         const repoUtils: any = new RepoUtils(RecoverableVersionedMongoItem, fakeRepo);
 
         const result = await repoUtils.count({ uid: "u1" }, { includeDeleted: true });
 
-        const [pipeline] = fakeRepo.aggregate.mock.calls[0];
-        expect(pipeline[0].$match).not.toHaveProperty("deleted");
+        // A tracked model counts a plain filter over its current versions: no aggregation pipeline.
+        const [matchArg] = fakeRepo.count.mock.calls[0];
+        expect(matchArg).not.toHaveProperty("deleted");
+        expect(matchArg.latest).toBe(true);
         expect(result).toBe(7);
     });
 
@@ -1079,6 +1080,7 @@ describe("RepoUtils write-path safety", () => {
             (VersionedRecordACLItem as any).trackChanges = -1;
             const fakeRepo = makeCreateRepo();
             fakeRepo.count = vi.fn().mockResolvedValue(1);
+            fakeRepo.updateMany = vi.fn().mockResolvedValue({});
             const repoUtils: any = new RepoUtils(VersionedRecordACLItem, fakeRepo);
             const existingAcl: any = { uid: "doc", records: [{ userOrRoleId: "editors", actions: ["update"] }] };
             const aclUtils = makeAclUtils({ findACL: vi.fn().mockResolvedValue(existingAcl) });
@@ -1087,6 +1089,12 @@ describe("RepoUtils write-path safety", () => {
             const result = await repoUtils.create({ uid: "doc" }, { user: { uid: "editor", roles: ["editors"] } });
 
             expect(result.version).toBe(1);
+            expect(fakeRepo.save.mock.calls[0][0].latest).toBe(true);
+            expect(fakeRepo.updateMany).toHaveBeenCalledWith(
+                { uid: "doc", version: { $lt: 1 }, latest: true },
+                { $set: { latest: false } },
+                { session: undefined },
+            );
             expect(aclUtils.saveACL).not.toHaveBeenCalled();
             expect(existingAcl.records).toEqual([{ userOrRoleId: "editors", actions: ["update"] }]);
         });
@@ -1482,6 +1490,7 @@ describe("RepoUtils ACL ownership, caching and input hardening", () => {
                     .mockResolvedValueOnce({ uid: "g1", version: 0, secretFlag: "stored" })
                     .mockResolvedValueOnce({ uid: "g1", version: 1, secretFlag: "stored" }),
                 insert: vi.fn().mockResolvedValue({}),
+                update: vi.fn().mockResolvedValue({}),
             };
             const repoUtils: any = new RepoUtils(SqlGuarded, sqlRepo);
 
@@ -1500,6 +1509,92 @@ describe("RepoUtils ACL ownership, caching and input hardening", () => {
                 { ignoreACL: true },
             );
             expect(sqlRepo.insert.mock.calls[0][0]).not.toHaveProperty("secretFlag");
+        });
+    });
+
+    describe("update() of a trackChanges record that carries no version", () => {
+        // A tracked model without the version column of a BaseEntity: the next version is written with the marker, and the
+        // older versions are demoted.
+        class SimpleTracked extends SimpleMongoEntity {
+            public name: string = "";
+        }
+        (SimpleTracked as any).trackChanges = -1;
+
+        const mongoRepo = (): any => {
+            const fakeRepo: any = Object.create(MongoRepository.prototype);
+            fakeRepo.save = vi.fn().mockImplementation(async (obj: any) => ({ ...obj, _id: "0123456789abcdef01234567" }));
+            fakeRepo.updateMany = vi.fn().mockResolvedValue({});
+            return fakeRepo;
+        };
+
+        it("writes a new current version and demotes the older ones (MongoDB, with a uid)", async () => {
+            const fakeRepo = mongoRepo();
+            const repoUtils: any = new RepoUtils(SimpleTracked, fakeRepo);
+
+            await repoUtils.update(
+                { uid: "s1", version: 3, name: "n", latest: false },
+                { uid: "s1", version: 3 },
+                { ignoreACL: true },
+            );
+            // (A plain document with a numeric version on a non-BaseEntity model isn't "versioned".)
+            expect(fakeRepo.save.mock.calls[0][0]).toMatchObject({ uid: "s1", version: 4, latest: true });
+            expect(fakeRepo.updateMany).toHaveBeenCalledWith(
+                { uid: "s1", version: { $lt: 4 }, latest: true },
+                { $set: { latest: false } },
+                { session: undefined },
+            );
+        });
+
+        it("writes a new current version and demotes the older ones (MongoDB, without a uid)", async () => {
+            const fakeRepo = mongoRepo();
+            const repoUtils: any = new RepoUtils(SimpleTracked, fakeRepo);
+
+            await repoUtils.update({ version: 1, name: "n" }, { version: 1 } as any, { ignoreACL: true });
+            expect(fakeRepo.save.mock.calls[0][0]).toMatchObject({ version: 2, latest: true });
+            expect(fakeRepo.updateMany).toHaveBeenCalledWith(
+                { uid: undefined, version: { $lt: 2 }, latest: true },
+                { $set: { latest: false } },
+                { session: undefined },
+            );
+        });
+
+        it("writes a new current version and demotes the older ones (SQL)", async () => {
+            class SqlSimpleTracked extends SimpleTracked {}
+            const sqlRepo: any = {
+                save: vi.fn().mockImplementation(async (obj: any) => obj),
+                update: vi.fn().mockResolvedValue({ affected: 1 }),
+            };
+            const repoUtils: any = new RepoUtils(SqlSimpleTracked, sqlRepo);
+
+            await repoUtils.update({ uid: "s1", version: 3, name: "n" }, { uid: "s1", version: 3 }, { ignoreACL: true });
+            expect(sqlRepo.save.mock.calls[0][0]).toMatchObject({ version: 4, latest: true });
+            expect(sqlRepo.update).toHaveBeenCalledWith(
+                { uid: "s1", version: typeorm.LessThan(4), latest: true },
+                { latest: false },
+            );
+        });
+    });
+
+    describe("delete() of a trackChanges version", () => {
+        class SqlTracked extends RecoverableBaseEntity {}
+        (SqlTracked as any).trackChanges = -1;
+
+        it("promotes the newest remaining version through the active transaction's entityManager (SQL)", async () => {
+            const emRepo: any = {
+                delete: vi.fn().mockResolvedValue({}),
+                count: vi.fn().mockResolvedValue(2),
+                findOne: vi.fn().mockResolvedValue({ uid: "t1", version: 1, latest: false }),
+                update: vi.fn().mockResolvedValue({}),
+            };
+            const entityManager: any = { getRepository: vi.fn().mockReturnValue(emRepo) };
+            const repoUtils: any = new RepoUtils(SqlTracked, {} as any);
+
+            await transactionContext.run({ entityManager }, () =>
+                repoUtils.delete("t1", { ignoreACL: true, version: "2", purge: true }),
+            );
+
+            expect(emRepo.findOne).toHaveBeenCalledWith({ where: { uid: "t1" }, order: { version: "DESC" } });
+            expect(emRepo.update).toHaveBeenCalledWith({ uid: "t1", version: 1 }, { latest: true });
         });
     });
 
@@ -1525,13 +1620,13 @@ describe("RepoUtils ACL ownership, caching and input hardening", () => {
         it.each([
             [{ $match: { deleted: false } }, false],
             [{ $match: { deleted: { $eq: false } } }, false],
-            [[{ $match: { $or: [{ deleted: false }, { deleted: { $eq: false } }] } }], false],
+            [{ $match: { $or: [{ deleted: false }, { deleted: { $eq: false } }] } }, false],
             [{ $match: { $and: [{ a: 1 }, { deleted: false }] } }, false],
             [{ $match: { $or: [] } }, true],
             [{ $match: { deleted: { $eq: false, $ne: true } } }, true],
             [{ $match: { deleted: { $ne: false } } }, true],
             [{ deleted: false }, false],
-            [[{}], true],
+            [{}, true],
         ])("MongoDB %o -> %s", (searchQuery, expected) => {
             const repoUtils: any = new RepoUtils(RecoverableItemMongo, Object.create(MongoRepository.prototype));
             expect(repoUtils.queryIncludesDeleted(searchQuery)).toBe(expected);

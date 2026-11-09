@@ -38,6 +38,10 @@ const createItem = async (name: string, cost: number = 100, versions: number = 1
         results.push(await repo.save(item));
     }
 
+    // Rows are seeded straight into the table (bypassing RepoUtils), so mark the newest version current, the way
+    // RepoUtils.create()/update() do.
+    await repo.update({ uid, version: versions - 1 } as any, { latest: true });
+
     return results;
 };
 
@@ -179,27 +183,49 @@ describe("VersionedModelRoute Tests [SQL]", () => {
             expect(result.headers["content-length"]).toBe((2).toString());
         });
 
-        // NOTE: `buildSearchQueryMongo()` collapses a trackChanges entity's rows down to the latest version per
-        // uid via an aggregation pipeline (`$sort` + `$group` + `$replaceRoot` - see ModelUtils.ts), so
-        // `VersionedModelRoute.Mongo.test.ts`'s equivalent "with multiple versions" count/find tests only ever
-        // see one row per uid. `buildSearchQuerySQL()` has no equivalent dedup step, so count()/find() over SQL
-        // currently return every historical version row rather than just the latest - a known SQL/Mongo parity
-        // gap, distinct from the doExists()/findOne() version-scoping this file otherwise covers. These tests
-        // document that actual (not ideal) behavior rather than asserting the Mongo-equivalent result.
-        it("Counts every version row for a trackChanges entity, not just the latest (known SQL/Mongo gap). [SQL]", async () => {
+        it("Matches a filter against each record's current version only, not its older versions. [SQL]", async () => {
+            const [sword]: VersionedItem[] = await createItem("Sword", 10);
+            const [shield]: VersionedItem[] = await createItem("Shield", 10);
+            sword.cost = 99;
+            const update = await request(server).put(`${baseUrl}/${sword.uid}`).send(sword);
+            expect(update.status).toBe(200);
+
+            // The sword's version 0 (cost 10) is history: only the shield matches cost=10 now.
+            const pending = await request(server).get(`${baseUrl}?cost=10`);
+            expect(pending.body.map((item: any) => item.uid)).toEqual([shield.uid]);
+            const pendingCount = await request(server).head(`${baseUrl}?cost=10`);
+            expect(pendingCount.headers["content-length"]).toBe((1).toString());
+
+            const changed = await request(server).get(`${baseUrl}?cost=99`);
+            expect(changed.body.map((item: any) => [item.uid, item.version])).toEqual([[sword.uid, 1]]);
+
+            // Truncating by the old value removes the shield only; every version of the sword stays.
+            const truncate = await request(server).delete(`${baseUrl}?cost=10`);
+            expect(truncate.status).toBe(204);
+            expect(await repo.count({ where: { uid: shield.uid } })).toBe(0);
+            expect(await repo.count({ where: { uid: sword.uid } })).toBe(2);
+        });
+
+        // A trackChanges entity keeps one row per version, but a search sees only each record's current version
+        // (the `latest` row), the same as on MongoDB.
+        it("Counts only the latest version of each record for a trackChanges entity. [SQL]", async () => {
             await createItem("Sword", 100, 3);
             await createItem("Shield", 50, 2);
             const result = await request(server).head(baseUrl);
             expect(result.headers).toHaveProperty("content-length");
-            expect(result.headers["content-length"]).toBe((5).toString());
+            expect(result.headers["content-length"]).toBe((2).toString());
         });
 
-        it("Finds every version row for a trackChanges entity, not just the latest (known SQL/Mongo gap). [SQL]", async () => {
+        it("Finds only the latest version of each record for a trackChanges entity. [SQL]", async () => {
             await createItem("Sword", 100, 3);
             await createItem("Shield", 50, 2);
             const result = await request(server).get(baseUrl);
             expect(result).toHaveProperty("body");
-            expect(result.body).toHaveLength(5);
+            expect(result.body).toHaveLength(2);
+            expect(result.body.map((item: any) => item.version).sort()).toEqual([1, 2]);
+            for (const item of result.body) {
+                expect(item).not.toHaveProperty("latest");
+            }
         });
     });
 });

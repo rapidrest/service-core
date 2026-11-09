@@ -129,6 +129,17 @@ export class ModelUtils {
     private static rawParamSeq: number = 0;
 
     /**
+     * Returns whether `modelClass` keeps every version of a record as its own row/document (`@TrackChanges`).
+     *
+     * This is the one rule used everywhere: a model is tracked when its `trackChanges` value is truthy, so `-1`
+     * (every version) and any positive count are tracked, and `@TrackChanges(0)` is not (it behaves like a model
+     * without the decorator).
+     */
+    public static isTrackChanges(modelClass: any): boolean {
+        return !!modelClass?.trackChanges;
+    }
+
+    /**
      * Marks `value` as a literal search value for `buildSearchQuery()` (and so `RepoUtils.find/count/truncate`),
      * so it is compared exactly as given instead of being parsed as `op(value)` syntax. Use this whenever a query
      * value comes from outside the code (a client, an email header, an iCalendar UID, a display name): a raw string
@@ -398,6 +409,10 @@ export class ModelUtils {
      * callers that expose a record by id to an API client (e.g. `findOne`, `exists`) should pass false so a
      * soft-deleted record doesn't remain fully readable/resurrectable, the same way `buildSearchQuery` already
      * excludes deleted records by default for list-style queries.
+     * @param latestOnly Set to true to match only the current version of a `@TrackChanges` record when no `version` is
+     * given, so a lookup by an identifier value an older version used to hold (before a rename) finds nothing. Has no
+     * effect for a model that isn't tracked, or when `version` is given. Defaults to false (every stored version
+     * matches), which is what a delete or a count of stored versions needs.
      * @returns An object that can be passed to a TypeORM `find` function.
      */
     public static buildIdSearchQuery<T extends {}>(
@@ -406,11 +421,12 @@ export class ModelUtils {
         id: any | any[],
         version?: number,
         includeDeleted: boolean = true,
+        latestOnly: boolean = false,
     ): any {
         if (repo instanceof MongoRepository) {
-            return ModelUtils.buildIdSearchQueryMongo(modelClass, id, version, includeDeleted);
+            return ModelUtils.buildIdSearchQueryMongo(modelClass, id, version, includeDeleted, latestOnly);
         } else {
-            return ModelUtils.buildIdSearchQuerySQL(modelClass, id, version, includeDeleted);
+            return ModelUtils.buildIdSearchQuerySQL(modelClass, id, version, includeDeleted, latestOnly);
         }
     }
 
@@ -421,6 +437,8 @@ export class ModelUtils {
      * @param modelClass The class definition of the data model to build a search query for.
      * @param id The unique identifier to search for.
      * @param version The version number of the document to search for.
+     * @param includeDeleted Set to false to exclude soft-deleted `RecoverableBaseEntity` records from matching.
+     * @param latestOnly See `buildIdSearchQuery()`.
      * @returns An object that can be passed to a TypeORM `find` function.
      */
     public static buildIdSearchQuerySQL(
@@ -428,9 +446,11 @@ export class ModelUtils {
         id: any | any[],
         version?: number,
         includeDeleted: boolean = true,
+        latestOnly: boolean = false,
     ): any {
         const props: string[] = ModelUtils.getIdPropertyNames(modelClass);
         const isRecoverable: boolean = new modelClass() instanceof RecoverableBaseEntity;
+        const currentOnly: boolean = latestOnly && version === undefined && ModelUtils.isTrackChanges(modelClass);
 
         // Create the where in SQL syntax. We only care about one of the identifier field's matching.
         // e.g. WHERE idField1 = :idField1 OR idField2 = :idField2 ...
@@ -439,6 +459,9 @@ export class ModelUtils {
             const q: any = { [prop]: Array.isArray(id) ? ModelUtils.orm.In(id) : id };
             if (version !== undefined) {
                 q.version = version;
+            }
+            if (currentOnly) {
+                q.latest = true;
             }
             // By default we don't want an id-based lookup to match a soft-deleted recoverable object,
             // matching the same default `buildSearchQuery` applies to list-style queries.
@@ -459,6 +482,7 @@ export class ModelUtils {
      * @param id The unique identifier to search for.
      * @param version The version number of the document to search for.
      * @param includeDeleted Set to true to also match soft-deleted `RecoverableBaseEntity` records.
+     * @param latestOnly See `buildIdSearchQuery()`.
      * @returns An object that can be passed to a MongoDB `find` function.
      */
     public static buildIdSearchQueryMongo(
@@ -466,9 +490,11 @@ export class ModelUtils {
         id: any | any[],
         version?: number,
         includeDeleted: boolean = true,
+        latestOnly: boolean = false,
     ): any {
         const props: string[] = ModelUtils.getIdPropertyNames(modelClass);
         const isRecoverable: boolean = new modelClass() instanceof RecoverableBaseEntity;
+        const currentOnly: boolean = latestOnly && version === undefined && ModelUtils.isTrackChanges(modelClass);
 
         // We want to performa case-insensitive search. We used to convert strings to RegEx but this is _very_
         // slow. Instead, we use case-insenstive indexes that are configured using the `collation` option. Now
@@ -491,6 +517,9 @@ export class ModelUtils {
             const q: any = { [prop]: Array.isArray(id) ? { $in: id } : id };
             if (version !== undefined) {
                 q.version = version;
+            }
+            if (currentOnly) {
+                q.latest = true;
             }
             // By default we don't want an id-based lookup to match a soft-deleted recoverable object,
             // matching the same default `buildSearchQuery` applies to list-style queries.
@@ -990,22 +1019,14 @@ export class ModelUtils {
         }
     }
 
-    /**
-     * Extracts the `$match` stage from either shape `buildSearchQueryMongo` can return (a pipeline array or a
-     * flattened `{$match, $sort}` object).
-     */
-    private static extractMatch(pipelineOrObject: any): any {
-        if (Array.isArray(pipelineOrObject)) {
-            return pipelineOrObject.length > 0 ? pipelineOrObject[0]["$match"] : undefined;
-        }
-        return pipelineOrObject ? pipelineOrObject["$match"] : undefined;
+    /** Extracts the `$match` from the flattened `{ $match, $sort }` object `buildSearchQueryMongo` returns. */
+    private static extractMatch(result: any): any {
+        return result["$match"];
     }
 
     /**
-     * Normalizes the return value of `buildSearchQueryMongo` to a single shape: a full aggregation pipeline.
-     * `buildSearchQueryMongo` itself still returns either a pipeline array or a flattened `{$match, $sort}`
-     * object depending on how many stages it produced (existing callers, e.g. `RepoUtils`, already branch on
-     * `Array.isArray()` to handle both) - use this instead at any new call site that wants one consistent shape.
+     * Converts the flattened `{ $match, $sort }` object `buildSearchQueryMongo` returns to a pipeline array
+     * (`[{ $match }, { $sort }]`, each stage only when present). A pipeline array is returned as is.
      */
     public static toFindQuery(pipelineOrObject: any): any[] {
         if (Array.isArray(pipelineOrObject)) {
@@ -1382,6 +1403,22 @@ export class ModelUtils {
             }
         }
 
+        // See `buildSearchQueryMongo()`: a tracked model's search is restricted to the current versions (`latest`)
+        // unless it filters on `version`. Applied to every composed OR branch, once, by the top-level call.
+        if (depth === 0 && ModelUtils.isTrackChanges(modelClass)) {
+            const history: boolean = ModelUtils.filtersOnVersion(query);
+            if (result.where.length === 0 && !history) {
+                result.where.push({});
+            }
+            for (const branch of result.where) {
+                if (history) {
+                    delete branch.latest;
+                } else {
+                    branch.latest = true;
+                }
+            }
+        }
+
         if (result.where.length === 0) {
             delete result.where;
         }
@@ -1404,11 +1441,10 @@ export class ModelUtils {
      * before delegating here), this function applies no soft-delete filtering of its own - a caller invoking it
      * directly, bypassing `buildSearchQuery`, will not get that default exclusion.
      *
-     * Does NOT bound `limit`/`page` into the returned pipeline (see `resolvePagination`) and returns either an
-     * aggregation pipeline array or a flattened `{$match, $sort}` object depending on how many stages it
-     * produced (see `toFindQuery` to normalize to one shape).
-     *
-     * NOTE: The result of this function is only compatible with the `aggregate()` function.
+     * Does NOT bound `limit`/`page` into the returned query (see `resolvePagination`). Always returns a flattened
+     * `{ $match, $sort? }` object, never an aggregation pipeline: pass `$match` to `find()`/`count()` and `$sort` as
+     * the sort option. For a `@TrackChanges` model the `$match` is restricted to `latest: true` rows unless the query
+     * filters on `version`.
      *
      * @param modelClass The class definition of the data model to build a search query for.
      * @param {any} query The search query parameters to include.
@@ -1585,34 +1621,49 @@ export class ModelUtils {
             }
         }
 
-        let result: any[] = [];
-        if (queries.length > 0) {
-            result.push({ $match: queries.length === 1 ? queries[0] : { $or: queries } });
+        // A tracked model stores every version of a record as its own document. The write paths keep a `latest`
+        // marker on the current one (see `RepoUtils`), so restricting a query to the current versions is a plain
+        // indexed filter, applied before any paging. Filtering on `version` explicitly opts out, to look at history.
+        // Only the top-level query decides this: a nested `$or`/`$and` sub-query is built by a recursive call.
+        if (depth === 0) {
+            ModelUtils.applyLatestFilterMongo(modelClass, query, queries);
         }
 
-        // Determine if the model class is versioned or not. We provide a different
-        // aggregation query if it is.
-        if (modelClass && modelClass.trackChanges !== undefined) {
-            result.push({ $sort: { version: -1 } });
-            result.push({ $group: { _id: "$uid", doc: { $first: "$$ROOT" } } });
-            result.push({ $replaceRoot: { newRoot: "$doc" } });
-        }
+        const result: any = { $match: queries.length === 1 ? queries[0] : { $or: queries } };
 
         // Add the sort if specified
         if (sort && !isEmpty(sort)) {
-            result.push({ $sort: sort });
-        }
-
-        // If this is a simple query (e.g. only $match and $sort) then we want to extract this query so that
-        // we don't run it as an aggregate pipeline.
-        if (result.length < 3) {
-            return {
-                ...result[0],
-                ...result[1],
-            };
+            result.$sort = sort;
         }
 
         return result;
+    }
+
+    /**
+     * Returns whether `query` filters on `version` itself, the one way a search on a `@TrackChanges` model sees
+     * past a record's current version.
+     */
+    private static filtersOnVersion(query: any): boolean {
+        return !!query && Object.prototype.hasOwnProperty.call(query, "version");
+    }
+
+    /**
+     * Restricts every OR branch of a MongoDB search on a tracked model to the current versions (`latest: true`),
+     * unless the query filters on `version`. A client-supplied `latest` is overwritten (or, with a `version` filter,
+     * removed): it is never a way to choose which rows match.
+     */
+    private static applyLatestFilterMongo(modelClass: any, query: any, branches: any[]): void {
+        if (!ModelUtils.isTrackChanges(modelClass)) {
+            return;
+        }
+        const history: boolean = ModelUtils.filtersOnVersion(query);
+        for (const branch of branches) {
+            if (history) {
+                delete branch.latest;
+            } else {
+                branch.latest = true;
+            }
+        }
     }
 
     /**

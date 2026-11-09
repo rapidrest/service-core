@@ -46,6 +46,11 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
             results.push(await repo.save(user));
         }
 
+        // Rows are seeded straight into the collection (bypassing RepoUtils), so mark the newest version current,
+        // the way RepoUtils.create()/update() do.
+        await repo.updateMany({ uid } as any, { $set: { latest: false } });
+        await repo.updateOne({ uid, version: versions - 1 } as any, { $set: { latest: true } });
+
         return results;
     };
 
@@ -372,6 +377,30 @@ describe("VersionedModelRoute Tests [MongoDB]", () => {
                 expect(user.lastName).toBe("Doctor");
                 expect(user.version).toBe(1);
             }
+        });
+
+        it("Matches a filter against each record's current version only, not its older versions. [MongoDB]", async () => {
+            const [david]: User[] = await createUser("David", "Tennant", 10);
+            const [matt]: User[] = await createUser("Matt", "Smith", 10);
+            david.age = 99;
+            const update = await request(server).put(`${baseUrl}/${david.uid}`).send(david);
+            expect(update.status).toBe(200);
+
+            // David's version 0 (age 10) is history: only Matt matches age=10 now.
+            const pending = await request(server).get(`${baseUrl}?age=10`);
+            expect(pending.body.map((user: any) => user.uid)).toEqual([matt.uid]);
+            expect(pending.body[0]).not.toHaveProperty("latest");
+            const pendingCount = await request(server).head(`${baseUrl}?age=10`);
+            expect(pendingCount.headers["content-length"]).toBe((1).toString());
+
+            const changed = await request(server).get(`${baseUrl}?age=99`);
+            expect(changed.body.map((user: any) => [user.uid, user.version])).toEqual([[david.uid, 1]]);
+
+            // Truncating by the old value removes Matt only; every version of David stays.
+            const truncate = await request(server).delete(`${baseUrl}?age=10`);
+            expect(truncate.status).toBe(204);
+            expect(await repo.count({ uid: matt.uid } as any)).toBe(0);
+            expect(await repo.count({ uid: david.uid } as any)).toBe(2);
         });
 
         it("Can truncate datasource [MongoDB].", async () => {

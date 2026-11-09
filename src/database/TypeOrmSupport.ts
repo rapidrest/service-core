@@ -141,7 +141,100 @@ export function registerFrameworkMetadata(entities: any[]): void {
                 options: { type: versionColumnType, primary: true },
             });
         }
+
+        // A @TrackChanges() entity also gets the `latest` marker the write paths keep on each record's current
+        // version (see `RepoUtils`), and an index to find it by. Like "version" above it belongs to this entity
+        // only, not to the shared base class. A column added to an existing table defaults to false: see
+        // `backfillLatest()`.
+        if (isTrackChanges) {
+            if (!storage.columns.some((c) => c.target === entity && c.propertyName === "latest")) {
+                storage.columns.push({
+                    target: entity,
+                    propertyName: "latest",
+                    mode: "regular",
+                    options: { type: Boolean, default: false },
+                });
+            }
+            registerIndex(storage, entity, { columns: ["uid", "latest"], options: {} });
+        }
     }
+}
+
+/**
+ * Sets the `latest` marker of every row of the `@TrackChanges` entities in `entities`: `true` on the newest version
+ * of each `uid`, `false` on every other one. Does nothing, after one cheap lookup per table, unless some row has no
+ * `latest` row for its `uid` at all, which is the state of every tracked row written before the marker existed (the
+ * column defaults to `false`). Run at connect, after the schema is in place. Also run it by hand to repair a table
+ * that an older instance wrote to during a rolling deploy. Safe to run more than once.
+ *
+ * Two portable `UPDATE` statements in one transaction, each comparing a row's `version` with the `uid`'s maximum. On
+ * MySQL and MariaDB, which refuse a subquery on the table being updated, the maximum comes from a derived table.
+ *
+ * @param connection The initialized connection.
+ * @param entities The entity classes of the connection.
+ * @returns The number of rows that were rewritten.
+ */
+export async function backfillLatest(connection: typeorm.DataSource, entities: any[]): Promise<number> {
+    let total: number = 0;
+    const done: Set<string> = new Set();
+    for (const entity of entities) {
+        if (!ModelUtils.isTrackChanges(entity)) {
+            continue;
+        }
+        const metadata = connection.getMetadata(entity);
+        if (done.has(metadata.tablePath)) {
+            continue;
+        }
+        done.add(metadata.tablePath);
+
+        // Any row that is not current and whose record has no current row at all?
+        const orphan: any = await connection
+            .getRepository(entity)
+            .createQueryBuilder("a")
+            .select("a.uid", "uid")
+            .where("a.latest = :no", { no: false })
+            .andWhere(
+                (qb) =>
+                    "NOT EXISTS " +
+                    qb
+                        .subQuery()
+                        .select("1")
+                        .from(entity, "b")
+                        .where("b.uid = a.uid")
+                        .andWhere("b.latest = :yes")
+                        .getQuery(),
+            )
+            .setParameter("yes", true)
+            .limit(1)
+            .getRawOne();
+        if (!orphan) {
+            continue;
+        }
+
+        await connection.transaction(async (manager) => {
+            const qb = manager.createQueryBuilder();
+            const table: string = qb.escape(metadata.tableName);
+            const column = (name: string): string => qb.escape(metadata.findColumnWithPropertyName(name)!.databaseName);
+            const [uid, version, latest] = [column("uid"), column("version"), column("latest")];
+            const maxVersion: string =
+                connection.options.type === "mysql" || connection.options.type === "mariadb"
+                    ? `(SELECT x.mv FROM (SELECT ${uid} AS mu, MAX(${version}) AS mv FROM ${table} GROUP BY ${uid}) x ` +
+                      `WHERE x.mu = ${table}.${uid})`
+                    : `(SELECT MAX(m.${version}) FROM ${table} m WHERE m.${uid} = ${table}.${uid})`;
+
+            for (const current of [true, false]) {
+                const result = await manager
+                    .createQueryBuilder()
+                    .update(entity)
+                    .set({ latest: current })
+                    .where(`${version} ${current ? "=" : "<>"} ${maxVersion}`)
+                    .andWhere(`${latest} = :was`, { was: !current })
+                    .execute();
+                total += result.affected ?? 0;
+            }
+        });
+    }
+    return total;
 }
 
 /**
@@ -234,6 +327,7 @@ export async function connect(
         if (datasource.runMigrations) {
             await connection.runMigrations();
         }
+        await backfillLatest(connection, entities);
     }
 
     registerRegexpFunction(connection);

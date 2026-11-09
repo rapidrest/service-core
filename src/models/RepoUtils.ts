@@ -305,11 +305,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
         if (this.repo instanceof MongoRepository) {
-            const match: any = Array.isArray(searchQuery)
-                ? searchQuery[0].$match
-                : searchQuery["$match"]
-                  ? searchQuery["$match"]
-                  : searchQuery;
+            const match: any = searchQuery.$match;
             // Plain `distinct()` + a client-side slice: no aggregation pipelines (see NOTES.md).
             const uids: string[] = await this.repo.distinct("uid", match, { session: txInfo?.session });
             return cap !== undefined ? uids.slice(0, cap) : uids;
@@ -324,7 +320,8 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
         const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
         const rows: T[] = (await repo!.find(uidQuery)) as T[];
-        // A trackChanges table holds one row per version, so the same uid can appear more than once.
+        // A query that filters on `version` can match several versions of one record, so the same uid can appear
+        // more than once.
         return Array.from(new Set(rows.map((obj: T) => obj.uid)));
     }
 
@@ -377,8 +374,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 (isFalse(match.deleted) ||
                     (Array.isArray(match.$or) && match.$or.length > 0 && match.$or.every(excludes)) ||
                     (Array.isArray(match.$and) && match.$and.some(excludes)));
-            const match: any = Array.isArray(searchQuery) ? searchQuery[0]?.$match : (searchQuery?.$match ?? searchQuery);
-            return !excludes(match);
+            return !excludes(searchQuery?.$match ?? searchQuery);
         }
 
         // `buildSearchQuerySQL()` always compiles `where` to an array of OR branches (or omits it: no conditions at all).
@@ -419,8 +415,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
     private async countPermittedUids(searchQuery: any, actions: string[], options?: RepoFindOptions): Promise<number> {
         const txInfo: TransactionInfo | undefined = this.getTransaction(options);
         const batchSize = 100;
-        // A trackChanges collection holds one row per version, so the same uid can appear more than once.
-        const seen: Set<string> | undefined = this.modelClass.trackChanges ? new Set() : undefined;
+        // A query that filters on `version` (the way to search a tracked model's history) can match several versions of
+        // one record, and a record counts once.
+        const seen: Set<string> | undefined = ModelUtils.isTrackChanges(this.modelClass) ? new Set() : undefined;
         let batch: string[] = [];
         let total = 0;
 
@@ -446,11 +443,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         };
 
         if (this.repo instanceof MongoRepository) {
-            const match: any = Array.isArray(searchQuery)
-                ? searchQuery[0].$match
-                : searchQuery["$match"]
-                  ? searchQuery["$match"]
-                  : searchQuery;
+            const match: any = searchQuery.$match;
             const cursor: any = this.repo.find(match, { projection: { uid: 1 }, session: txInfo?.session });
             for await (const doc of cursor) {
                 await add(doc.uid);
@@ -508,9 +501,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // `buildSearchQuery()` auto-excludes soft-deleted rows for a RecoverableBaseEntity by default. We strip
         // that out of the query rather than trying to influence the exclusion via the input `query` object.
         if (options?.includeDeleted) {
-            if (Array.isArray(searchQuery)) {
-                delete searchQuery[0]?.$match?.deleted;
-            } else if (searchQuery?.$match) {
+            if (searchQuery?.$match) {
                 delete searchQuery.$match.deleted;
             } else if (Array.isArray(searchQuery?.where)) {
                 for (const w of searchQuery.where) {
@@ -533,16 +524,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         if (this.repo instanceof MongoRepository) {
-            if (Array.isArray(searchQuery)) {
-                searchQuery.push({ $count: "count" });
-                const result: any = await this.repo.aggregate(searchQuery, { session: txInfo?.session }).next();
-                count = result ? result.count : count;
-            } else {
-                const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
-                count = await repo.count(searchQuery["$match"] ? searchQuery["$match"] : searchQuery, {
-                    session: txInfo?.session,
-                });
-            }
+            count = await this.repo.count(searchQuery.$match, { session: txInfo?.session });
         } else {
             const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
             count = await repo.count(searchQuery);
@@ -618,9 +600,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
         const txInfo: TransactionInfo | undefined = this.getTransaction(options);
 
-        // Without an explicit version, `query` matches every historical row sharing this uid on a trackChanges
-        // entity - existence is still a yes/no question about the uid itself, so results are deduped by uid and
-        // the final count clamped to at most 1, rather than reporting the number of matching version rows.
+        // Without an explicit version, `query` matches only the current version of a trackChanges record (an
+        // identifier an older version used to hold doesn't exist any more). Existence is still a yes/no question about
+        // the uid itself, so the final count is clamped to at most 1.
         const query: any = this.searchIdQuery(id, options?.version, includeDeleted);
 
         // Record-level ACLs aren't reflected in the query itself, so the matched uids must be checked
@@ -691,10 +673,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         }
 
         const count: number = await this.countById(ids, txInfo, clazz);
-        if (!this.modelClass.trackChanges && count > 0) {
+        if (!ModelUtils.isTrackChanges(this.modelClass) && count > 0) {
             throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
         } else if (
-            this.modelClass.trackChanges &&
+            ModelUtils.isTrackChanges(this.modelClass) &&
             count > 0 &&
             this.modelClass.recordACL &&
             this.aclUtils?.enabled &&
@@ -717,6 +699,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
             newObj.dateCreated = new Date();
             newObj.dateModified = new Date();
             newObj.version = count;
+        }
+
+        // The `latest` marker is system-managed: whatever the caller supplied is discarded, and the new row is the
+        // record's current version.
+        const tracked: boolean = ModelUtils.isTrackChanges(this.modelClass);
+        if (tracked) {
+            (newObj as any).latest = true;
         }
 
         // Are we tracking multiple versions for this object?
@@ -765,6 +754,10 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 throw new ApiError(ApiErrors.IDENTIFIER_EXISTS, 400, ApiErrorMessages.IDENTIFIER_EXISTS);
             }
             throw err;
+        }
+        // A "new version" create (an existing record re-created under its uid) supersedes the older versions.
+        if (tracked && count > 0) {
+            await this.demoteOlderVersions((newObj as any).uid, (newObj as any).version, txInfo);
         }
         const result: T = this.instantiateObject(saved);
 
@@ -837,8 +830,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 await repo.delete(query.where);
             }
 
-            // Purging a single version of a trackChanges record leaves the record (and so its ACL) in place.
+            // Purging a single version of a trackChanges record leaves the record (and so its ACL) in place. If it was
+            // the current version, the newest remaining one takes over as current.
             const recordRemains: boolean = !!options.version && (await this.countById(uid, txInfo)) > 0;
+            if (recordRemains && ModelUtils.isTrackChanges(this.modelClass)) {
+                await this.promoteNewestVersion(uid, txInfo);
+            }
 
             if (this.aclUtils?.enabled && this.modelClass.recordACL && !recordRemains) {
                 // `removeACL()` returns the exact document it deleted (captured atomically, not via a separate
@@ -938,22 +935,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         if (results.length === 0) {
             if (this.repo instanceof MongoRepository) {
                 const skip: number = page * limit;
-                if (Array.isArray(searchQuery)) {
-                    results = await this.repo
-                        .aggregate(searchQuery, { session: txInfo?.session })
-                        .skip(skip)
-                        .limit(limit)
-                        .toArray();
-                } else {
-                    results = await this.repo
-                        .find(searchQuery["$match"] ? searchQuery["$match"] : searchQuery, {
-                            limit,
-                            session: txInfo?.session,
-                            skip,
-                            sort: searchQuery["$sort"],
-                        })
-                        .toArray();
-                }
+                results = await this.repo
+                    .find(searchQuery.$match, {
+                        limit,
+                        session: txInfo?.session,
+                        skip,
+                        sort: searchQuery["$sort"],
+                    })
+                    .toArray();
             } else {
                 const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
                 // `searchQuery.page` (set by `buildSearchQuerySQL`) isn't a TypeORM find option and is silently
@@ -995,6 +984,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // Process the results to remove any properties that have been scoped with @RequiresScope that the user
         // does not have access to. Done on copies: the cache holds (and keeps serving) the objects themselves.
         results = results.map((obj) => this.copyRecord(obj));
+        if (ModelUtils.isTrackChanges(this.modelClass)) {
+            // The `latest` marker is storage bookkeeping, not part of the model.
+            for (const obj of results) {
+                delete (obj as any).latest;
+            }
+        }
         ObjectUtils.deleteScopedProps(results, options?.user, this.modelClass);
 
         return results;
@@ -1462,12 +1457,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      * so a soft-deleted record isn't returned as if it still existed.
      */
     public searchIdQuery(id: string, version?: number | string, includeDeleted: boolean = true): any {
+        // Without a version, a trackChanges record matches only its current version (the `latest` row).
         return ModelUtils.buildIdSearchQuery(
             this.repo,
             this.modelClass,
             id,
             typeof version === "string" ? parseInt(version, 10) : version,
             includeDeleted,
+            true,
         );
     }
 
@@ -1632,7 +1629,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         // opt-in for anything else (roles, ownership fields, etc.) that must never be client-settable, but
         // trusted server-side code may pass `allowReadOnly: true` to write them anyway - see that option's
         // own doc comment on `RepoUpdateOptions`.
-        const keepPrevious: boolean = !!this.modelClass.trackChanges;
+        const keepPrevious: boolean = ModelUtils.isTrackChanges(this.modelClass);
+        if (keepPrevious) {
+            // The `latest` marker is system-managed: a client-supplied value is discarded, and the new version
+            // written below is always the record's current one.
+            delete (obj as any).latest;
+        }
         if (versioned) {
             (obj as any).dateCreated = (existing as any).dateCreated;
         }
@@ -1685,10 +1687,14 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                                 _id: undefined, // Ensure we save a new document
                                 dateModified: new Date(),
                                 version: (obj as any).version + 1,
+                                latest: true,
                             } as any,
                             { session: txInfo?.session },
                         ),
                     );
+                    // Insert first, demote second: a crash in between leaves two current versions (fixed by the next
+                    // update) rather than none.
+                    await this.demoteOlderVersions(existing.uid, (obj as any).version + 1, txInfo);
                 } else {
                     // One atomic, version-conditioned find-and-modify that returns this call's own write. A separate
                     // `updateOne()` followed by a `findOne(version + 1)` read-back could miss when a concurrent writer
@@ -1722,10 +1728,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                                 ...obj,
                                 _id: undefined, // Ensure we save a new document
                                 version: (obj as any).version + 1,
+                                latest: true,
                             } as any,
                             { session: txInfo?.session },
                         ),
                     );
+                    await this.demoteOlderVersions(existing.uid, (obj as any).version + 1, txInfo);
                 } else {
                     result = await this.repo.findOneAndUpdate(
                         { uid: obj.uid },
@@ -1741,9 +1749,13 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                 const toSave: any = obj as any;
                 if (keepPrevious) {
                     toSave.version += 1;
+                    toSave.latest = true;
                 }
 
                 result = await this.repo.save(toSave, { session: txInfo?.session });
+                if (keepPrevious) {
+                    await this.demoteOlderVersions(toSave.uid, toSave.version, txInfo);
+                }
             }
         } else {
             const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo;
@@ -1753,7 +1765,9 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                         ...obj,
                         dateModified: new Date(),
                         version: (obj as any).version + 1,
-                    });
+                        latest: true,
+                    } as any);
+                    await this.demoteOlderVersions(existing.uid, (obj as any).version + 1, txInfo);
                 } else {
                     const updateResult = await repo.update(query.where, {
                         ...obj,
@@ -1777,10 +1791,12 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
 
                 if (keepPrevious) {
                     toSave.version += 1;
+                    toSave.latest = true;
                     // TypeORM's overloaded Repository.save() can't be resolved against `repo`'s inferred
                     // `EntityManager | Repository<T>` union type — same class of friction as the "HAX" cast
                     // above.
                     result = await (repo as any).save(toSave);
+                    await this.demoteOlderVersions(toSave.uid, toSave.version, txInfo);
                 } else {
                     await repo.update(query.where, toSave);
                 }
@@ -1820,6 +1836,51 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
         ObjectUtils.deleteScopedProps(result, options?.user, this.modelClass);
 
         return result;
+    }
+
+    /**
+     * Clears the `latest` marker from every version of the record `uid` older than `version`, the version just
+     * written. Always called after the new version was inserted, never before, so a crash in between leaves the record
+     * with two current versions (the next update fixes that) and never with none. Runs in the caller's transaction
+     * where there is one.
+     */
+    private async demoteOlderVersions(uid: string, version: number, txInfo: TransactionInfo | undefined): Promise<void> {
+        if (this.repo instanceof MongoRepository) {
+            await this.repo.updateMany(
+                { uid, version: { $lt: version }, latest: true },
+                { $set: { latest: false } },
+                { session: txInfo?.session },
+            );
+        } else {
+            const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo!;
+            const { LessThan } = ModelUtils.orm;
+            await repo.update({ uid, version: LessThan(version), latest: true } as any, { latest: false } as any);
+        }
+    }
+
+    /**
+     * Makes the newest stored version of the record `uid` its current one. Called after a version was purged, which
+     * may have been the current one.
+     */
+    private async promoteNewestVersion(uid: string, txInfo: TransactionInfo | undefined): Promise<void> {
+        if (this.repo instanceof MongoRepository) {
+            const newest: any = await this.repo
+                .find({ uid } as any, { session: txInfo?.session, sort: { version: -1 }, limit: 1 })
+                .next();
+            if (newest && newest.latest !== true) {
+                await this.repo.updateOne(
+                    { uid, version: newest.version },
+                    { $set: { latest: true } },
+                    { session: txInfo?.session },
+                );
+            }
+        } else {
+            const repo = txInfo?.entityManager ? txInfo.entityManager.getRepository(this.modelClass) : this.repo!;
+            const newest: any = await repo.findOne({ where: { uid }, order: { version: "DESC" } } as any);
+            if (newest && newest.latest !== true) {
+                await repo.update({ uid, version: newest.version } as any, { latest: true } as any);
+            }
+        }
     }
 
     /**
@@ -1878,7 +1939,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
      * which is what makes a version-specific cache entry safe to keep until it expires.
      */
     private get versionsAreImmutable(): boolean {
-        return !!this.modelClass?.trackChanges;
+        return ModelUtils.isTrackChanges(this.modelClass);
     }
 
     /** Parses a `version` option the way `searchIdQuery()` does. */
@@ -2133,7 +2194,7 @@ export class RepoUtils<T extends BaseEntity | SimpleEntity> {
                             // Check to see if there are any objects with this UID in the datasource. If the value is an array
                             // let's make sure that every uid is valid.
                             const uids: string[] = Array.isArray(obj[member]) ? obj[member] : [obj[member]];
-                            const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, uids);
+                            const query: any = ModelUtils.buildIdSearchQuery(repo, clazz, uids, undefined, true, true);
                             const count: number = await repo.count(query);
                             if (count !== uids.length) {
                                 throw new ApiError(

@@ -7,6 +7,7 @@ import "reflect-metadata";
 import { ModelUtils, GroupNode, PredicateNode, QueryNode, QueryLiteral } from "../src";
 import { ObjectDecorators } from "@rapidrest/core";
 import { Identifier } from "../src/decorators/ModelDecorators";
+import { BaseEntity } from "../src/models/BaseEntity";
 import { RecoverableBaseEntity } from "../src/models/RecoverableBaseEntity";
 import { RecoverableBaseMongoEntity } from "../src/models/RecoverableBaseMongoEntity";
 import { Column as RrstColumn } from "../src/decorators/PersistenceDecorators";
@@ -1844,14 +1845,121 @@ describe("ModelUtils Tests", () => {
             public static trackChanges = true;
         }
 
-        it("Extracts $match from a nested $or sub-query that itself compiles to a pipeline array.", () => {
-            // A trackChanges model's own pipeline always has >= 3 stages ($match/$sort/$group/$replaceRoot), so
-            // the recursive buildSearchQueryMongo() call for each $or sub-query returns the array form here -
-            // exercising extractMatch()'s Array.isArray() branch rather than its plain-object branch.
+        it("Restricts only the top-level query to the current versions, not each nested $or sub-query.", () => {
             const query = ModelUtils.buildSearchQueryMongo(TrackedClass, { $or: [{ a: "1" }, { b: "2" }] }, true);
-            expect(Array.isArray(query)).toBe(true);
-            const matchStage = (query as any[]).find((stage) => stage.$match);
-            expect(matchStage.$match).toEqual({ $or: [{ a: 1 }, { b: 2 }] });
+            expect(Array.isArray(query)).toBe(false);
+            expect(query.$match).toEqual({ $or: [{ a: 1 }, { b: 2 }], latest: true });
+        });
+    });
+
+    describe("trackChanges current-version filter Tests", () => {
+        // Entities, so that the id lookups have an identifier (`uid`) to match on.
+        class Tracked extends BaseEntity {
+            public static trackChanges = -1;
+        }
+        class Limited extends BaseEntity {
+            public static trackChanges = 5;
+        }
+        class Zero extends BaseEntity {
+            public static trackChanges = 0;
+        }
+        class Plain extends BaseEntity {}
+
+        it("isTrackChanges() is true for -1 and any positive count, and false for 0 or no decorator", () => {
+            expect(ModelUtils.isTrackChanges(Tracked)).toBe(true);
+            expect(ModelUtils.isTrackChanges(Limited)).toBe(true);
+            expect(ModelUtils.isTrackChanges(Zero)).toBe(false);
+            expect(ModelUtils.isTrackChanges(Plain)).toBe(false);
+            expect(ModelUtils.isTrackChanges(undefined)).toBe(false);
+        });
+
+        it("restricts a MongoDB search on a tracked model to the latest rows, in every OR branch", () => {
+            expect(ModelUtils.buildSearchQueryMongo(Tracked, { a: "x" }, true).$match).toEqual({ a: "x", latest: true });
+            expect(ModelUtils.buildSearchQueryMongo(Tracked, {}, true).$match).toEqual({ latest: true });
+            expect(ModelUtils.buildSearchQueryMongo(Limited, {}, true).$match).toEqual({ latest: true });
+            // Zipped multi-value parameters make several OR branches.
+            expect(ModelUtils.buildSearchQueryMongo(Tracked, { a: ["x", "y"] }, true).$match).toEqual({
+                $or: [
+                    { a: "x", latest: true },
+                    { a: "y", latest: true },
+                ],
+            });
+            // The sort survives, and the result is never a pipeline.
+            const sorted = ModelUtils.buildSearchQueryMongo(Tracked, { sort: "-version" }, true);
+            expect(sorted).toEqual({ $match: { latest: true }, $sort: { version: -1 } });
+        });
+
+        it("leaves a MongoDB search on a model that isn't tracked alone", () => {
+            expect(ModelUtils.buildSearchQueryMongo(Zero, { a: "x" }, true).$match).toEqual({ a: "x" });
+            expect(ModelUtils.buildSearchQueryMongo(Plain, { a: "x" }, true).$match).toEqual({ a: "x" });
+        });
+
+        it("lets a MongoDB query filter on version to see history, and never lets a client choose latest", () => {
+            expect(ModelUtils.buildSearchQueryMongo(Tracked, { version: "0" }, true).$match).toEqual({ version: 0 });
+            expect(ModelUtils.buildSearchQueryMongo(Tracked, { version: "0", latest: "true" }, true).$match).toEqual({
+                version: 0,
+            });
+            expect(ModelUtils.buildSearchQueryMongo(Tracked, { latest: "false" }, true).$match).toEqual({ latest: true });
+        });
+
+        it("restricts a SQL search on a tracked model to the latest rows, in every OR branch", () => {
+            expect(ModelUtils.buildSearchQuerySQL(Tracked, {}, true).where).toEqual([{ latest: true }]);
+            expect(ModelUtils.buildSearchQuerySQL(Limited, { a: "x" }, true).where).toEqual([
+                { a: Equal("x"), latest: true },
+            ]);
+            expect(ModelUtils.buildSearchQuerySQL(Tracked, { a: ["x", "y"] }, true).where).toEqual([
+                { a: Equal("x"), latest: true },
+                { a: Equal("y"), latest: true },
+            ]);
+            expect(
+                ModelUtils.buildSearchQuerySQL(Tracked, { $or: [{ a: "x" }, { b: "y" }] }, true).where,
+            ).toEqual([
+                { a: Equal("x"), latest: true },
+                { b: Equal("y"), latest: true },
+            ]);
+        });
+
+        it("leaves a SQL search on a model that isn't tracked alone", () => {
+            expect(ModelUtils.buildSearchQuerySQL(Zero, {}, true).where).toBeUndefined();
+            expect(ModelUtils.buildSearchQuerySQL(Plain, { a: "x" }, true).where).toEqual([{ a: Equal("x") }]);
+        });
+
+        it("lets a SQL query filter on version to see history, and never lets a client choose latest", () => {
+            expect(ModelUtils.buildSearchQuerySQL(Tracked, { version: "0" }, true).where).toEqual([
+                { version: Equal(0) },
+            ]);
+            expect(ModelUtils.buildSearchQuerySQL(Tracked, { version: "0", latest: "true" }, true).where).toEqual([
+                { version: Equal(0) },
+            ]);
+            expect(ModelUtils.buildSearchQuerySQL(Tracked, { latest: "false" }, true).where).toEqual([{ latest: true }]);
+            // A version filter and no other condition at all leaves no where clause for a plain history search of {}.
+            expect(ModelUtils.buildSearchQuerySQL(Tracked, { $or: [{ version: "1" }] }, true).where).toEqual([
+                { version: Equal(1), latest: true },
+            ]);
+        });
+
+        it("matches only the current version in an id lookup that asks for it, and no version is given", () => {
+            const mongo = ModelUtils.buildIdSearchQueryMongo(Tracked, "x", undefined, true, true);
+            expect(mongo.$or.every((q: any) => q.latest === true)).toBe(true);
+            const sql = ModelUtils.buildIdSearchQuerySQL(Tracked, "x", undefined, true, true);
+            expect(sql.where.every((q: any) => q.latest === true)).toBe(true);
+        });
+
+        it("doesn't add the current-version restriction to an id lookup unless asked, or with a version, or untracked", () => {
+            for (const build of [ModelUtils.buildIdSearchQueryMongo, ModelUtils.buildIdSearchQuerySQL]) {
+                const branches = (q: any): any[] => q.$or ?? q.where;
+                expect(branches(build(Tracked, "x")).some((q: any) => "latest" in q)).toBe(false);
+                expect(branches(build(Tracked, "x", 1, true, true)).some((q: any) => "latest" in q)).toBe(false);
+                expect(branches(build(Zero, "x", undefined, true, true)).some((q: any) => "latest" in q)).toBe(false);
+                expect(branches(build(Plain, "x", undefined, true, true)).some((q: any) => "latest" in q)).toBe(false);
+            }
+        });
+
+        it("buildIdSearchQuery() passes latestOnly through for both repository kinds", () => {
+            const mongo = ModelUtils.buildIdSearchQuery(FAKE_MONGO_REPO, Tracked, "x", undefined, true, true);
+            expect(mongo.$or[0].latest).toBe(true);
+            const sql = ModelUtils.buildIdSearchQuery({} as any, Tracked, "x", undefined, true, true);
+            expect(sql.where[0].latest).toBe(true);
         });
     });
 

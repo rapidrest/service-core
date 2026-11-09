@@ -2,7 +2,7 @@
 // Copyright (C) 2020-2026 Jean-Philippe Steinmetz. All rights reserved.
 // SPDX-License-Identifier: MPL-2.0
 ///////////////////////////////////////////////////////////////////////////////
-import type { CreateCollectionOptions, Db, Document } from "mongodb";
+import type { Collection, CreateCollectionOptions, Db, Document } from "mongodb";
 import {
     getIndexMetadata,
     type CollationOptions,
@@ -34,6 +34,9 @@ interface DesiredIndex {
     identifier?: boolean;
 }
 
+/** The number of documents the `latest` backfill rewrites per `bulkWrite()`. */
+const BACKFILL_BATCH_SIZE: number = 1000;
+
 /** The BSON types that a numeric identifier value can be stored as. */
 const NUMERIC_BSON_TYPES: string[] = ["double", "int", "long", "decimal"];
 
@@ -46,6 +49,8 @@ const NUMERIC_BSON_TYPES: string[] = ["double", "int", "long", "decimal"];
  * - Existing declared indexes whose definition has changed are dropped and re-created.
  * - A unique index is created for every `@Identifier` property of a model so that the database enforces what
  * `RepoUtils.create()` assumes, see `applyIdentifierIndexes()`.
+ * - A collection of `@TrackChanges` models gets a `{ uid, latest }` index, and its documents are backfilled with the
+ * `latest` marker when any lacks it, see `backfillLatest()`.
  *
  * The synchronization process never drops collections or data, never modifies the built-in `_id_` index, and never
  * drops indexes that are not declared by the model class (e.g. shard keys or manually created indexes).
@@ -171,6 +176,20 @@ export class MongoSchemaSync {
             this.applyIdentifierIndexes(clazz, desired, entityCollation);
         }
 
+        // A tracked model's searches are restricted to its `latest: true` documents (see `RepoUtils`), and the write
+        // paths demote a record's older versions by `uid` and `latest`.
+        const tracked: boolean = info.classes.some((clazz) => ModelUtils.isTrackChanges(clazz));
+        const latestKey: Record<string, number> = { uid: 1, latest: 1 };
+        if (tracked && !desired.has(JSON.stringify(latestKey))) {
+            desired.set(JSON.stringify(latestKey), {
+                name: "uid_latest",
+                key: latestKey,
+                unique: false,
+                sparse: false,
+                collation: entityCollation,
+            });
+        }
+
         // Retrieve the collection's current indexes
         const collection = this.db.collection(info.name);
         let currentIndexes: Document[] = [];
@@ -242,6 +261,62 @@ export class MongoSchemaSync {
                 throw wrapped;
             }
         }
+
+        if (tracked) {
+            const updated: number = await this.backfillLatest(collection);
+            if (updated > 0) {
+                this.logger?.info(`Backfilled the latest marker of ${updated} document(s) in collection ${info.name}.`);
+            }
+        }
+    }
+
+    /**
+     * Sets the `latest` marker of every document in a collection of `@TrackChanges` models: `true` on the newest
+     * version of each `uid`, `false` on every other one. Does nothing, after one cheap lookup, unless some document
+     * has no `latest` field, which is the state of every tracked document written before the marker existed. Also
+     * run it by hand to repair a collection that an older instance wrote to during a rolling deploy.
+     *
+     * The collection is read once as a cursor in `{ uid: -1, version: -1 }` order (the reverse of the `uid_version`
+     * index, so no sort is needed in memory), the first document of each `uid` is its newest version, and only the
+     * documents whose marker is wrong are rewritten, in unordered batches. There is no aggregation. Safe to run more
+     * than once, and from several instances at once: they all compute the same result, and a crash part way is picked
+     * up by the next run (a document that was missed still has no marker).
+     *
+     * @param collection The collection to backfill.
+     * @returns The number of documents that were rewritten.
+     */
+    public async backfillLatest(collection: Collection): Promise<number> {
+        const missing: Document | null = await collection.findOne({ latest: { $exists: false } }, { projection: { _id: 1 } });
+        if (!missing) {
+            return 0;
+        }
+
+        const cursor = collection.find(
+            {},
+            { projection: { uid: 1, version: 1, latest: 1 }, sort: { uid: -1, version: -1 }, allowDiskUse: true },
+        );
+        let currentUid: unknown = undefined;
+        let started: boolean = false;
+        let batch: any[] = [];
+        let updated: number = 0;
+        for await (const doc of cursor) {
+            const first: boolean = !started || doc.uid !== currentUid;
+            started = true;
+            currentUid = doc.uid;
+            if (doc.latest !== first) {
+                batch.push({ updateOne: { filter: { _id: doc._id }, update: { $set: { latest: first } } } });
+            }
+            if (batch.length >= BACKFILL_BATCH_SIZE) {
+                await collection.bulkWrite(batch, { ordered: false });
+                updated += batch.length;
+                batch = [];
+            }
+        }
+        if (batch.length > 0) {
+            await collection.bulkWrite(batch, { ordered: false });
+            updated += batch.length;
+        }
+        return updated;
     }
 
     /**

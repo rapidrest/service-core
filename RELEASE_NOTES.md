@@ -69,8 +69,67 @@
       doesn't allow both).
 - `MongoSchemaSync` now compares an index's `partialFilterExpression` when deciding whether a declared index changed.
 
+- **A `@TrackChanges` model matched records by their old versions.** Every version of a record is its own row, and a
+  search chose the newest version only after it had filtered. A record whose `status` changed from `pending` to
+  `approved` still came back for `status=pending` (as its version 0), and was counted. `truncate()` went further: it
+  collected the uids of any matching version, then deleted every version of those records, current one included. A
+  record-level-ACL count had the same flaw. On SQL, nothing restricted a search to the current version at all, so
+  `find()` and `count()` returned every version row. And a lookup by an identifier that a rename had since changed
+  returned the old version as if it were current.
+
+  The write paths now keep a `latest` marker on each record's current version, and searches and lookups use it:
+    - `create()` writes `latest: true`. `update()` inserts the new version with `latest: true`, then clears the
+      marker from the older ones, inside the update's transaction where there is one. The insert comes first, so a
+      crash can leave two current versions (the next update fixes that) but never none.
+    - Purging the current version makes the newest remaining one current.
+    - `buildSearchQuery()` adds `latest: true` for a tracked model, so `find()`, `count()`, `truncate()` and the
+      record-ACL count see each record once, as it is now. A query that filters on `version` (`?version=0`,
+      `?version=gte(1)`) skips that and searches history, as before. A client-supplied `latest` is ignored.
+    - `findOne()` and `exists()` by identifier, without a `version`, match the current version only. A record whose
+      identifier was renamed is no longer found under the old value (unless you also give its `version`).
+    - The MongoDB `$match`, `$sort`, `$group`, `$replaceRoot` aggregation is gone. A tracked search is a plain indexed
+      `find()` or `countDocuments()`. `ModelUtils.buildSearchQueryMongo()` always returns `{ $match, $sort? }` now,
+      never a pipeline array.
+    - MongoDB tracked collections get a `{ uid: 1, latest: 1 }` index (`uid_latest`), and SQL tracked tables a
+      `latest` boolean column (default `false`) with a `(uid, latest)` index.
+    - `@TrackChanges(0)` is now untracked everywhere. It used to be tracked by `ModelUtils` and untracked by
+      `RepoUtils`.
+
 ### Upgrading
 
+- **Startup backfills the `latest` marker of existing tracked data, and a tracked model returns nothing until it
+  has.** Records written before this release have no marker. Schema sync (MongoDB, when `synchronize` is on) and
+  the SQL connect step (always) therefore mark the newest version of each `uid` as current, and the rest as not.
+  It runs only when some record needs it, so a later startup costs one lookup per tracked collection or table.
+    - MongoDB: one cursor over each tracked collection in `{ uid: -1, version: -1 }` order (the reverse of the
+      `uid_version` index), rewriting only the documents whose marker is wrong, in batches of 1000. There is no
+      aggregation. The check for "some document has no `latest`" is a `findOne` on `latest: { $exists: false }`, which
+      scans the collection once it finds none, so it is not free on a very large collection.
+    - SQL: two `UPDATE` statements in one transaction, comparing each row's `version` with its `uid`'s maximum.
+      Needed once, and only if some record has no current row. It touches every row whose marker is wrong, so allow
+      for it on a large table.
+    - Both are safe to run again and from several instances at once. `MongoSchemaSync.backfillLatest(collection)` and
+      `backfillLatest(connection, entities)` (from `TypeOrmSupport`) re-run it by hand.
+    - With `synchronize` off on a MongoDB datasource, nothing runs it for you: call `backfillLatest()` yourself. A SQL
+      tracked table also needs its `latest` column and index added by your own migration in that case.
+- **Don't run old and new instances against the same data at once.** An instance that predates this release
+  writes new versions without the marker. Its new versions then don't show up in lists, and the record they supersede
+  stays current. Deploy without overlap, or re-run `backfillLatest()` once the old instances are gone. On MongoDB
+  that repairs everything. On SQL the check only looks for a record with no current row, so after an overlap set
+  `latest` to `false` on the table first (`UPDATE ... SET latest = false`) and then run it.
+- **On SQL, `find()` and `count()` of a `@TrackChanges` model stop returning history rows.** They return one row
+  per record, the current version, as MongoDB always has. Code that relied on seeing every version row needs a
+  `version` filter.
+- **`truncate()` of a tracked model stops deleting records whose current version doesn't match.** It removes the
+  records whose current version matches the query, with all their versions. A query that filters on `version` still
+  selects records by any of their versions, and still removes the whole record.
+- **Tracked rows that you insert or update yourself, bypassing `RepoUtils`, need the marker too:** set `latest: true`
+  on the newest version and `false` on the others, or lists won't see them.
+- If you filter a tracked model by its own fields and care about the query plan, add indexes that include `latest`
+  (for example `{ latest: 1, status: 1 }`). The marker is part of every such query now.
+- `@TrackChanges(0)` is now treated as untracked by every part of the library (the search builders, the schema sync
+  and the SQL entity bridge used to treat it as tracked). A model declared with it keeps one row per record and gets no
+  `latest` marker, index or column. Use `@TrackChanges()` or a positive count to keep versions.
 - **Startup fails if a collection already holds duplicate identifiers.** The index can't be built over them, so
   schema sync throws an error that names the index, the key and the collection, and says to resolve the duplicates
   and restart. If the failed index was replacing an existing one, the old index is restored first, so the collection

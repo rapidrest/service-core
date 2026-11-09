@@ -1244,3 +1244,39 @@ Reported by MeetCarter's api-services (`POST /imports`, `@StreamingBody()`), whi
 - `Server`-based tests listen on the default port 3000. If another local app already holds `127.0.0.1:3000` (e.g. a
   Next.js dev server), the requests reach that app and every such test 404s, on committed code too. Run with `PORT=3457`
   (nconf reads it).
+
+### 2026-11-09 — `@TrackChanges`: a `latest` marker replaces filter-then-pick-newest
+
+Found by MeetCarter's api-services (report in its scratchpad). A tracked model's Mongo list/count filtered *before* picking each
+uid's newest version (`$match` -> `$sort` -> `$group`), so a stale old version matched a filter its current version no longer did;
+`truncate` collected uids from any matching version and deleted every version of them; the recordACL count counted any uid with a
+matching version; SQL never restricted to the newest version at all; `findOne`/`exists` by an old `@Identifier` value returned the old
+version.
+- **Fix (JP-approved design):** every tracked row has `latest`. `create()` writes `true`; tracked `update()` inserts the new version
+  with `true`, *then* `demoteOlderVersions()` (`updateMany`/`update` where `uid`, `version < n`, `latest: true`) in update's own
+  transaction where one exists (insert first, so a crash leaves two current rows, never none). Purging a version
+  `promoteNewestVersion()`s. `buildSearchQuery{Mongo,SQL}` add `latest: true` at depth 0 unless the query has a `version` key (the
+  history escape hatch); a client `latest` is overwritten/removed. `buildIdSearchQuery(..., latestOnly)` is used by
+  `RepoUtils.searchIdQuery()` (findOne/exists/update lookups) and `validate()`'s `@Reference` check, **not** by `delete`/`countById`
+  (those must see every version).
+- `buildSearchQueryMongo` now always returns `{ $match, $sort? }`; the aggregation branches in `count`/`find`/`findAllUids` are gone.
+  `find()` strips `latest` from tracked results.
+- **`ModelUtils.isTrackChanges()` is the one rule: truthy `trackChanges`.** `@TrackChanges(0)` was tracked in `ModelUtils`
+  (`!== undefined`) and untracked in `RepoUtils` etc.; it is untracked everywhere now.
+- **Indexes/columns:** `MongoSchemaSync` adds `uid_latest` `{uid, latest}` for tracked collections; `TypeOrmSupport.registerFrameworkMetadata`
+  adds a `latest` boolean column (default false) and a `(uid, latest)` index to tracked entities only (not the shared `BaseEntity`).
+- **Backfill:** Mongo `MongoSchemaSync.backfillLatest(collection)` runs after index sync (so only with `synchronize`): `findOne({latest:
+  {$exists:false}})` gate, then one cursor sorted `{uid:-1, version:-1}` (the reverse of `uid_version`, so no in-memory sort; the brief's
+  `{uid:1, version:-1}` can't use that index), first row per uid is current, `bulkWrite` of only wrong rows, 1000 per batch. No
+  "set everything false first" step: that would race a second instance and could leave a crash window with no current row. SQL
+  `TypeOrmSupport.backfillLatest(connection, entities)` runs in `connect()` after `initialize()`/migrations; gate is an anti-join
+  (a `latest=false` row whose uid has no `latest=true` row); two `UPDATE`s in one transaction (MySQL/MariaDB variant uses a derived
+  table, **untested on a real MySQL**, only its SQL text on SQLite). SQL gate doesn't see an old-instance write during a rolling
+  deploy (the stale row is still "current"), so that case needs a manual `latest = false` reset first.
+- Not done, possible follow-up: a partial unique index on identifiers with `latest: true`. Insert-then-demote briefly has two current
+  rows, which such an index would reject, so it needs a different write order or a deferrable constraint.
+- Pre-existing quirk noticed, not touched: `RepoUtils.delete()` treats a numeric `options.version` of `0` as "no version" (falsy), so
+  `delete(uid, { version: 0, purge: true })` removes *every* version. The HTTP route passes `"0"` (a string), which works.
+- Tests: `test/RepoUtils.TrackChanges.test.ts` (Mongo + SQLite through `RepoUtils`), `test/database/MongoSchemaSync.latest.test.ts`,
+  `test/database/TypeOrmSupport.latest.test.ts`, additions in `ModelUtils.test.ts`, `RepoUtils.unit.test.ts` and both
+  `VersionedModelRoute.*` tests (their direct row seeding now sets `latest`; the pinned SQL parity test now expects 2).
