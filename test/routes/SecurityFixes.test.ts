@@ -262,19 +262,30 @@ describe("Security Fixes Tests [MongoDB]", () => {
             // RepoUtils.create() pre-checks for a duplicate identifier via count() before save() — a
             // non-atomic check-then-insert. Firing two creates concurrently (no await between them) lets
             // both pass the count() pre-check before either save() commits, so the real guarantee has to
-            // come from BaseMongoEntity's unique (uid, version) index: exactly one save() should succeed
-            // and the other should fail with a clean IDENTIFIER_EXISTS ApiError, not a raw duplicate-key
-            // error or (worse) two documents with the same identifier.
+            // come from the unique index that MongoSchemaSync creates for the model's @Identifier properties
+            // (a fresh uid per object means BaseMongoEntity's unique (uid, version) index can't catch it):
+            // exactly one save() should succeed and the other should fail with a clean IDENTIFIER_EXISTS
+            // ApiError, not a raw duplicate-key error or (worse) two documents with the same identifier.
             const route: any = objectFactory.getInstance("routes.UserRoute");
             const name = uuid.v4();
 
-            const [a, b] = await Promise.allSettled([
-                route.repoUtils.create({ name }, { ignoreACL: true }),
-                route.repoUtils.create({ name }, { ignoreACL: true }),
-            ]);
+            // Whether the second count() runs before or after the first insert is timing luck, and the test
+            // would pass whenever it runs after. Force both creates past the pre-check so that the database
+            // is always the thing that has to reject the second one.
+            const countSpy = vi.spyOn(route.repoUtils, "countById").mockResolvedValue(0);
+            let results: PromiseSettledResult<any>[];
+            try {
+                results = await Promise.allSettled([
+                    route.repoUtils.create({ name }, { ignoreACL: true }),
+                    route.repoUtils.create({ name }, { ignoreACL: true }),
+                ]);
+                expect(countSpy).toHaveBeenCalledTimes(2);
+            } finally {
+                countSpy.mockRestore();
+            }
 
-            const fulfilled = [a, b].filter((r) => r.status === "fulfilled");
-            const rejected = [a, b].filter((r) => r.status === "rejected");
+            const fulfilled = results.filter((r) => r.status === "fulfilled");
+            const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
             expect(fulfilled.length).toBe(1);
             expect(rejected.length).toBe(1);
             expect(rejected[0].reason?.status).toBe(400);
@@ -282,6 +293,20 @@ describe("Security Fixes Tests [MongoDB]", () => {
 
             const matches: any[] = await route.repoUtils.repo.find({ name } as any).toArray();
             expect(matches.length).toBe(1);
+        });
+
+        it("Rejects the same identifier in a different case, since the entity's collation is case-insensitive.", async () => {
+            const route: any = objectFactory.getInstance("routes.UserRoute");
+            const name = `Case-${uuid.v4()}`;
+            const countSpy = vi.spyOn(route.repoUtils, "countById").mockResolvedValue(0);
+            try {
+                await route.repoUtils.create({ name }, { ignoreACL: true });
+                await expect(
+                    route.repoUtils.create({ name: name.toUpperCase() }, { ignoreACL: true }),
+                ).rejects.toMatchObject({ status: 400, code: "api-011" });
+            } finally {
+                countSpy.mockRestore();
+            }
         });
     });
 

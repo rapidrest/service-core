@@ -45,11 +45,11 @@ describe("ModelRoute Tests [MongoDB]", () => {
         return await repo.save(user);
     };
 
-    const createUsers = async (num: number, lastName: string = "Doctor"): Promise<User[]> => {
+    const createUsers = async (num: number, lastName: string = "Doctor", offset: number = 0): Promise<User[]> => {
         const results: User[] = [];
 
         for (let i = 1; i <= num; i++) {
-            results.push(await createUser(`user-${i}`, String(i), lastName, 100 * i));
+            results.push(await createUser(`user-${offset + i}`, String(i), lastName, 100 * i));
         }
 
         return results;
@@ -77,11 +77,12 @@ describe("ModelRoute Tests [MongoDB]", () => {
         num: number,
         lastName: string = "Doctor",
         skillRating: number = 1500,
+        offset: number = 0,
     ): Promise<Player[]> => {
         const results: Player[] = [];
 
         for (let i = 1; i <= num; i++) {
-            results.push(await createPlayer(`user-${i}`, String(i), lastName, 100 * i, skillRating));
+            results.push(await createPlayer(`player-${offset + i}`, String(i), lastName, 100 * i, skillRating));
         }
 
         return results;
@@ -753,8 +754,8 @@ describe("ModelRoute Tests [MongoDB]", () => {
         it("Can find all base and child documents. [MongoDB]", async () => {
             const all: Array<User | Player> = (await createUsers(5))
                 .concat(await createPlayers(7))
-                .concat(await createUsers(12))
-                .concat(await createPlayers(18));
+                .concat(await createUsers(12, "Doctor", 5))
+                .concat(await createPlayers(18, "Doctor", 1500, 7));
             const result = await request(server).get("/users");
             expect(result).toHaveProperty("body");
             expect(result.body).toHaveLength(all.length);
@@ -819,7 +820,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can truncate datasource [MongoDB].", async () => {
             const users: User[] = await createUsers(20, "Doctor");
-            await createUsers(5, "Skywalker");
+            await createUsers(5, "Skywalker", 20);
             const result = await request(server).delete("/users");
             expect(result.status).toBe(204);
 
@@ -829,7 +830,7 @@ describe("ModelRoute Tests [MongoDB]", () => {
 
         it("Can truncate datasource with criteria (eq) [MongoDB].", async () => {
             const users: User[] = await createUsers(20, "Doctor");
-            await createUsers(5, "Skywalker");
+            await createUsers(5, "Skywalker", 20);
             const result = await request(server).delete("/users?lastName=Doctor");
             expect(result.status).toBe(204);
 
@@ -869,8 +870,8 @@ describe("ModelRoute Tests [MongoDB]", () => {
         it("Can update base and child documents in bulk. [MongoDB].", async () => {
             const all: Array<User | Player> = (await createUsers(5))
                 .concat(await createPlayers(7))
-                .concat(await createUsers(12))
-                .concat(await createPlayers(18));
+                .concat(await createUsers(12, "Doctor", 5))
+                .concat(await createPlayers(18, "Doctor", 1500, 7));
             const uids: string[] = [];
             const updates: any[] = [];
             for (const user of all) {
@@ -922,6 +923,8 @@ describe("ModelRoute Tests [MongoDB]", () => {
                 const newUser: User = new User({
                     ...user,
                     _id: undefined, // This is necessary to ensure we get a new record
+                    // User is not a @TrackChanges model, so its name is unique across versions as well
+                    name: `${user.name}-v2`,
                     version: user.version + 1,
                 });
                 users[i] = await repo.save(newUser);
