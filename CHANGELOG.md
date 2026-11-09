@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-09
+
+### Added
+- Added the cors:allowedHeaders and cors:exposedHeaders options to the v2.6.1 release notes
+- Added a unique index for every @Identifier property in MongoSchemaSync, so two concurrent creates with the same identifier can no longer both succeed
+- Added partialFilterExpression to the index definitions MongoSchemaSync compares and creates
+- Added a clear startup error, after restoring the replaced index, when an identifier index can't be built over existing duplicates
+- Added tests of the identifier indexes for single, multiple, tracked and declared identifiers
+- Added the identifier index fix and its upgrade notes to the release notes
+- Added UNREAD_BODY_DRAIN to bound how much unread body uWS drains (16 MiB, 30 s) before answering with Connection: close
+- Added a contentLength parameter to makeBodyStream
+- Added WebSocket send backpressure to IWebSocketShim on uWS and Bun: bufferedAmount, writableNeedDrain, onDrain() and waitForDrain()
+- Added the loginFallback, authCloseCode and authCloseReason options to @WebSocket for routes that require auth
+- Added tests of early responses, keep-alive reuse, WebSocket backpressure and the WebSocket auth options
+- Added these changes and their upgrade notes to the release notes
+- Added the uid_latest index and the latest column and index for tracked models
+- Added a startup backfill of the latest marker for existing tracked data, and backfillLatest to re-run it by hand
+- Added tests of the latest marker on MongoDB and SQL through RepoUtils, the routes, schema sync and the backfill
+- Added the fix and its upgrade notes to the release notes
+
+### Changed
+- Updated the agent notes with the test port clash and this round's session log
+- Updated the agent notes with the TrackChanges session log
+
+### Fixed
+- Fixed the Mongo route and security tests that relied on timing or stored duplicate identifiers
+- Fixed uWS losing an early response (401, 429, 413) sent before a streamed request body finished, by draining the unread body before ending the response
+- Fixed uWS stalling a keep-alive connection's next request after a large streamed upload
+- Fixed the OpenAPI route test's path count for the three new WebSocket fixture routes
+- Fixed @TrackChanges searches matching records by their old versions, by keeping a latest marker on each record's current version
+- Fixed truncate deleting every version of a tracked record whose current version doesn't match the query
+- Fixed SQL find and count of a tracked model returning every version row
+- Fixed lookups by an identifier a tracked record no longer holds returning its old version
+- Fixed @TrackChanges(0) being treated as tracked by the search builders and untracked by RepoUtils
+
+### Removed
+- Removed the $group aggregation from tracked MongoDB searches, which are now plain indexed find and countDocuments calls
+
 ## [2.6.1] - 2026-11-08
 
 ### Added
@@ -377,7 +415,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.6.1...HEAD
+[Unreleased]: https://github.com/rapidrest/service-core/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/rapidrest/service-core/compare/v2.6.1...v2.7.0
 [2.6.1]: https://github.com/rapidrest/service-core/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/rapidrest/service-core/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/rapidrest/service-core/compare/v2.5.0...v2.5.1

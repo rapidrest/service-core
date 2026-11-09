@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v2.7.0
+
 ### Added
 
 - Added send backpressure to the WebSocket shim. `IWebSocketShim` gains the optional `bufferedAmount`,
