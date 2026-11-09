@@ -2,7 +2,50 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Two concurrent creates with the same `@Identifier` value could both succeed.** `RepoUtils.create()` rejects a
+  record whose identifier matches an existing one, but it checks and inserts in separate steps, and nothing in the
+  database enforced the rule. `BaseMongoEntity`'s unique `(uid, version)` index can't catch two records that each got
+  a fresh `uid`. `MongoSchemaSync` now creates a unique index for every `@Identifier` property, so the database
+  rejects the second insert and `create()` answers with the usual `IDENTIFIER_EXISTS` error.
+    - There is one index per identifier property, not one compound index, since a match on any single identifier is a
+      duplicate. The index is named `<property>_identifier`.
+    - A `@TrackChanges` model keeps every version of a record under the same identifier, so its index is unique on
+      the property and `version` (`<property>_version_identifier`).
+    - The index uses the entity's collation, like every other index, so it agrees with `create()`'s lookups. With a
+      case-insensitive collation, the same identifier in a different case is a duplicate.
+    - The index is partial and leaves out the values `create()` treats as empty. For strings that's absent, null and
+      `""`; for `Number` and `Date` properties, any value of another type. A `0` or `false` is still indexed.
+    - An identifier that is already guaranteed unique gets no extra index. That covers a unique index on exactly that
+      key, or on the property and `version` (as `uid_version` covers `uid`).
+    - An index the model declared on exactly that key without `unique` is upgraded in place rather than duplicated.
+      It keeps its name and options and becomes unique. It also becomes partial, unless it is `sparse` (MongoDB
+      doesn't allow both).
+- `MongoSchemaSync` now compares an index's `partialFilterExpression` when deciding whether a declared index changed.
+
+### Upgrading
+
+- **Startup fails if a collection already holds duplicate identifiers.** The index can't be built over them, so
+  schema sync throws an error that names the index, the key and the collection, and says to resolve the duplicates
+  and restart. If the failed index was replacing an existing one, the old index is restored first, so the collection
+  isn't left without it. Check long-lived collections for duplicate identifier values before upgrading.
+- **On a model without `@TrackChanges`, an identifier must now be unique across all of its documents,** including
+  documents with a different `version`. Code or test data that stores a second document with the same identifier
+  under another version is now rejected.
+- On a large collection, building the new unique indexes adds time to the first startup after the upgrade.
+
 ## v2.6.1
+
+### Added
+
+- Added the `cors:allowedHeaders` option. It lists request headers a cross-origin request may send, appended to the
+  built-in list (`Accept`, `Authorization`, `Content-Type`, `Location`, `Origin`, `Set-Cookie`, `X-Requested-With`)
+  and sent in `Access-Control-Allow-Headers`. The list used to be fixed, so browsers refused any cross-origin request
+  carrying a custom header such as `X-File-Name`. Duplicates are dropped.
+- Added the `cors:exposedHeaders` option, sent as `Access-Control-Expose-Headers` to an allowed origin, so browser
+  scripts can read those response headers (for example `X-Total-Count`). Nothing is sent when it is unset.
+- Both options take an array or a comma-separated string. Neither changes which origins are allowed.
 
 ## v2.6.0
 
